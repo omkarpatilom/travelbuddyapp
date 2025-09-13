@@ -13,6 +13,8 @@ import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Car, Hash, Palette, Calendar, Users, ArrowLeft, Save, Plus } from 'lucide-react-native';
 import PhotoUploader from '@/components/PhotoUploader';
+import VehicleFeatureTags from '@/components/VehicleFeatureTags';
+import RidePreferences, { UniversalRidePreferences } from '@/components/RidePreferences';
 
 interface Vehicle {
   id: string;
@@ -24,6 +26,8 @@ interface Vehicle {
   seats: string;
   photos: string[];
   isDefault: boolean;
+  features: string[];
+  preferences?: UniversalRidePreferences;
 }
 
 export default function VehicleDetailsScreen() {
@@ -42,6 +46,18 @@ export default function VehicleDetailsScreen() {
       seats: '4',
       photos: ['https://images.pexels.com/photos/116675/pexels-photo-116675.jpeg?auto=compress&cs=tinysrgb&w=400'],
       isDefault: true,
+      features: ['ac', 'music_system', 'phone_charger'],
+      preferences: {
+        nonSmoking: true,
+        musicAllowed: true,
+        petsAllowed: false,
+        airConditioning: true,
+        conversationLevel: 'moderate',
+        maxPassengers: 3,
+        instantBooking: false,
+        femalePassengersOnly: false,
+        verifiedPassengersOnly: true,
+      },
     }
   ]);
 
@@ -57,6 +73,18 @@ export default function VehicleDetailsScreen() {
     licensePlate: '',
     seats: '4',
     photos: [] as string[],
+    features: [] as string[],
+    preferences: {
+      nonSmoking: true,
+      musicAllowed: true,
+      petsAllowed: false,
+      airConditioning: true,
+      conversationLevel: 'moderate' as const,
+      maxPassengers: 4,
+      instantBooking: false,
+      femalePassengersOnly: false,
+      verifiedPassengersOnly: false,
+    } as UniversalRidePreferences,
   });
 
   const updateFormData = (field: string, value: string) => {
@@ -85,14 +113,26 @@ export default function VehicleDetailsScreen() {
       licensePlate: vehicle.licensePlate,
       seats: vehicle.seats,
       photos: vehicle.photos,
+      features: vehicle.features,
+      preferences: vehicle.preferences || {
+        nonSmoking: true,
+        musicAllowed: true,
+        petsAllowed: false,
+        airConditioning: true,
+        conversationLevel: 'moderate' as const,
+        maxPassengers: 4,
+        instantBooking: false,
+        femalePassengersOnly: false,
+        verifiedPassengersOnly: false,
+      },
     });
     setEditingVehicle(vehicle);
     setIsEditing(true);
   };
 
   const handleSaveVehicle = async () => {
-    if (!formData.make || !formData.model || !formData.year || !formData.color || !formData.licensePlate || formData.photos.length < 3) {
-      Alert.alert('Missing Information', 'Please fill in all fields and add at least 3 photos');
+    if (!formData.make || !formData.model || !formData.year || !formData.color || !formData.licensePlate) {
+      Alert.alert('Missing Information', 'Please fill in all required fields');
       return;
     }
 
@@ -160,6 +200,9 @@ export default function VehicleDetailsScreen() {
           </Text>
           <Text style={[styles.vehicleDetails, { color: theme.colors.textSecondary }]}>
             {vehicle.color} • {vehicle.licensePlate} • {vehicle.seats} seats
+          </Text>
+          <Text style={[styles.vehicleFeatures, { color: theme.colors.textSecondary }]}>
+            {vehicle.features.length} features • {vehicle.preferences?.nonSmoking ? 'Non-smoking' : 'Smoking OK'}
           </Text>
           <Text style={[styles.vehiclePhotos, { color: theme.colors.textSecondary }]}>
             {vehicle.photos.length} photo{vehicle.photos.length !== 1 ? 's' : ''}
@@ -303,8 +346,20 @@ export default function VehicleDetailsScreen() {
           <PhotoUploader
             photos={formData.photos}
             onPhotosChange={(photos) => updateFormData('photos', photos)}
-            minPhotos={3}
+            minPhotos={1}
             maxPhotos={8}
+          />
+
+          <VehicleFeatureTags
+            selectedFeatures={formData.features}
+            onFeaturesChange={(features) => updateFormData('features', features)}
+          />
+
+          <RidePreferences
+            preferences={formData.preferences}
+            onPreferencesChange={(preferences) => updateFormData('preferences', preferences)}
+            mode="driver"
+            canOverride={true}
           />
 
           <TouchableOpacity 
@@ -470,6 +525,10 @@ const styles = StyleSheet.create({
   },
   vehicleDetails: {
     fontSize: 14,
+  },
+  vehicleFeatures: {
+    fontSize: 12,
+    marginTop: 2,
   },
   vehiclePhotos: {
     fontSize: 12,

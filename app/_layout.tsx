@@ -30,6 +30,7 @@ export default function RootLayout() {
                 <Stack.Screen name="profile/edit" />
                 <Stack.Screen name="profile/vehicle" />
                 <Stack.Screen name="profile/reviews" />
+                <Stack.Screen name="profile/safety" />
                 <Stack.Screen name="+not-found" />
               </Stack>
               <StatusBar style="auto" />

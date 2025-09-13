@@ -8,6 +8,9 @@ export const StorageKeys = {
   SEARCH_HISTORY: 'searchHistory',
   RIDE_PREFERENCES: 'ridePreferences',
   NOTIFICATION_SETTINGS: 'notificationSettings',
+  EMERGENCY_CONTACTS: 'emergencyContacts',
+  SAFETY_SETTINGS: 'safetySettings',
+  VERIFICATION_DOCUMENTS: 'verificationDocuments',
 } as const;
 
 export const storage = {

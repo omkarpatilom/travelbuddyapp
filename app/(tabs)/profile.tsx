@@ -70,9 +70,9 @@ export default function ProfileScreen() {
     },
     {
       icon: Shield,
-      title: 'Privacy & Security',
-      subtitle: 'Control your privacy settings',
-      onPress: () => Alert.alert('Coming Soon', 'Privacy settings coming soon!'),
+      title: 'Safety & Security',
+      subtitle: 'Emergency contacts, SOS, and verification',
+      onPress: () => router.push('/profile/safety'),
     },
     {
       icon: HelpCircle,
