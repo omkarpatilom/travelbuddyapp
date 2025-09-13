@@ -5,26 +5,62 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  TextInput,
   Alert,
   ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useRides } from '@/contexts/RideContext';
-import { MapPin, Calendar, Clock, Users, DollarSign, Car, ArrowLeft } from 'lucide-react-native';
+import { Users, DollarSign, ArrowLeft } from 'lucide-react-native';
+import DatePicker from '@/components/DatePicker';
+import LocationPicker from '@/components/LocationPicker';
+import VehicleSelector from '@/components/VehicleSelector';
+import PreferencesSelector, { RidePreferences } from '@/components/PreferencesSelector';
 
 export default function OfferRideScreen() {
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [selectedTime, setSelectedTime] = useState<Date | null>(null);
   const [formData, setFormData] = useState({
     from: '',
     to: '',
-    date: '',
-    time: '',
     seats: '1',
     price: '',
-    carModel: '',
-    carColor: '',
     description: '',
+  });
+  
+  // Mock vehicles data - in real app, this would come from user's vehicles
+  const [vehicles] = useState([
+    {
+      id: '1',
+      make: 'Toyota',
+      model: 'Camry',
+      year: '2020',
+      color: 'Blue',
+      licensePlate: 'ABC123',
+      seats: '4',
+      photos: ['https://images.pexels.com/photos/116675/pexels-photo-116675.jpeg?auto=compress&cs=tinysrgb&w=400'],
+      isDefault: true,
+    },
+    {
+      id: '2',
+      make: 'Honda',
+      model: 'Civic',
+      year: '2019',
+      color: 'White',
+      licensePlate: 'XYZ789',
+      seats: '4',
+      photos: ['https://images.pexels.com/photos/1007410/pexels-photo-1007410.jpeg?auto=compress&cs=tinysrgb&w=400'],
+      isDefault: false,
+    },
+  ]);
+  
+  const [selectedVehicle, setSelectedVehicle] = useState(vehicles.find(v => v.isDefault) || vehicles[0]);
+  const [preferences, setPreferences] = useState<RidePreferences>({
+    nonSmoking: true,
+    musicAllowed: true,
+    petsAllowed: false,
+    airConditioning: true,
+    conversationLevel: 'moderate',
   });
   const [isLoading, setIsLoading] = useState(false);
   
@@ -37,12 +73,24 @@ export default function OfferRideScreen() {
   };
 
   const validateForm = () => {
-    const required = ['from', 'to', 'date', 'time', 'seats', 'price', 'carModel', 'carColor'];
-    for (const field of required) {
-      if (!formData[field as keyof typeof formData]) {
-        Alert.alert('Missing Information', `Please fill in the ${field} field`);
-        return false;
-      }
+    if (!formData.from || !formData.to) {
+      Alert.alert('Missing Information', 'Please enter pickup and destination locations');
+      return false;
+    }
+    
+    if (!selectedDate || !selectedTime) {
+      Alert.alert('Missing Information', 'Please select date and time');
+      return false;
+    }
+    
+    if (!formData.seats || !formData.price) {
+      Alert.alert('Missing Information', 'Please enter seats and price');
+      return false;
+    }
+    
+    if (!selectedVehicle) {
+      Alert.alert('Missing Information', 'Please select a vehicle');
+      return false;
     }
 
     if (parseInt(formData.seats) < 1 || parseInt(formData.seats) > 8) {
@@ -72,13 +120,14 @@ export default function OfferRideScreen() {
           address: formData.to,
           coordinates: { latitude: 37.4419, longitude: -122.1430 }
         },
-        date: formData.date,
-        time: formData.time,
+        date: selectedDate!.toLocaleDateString(),
+        time: selectedTime!.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         availableSeats: parseInt(formData.seats),
         totalSeats: parseInt(formData.seats),
         price: parseFloat(formData.price),
-        carModel: formData.carModel,
-        carColor: formData.carColor,
+        carModel: `${selectedVehicle!.make} ${selectedVehicle!.model}`,
+        carColor: selectedVehicle!.color,
+        preferences,
       };
 
       const success = await createRide(rideData);
@@ -113,123 +162,81 @@ export default function OfferRideScreen() {
         <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Route Details</Text>
           
-          <View style={[styles.inputContainer, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-            <MapPin size={20} color={theme.colors.secondary} />
-            <TextInput
-              style={[styles.input, { color: theme.colors.text }]}
-              placeholder="From (pickup location)"
-              placeholderTextColor={theme.colors.textSecondary}
-              value={formData.from}
-              onChangeText={(value) => updateFormData('from', value)}
-            />
-          </View>
+          <LocationPicker
+            value={formData.from}
+            onLocationChange={(location) => updateFormData('from', location)}
+            placeholder="From (pickup location)"
+          />
 
-          <View style={[styles.inputContainer, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-            <MapPin size={20} color={theme.colors.error} />
-            <TextInput
-              style={[styles.input, { color: theme.colors.text }]}
-              placeholder="To (destination)"
-              placeholderTextColor={theme.colors.textSecondary}
-              value={formData.to}
-              onChangeText={(value) => updateFormData('to', value)}
-            />
-          </View>
+          <LocationPicker
+            value={formData.to}
+            onLocationChange={(location) => updateFormData('to', location)}
+            placeholder="To (destination)"
+          />
         </View>
 
         <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Schedule</Text>
           
           <View style={styles.row}>
-            <View style={[styles.inputContainer, styles.halfWidth, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-              <Calendar size={20} color={theme.colors.textSecondary} />
-              <TextInput
-                style={[styles.input, { color: theme.colors.text }]}
-                placeholder="Date (YYYY-MM-DD)"
-                placeholderTextColor={theme.colors.textSecondary}
-                value={formData.date}
-                onChangeText={(value) => updateFormData('date', value)}
-              />
-            </View>
+            <DatePicker
+              value={selectedDate}
+              onDateChange={setSelectedDate}
+              placeholder="Select Date"
+              minimumDate={new Date()}
+              style={styles.halfWidth}
+            />
 
-            <View style={[styles.inputContainer, styles.halfWidth, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-              <Clock size={20} color={theme.colors.textSecondary} />
-              <TextInput
-                style={[styles.input, { color: theme.colors.text }]}
-                placeholder="Time (HH:MM)"
-                placeholderTextColor={theme.colors.textSecondary}
-                value={formData.time}
-                onChangeText={(value) => updateFormData('time', value)}
-              />
-            </View>
+            <DatePicker
+              value={selectedTime}
+              onDateChange={setSelectedTime}
+              placeholder="Select Time"
+              mode="time"
+              style={styles.halfWidth}
+            />
           </View>
+        </View>
+
+        <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Vehicle Selection</Text>
+          
+          <VehicleSelector
+            vehicles={vehicles}
+            selectedVehicle={selectedVehicle}
+            onVehicleSelect={setSelectedVehicle}
+          />
         </View>
 
         <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Ride Details</Text>
           
           <View style={styles.row}>
-            <View style={[styles.inputContainer, styles.halfWidth, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+            <TouchableOpacity style={[styles.inputContainer, styles.halfWidth, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
               <Users size={20} color={theme.colors.textSecondary} />
-              <TextInput
+              <Text
                 style={[styles.input, { color: theme.colors.text }]}
-                placeholder="Available seats"
-                placeholderTextColor={theme.colors.textSecondary}
-                value={formData.seats}
-                onChangeText={(value) => updateFormData('seats', value)}
-                keyboardType="numeric"
-              />
-            </View>
+              >
+                {formData.seats} seat{parseInt(formData.seats) > 1 ? 's' : ''}
+              </Text>
+            </TouchableOpacity>
 
-            <View style={[styles.inputContainer, styles.halfWidth, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+            <TouchableOpacity style={[styles.inputContainer, styles.halfWidth, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
               <DollarSign size={20} color={theme.colors.textSecondary} />
-              <TextInput
+              <Text
                 style={[styles.input, { color: theme.colors.text }]}
-                placeholder="Price per seat"
-                placeholderTextColor={theme.colors.textSecondary}
-                value={formData.price}
-                onChangeText={(value) => updateFormData('price', value)}
-                keyboardType="numeric"
-              />
-            </View>
+              >
+                ${formData.price || '0'} per seat
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
 
         <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Vehicle Information</Text>
-          
-          <View style={[styles.inputContainer, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-            <Car size={20} color={theme.colors.textSecondary} />
-            <TextInput
-              style={[styles.input, { color: theme.colors.text }]}
-              placeholder="Car model (e.g., Toyota Camry)"
-              placeholderTextColor={theme.colors.textSecondary}
-              value={formData.carModel}
-              onChangeText={(value) => updateFormData('carModel', value)}
-            />
-          </View>
-
-          <View style={[styles.inputContainer, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-            <View style={[styles.colorDot, { backgroundColor: theme.colors.textSecondary }]} />
-            <TextInput
-              style={[styles.input, { color: theme.colors.text }]}
-              placeholder="Car color"
-              placeholderTextColor={theme.colors.textSecondary}
-              value={formData.carColor}
-              onChangeText={(value) => updateFormData('carColor', value)}
-            />
-          </View>
-
-          <View style={[styles.inputContainer, styles.textArea, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-            <TextInput
-              style={[styles.input, styles.textAreaInput, { color: theme.colors.text }]}
-              placeholder="Additional notes (optional)"
-              placeholderTextColor={theme.colors.textSecondary}
-              value={formData.description}
-              onChangeText={(value) => updateFormData('description', value)}
-              multiline
-              numberOfLines={3}
-            />
-          </View>
+          <PreferencesSelector
+            preferences={preferences}
+            onPreferencesChange={setPreferences}
+            mode="driver"
+          />
         </View>
 
         <TouchableOpacity 
@@ -307,19 +314,6 @@ const styles = StyleSheet.create({
   },
   halfWidth: {
     flex: 1,
-  },
-  colorDot: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-  },
-  textArea: {
-    alignItems: 'flex-start',
-    paddingVertical: 16,
-  },
-  textAreaInput: {
-    minHeight: 60,
-    textAlignVertical: 'top',
   },
   submitButton: {
     paddingVertical: 16,

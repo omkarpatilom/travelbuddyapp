@@ -15,11 +15,12 @@ import { useRides } from '@/contexts/RideContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { User, Phone, Users, DollarSign, ArrowLeft, CreditCard } from 'lucide-react-native';
 import { mockRides } from '@/data/mockData';
+import { useEffect } from 'react';
 
 export default function BookRideScreen() {
   const [selectedSeats, setSelectedSeats] = useState(1);
-  const [passengerName, setPassengerName] = useState('');
-  const [passengerPhone, setPassengerPhone] = useState('');
+  const [passengerName, setPassengerName] = useState(user?.firstName + ' ' + user?.lastName || '');
+  const [passengerPhone, setPassengerPhone] = useState(user?.phone || '');
   const [isLoading, setIsLoading] = useState(false);
   
   const { theme } = useTheme();
@@ -31,6 +32,14 @@ export default function BookRideScreen() {
 
   // Find the ride by ID
   const ride = mockRides.find(r => r.id === rideId);
+
+  // Auto-fill passenger details from user profile
+  useEffect(() => {
+    if (user) {
+      setPassengerName(`${user.firstName} ${user.lastName}`);
+      setPassengerPhone(user.phone);
+    }
+  }, [user]);
 
   if (!ride) {
     return (

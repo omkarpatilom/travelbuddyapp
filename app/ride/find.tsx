@@ -5,26 +5,42 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  TextInput,
   FlatList,
   Image,
   Alert,
   ActivityIndicator,
+  Modal,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useRides } from '@/contexts/RideContext';
-import { Search, MapPin, Calendar, Clock, Star, Users, Filter, ArrowLeft } from 'lucide-react-native';
+import { Search, MapPin, Calendar, Clock, Star, Users, Filter, ArrowLeft, X, DollarSign } from 'lucide-react-native';
 import { mockRides } from '@/data/mockData';
+import DatePicker from '@/components/DatePicker';
+import LocationPicker from '@/components/LocationPicker';
+import PreferencesSelector, { RidePreferences } from '@/components/PreferencesSelector';
 
 export default function FindRideScreen() {
   const [fromLocation, setFromLocation] = useState('');
   const [toLocation, setToLocation] = useState('');
-  const [selectedDate, setSelectedDate] = useState('');
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [searchResults, setSearchResults] = useState(mockRides);
   const [isLoading, setIsLoading] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
-  const [priceRange, setPriceRange] = useState({ min: 0, max: 100 });
+  
+  // Advanced filters
+  const [filters, setFilters] = useState({
+    priceRange: { min: 0, max: 100 },
+    minSeats: 1,
+    timeRange: { start: null as Date | null, end: null as Date | null },
+    preferences: {
+      nonSmoking: false,
+      musicAllowed: false,
+      petsAllowed: false,
+      airConditioning: false,
+      conversationLevel: 'moderate' as 'quiet' | 'moderate' | 'chatty',
+    } as RidePreferences,
+  });
   
   const { theme } = useTheme();
   const { searchRides } = useRides();
@@ -34,7 +50,7 @@ export default function FindRideScreen() {
   useEffect(() => {
     if (params.from) setFromLocation(decodeURIComponent(params.from as string));
     if (params.to) setToLocation(decodeURIComponent(params.to as string));
-    if (params.date) setSelectedDate(params.date as string);
+    if (params.date) setSelectedDate(new Date(params.date as string));
   }, [params]);
 
   const handleSearch = async () => {
@@ -45,7 +61,11 @@ export default function FindRideScreen() {
 
     setIsLoading(true);
     try {
-      const results = await searchRides(fromLocation, toLocation, selectedDate);
+      const dateString = selectedDate ? selectedDate.toLocaleDateString() : '';
+      let results = await searchRides(fromLocation, toLocation, dateString);
+      
+      // Apply filters
+      results = applyFilters(results);
       setSearchResults(results);
     } catch (error) {
       Alert.alert('Error', 'Failed to search rides. Please try again.');
@@ -54,6 +74,56 @@ export default function FindRideScreen() {
     }
   };
 
+  const applyFilters = (rides: any[]) => {
+    return rides.filter(ride => {
+      // Price filter
+      if (ride.price < filters.priceRange.min || ride.price > filters.priceRange.max) {
+        return false;
+      }
+      
+      // Seats filter
+      if (ride.availableSeats < filters.minSeats) {
+        return false;
+      }
+      
+      // Time range filter
+      if (filters.timeRange.start && filters.timeRange.end) {
+        const rideTime = new Date(`2000-01-01 ${ride.time}`);
+        const startTime = new Date(`2000-01-01 ${filters.timeRange.start.toLocaleTimeString()}`);
+        const endTime = new Date(`2000-01-01 ${filters.timeRange.end.toLocaleTimeString()}`);
+        
+        if (rideTime < startTime || rideTime > endTime) {
+          return false;
+        }
+      }
+      
+      return true;
+    });
+  };
+
+  const clearAllFilters = () => {
+    setFilters({
+      priceRange: { min: 0, max: 100 },
+      minSeats: 1,
+      timeRange: { start: null, end: null },
+      preferences: {
+        nonSmoking: false,
+        musicAllowed: false,
+        petsAllowed: false,
+        airConditioning: false,
+        conversationLevel: 'moderate',
+      },
+    });
+  };
+
+  const getActiveFiltersCount = () => {
+    let count = 0;
+    if (filters.priceRange.min > 0 || filters.priceRange.max < 100) count++;
+    if (filters.minSeats > 1) count++;
+    if (filters.timeRange.start || filters.timeRange.end) count++;
+    if (Object.values(filters.preferences).some(v => v !== false && v !== 'moderate')) count++;
+    return count;
+  };
   const renderRide = ({ item }: { item: any }) => (
     <TouchableOpacity 
       style={[styles.rideCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
@@ -137,38 +207,24 @@ export default function FindRideScreen() {
         </View>
 
         <View style={styles.searchContainer}>
-          <View style={[styles.searchInput, { backgroundColor: theme.colors.background, borderColor: theme.colors.border }]}>
-            <MapPin size={20} color={theme.colors.secondary} />
-            <TextInput
-              style={[styles.input, { color: theme.colors.text }]}
-              placeholder="From"
-              placeholderTextColor={theme.colors.textSecondary}
-              value={fromLocation}
-              onChangeText={setFromLocation}
-            />
-          </View>
+          <LocationPicker
+            value={fromLocation}
+            onLocationChange={setFromLocation}
+            placeholder="From"
+          />
 
-          <View style={[styles.searchInput, { backgroundColor: theme.colors.background, borderColor: theme.colors.border }]}>
-            <MapPin size={20} color={theme.colors.error} />
-            <TextInput
-              style={[styles.input, { color: theme.colors.text }]}
-              placeholder="To"
-              placeholderTextColor={theme.colors.textSecondary}
-              value={toLocation}
-              onChangeText={setToLocation}
-            />
-          </View>
+          <LocationPicker
+            value={toLocation}
+            onLocationChange={setToLocation}
+            placeholder="To"
+          />
 
-          <View style={[styles.searchInput, { backgroundColor: theme.colors.background, borderColor: theme.colors.border }]}>
-            <Calendar size={20} color={theme.colors.textSecondary} />
-            <TextInput
-              style={[styles.input, { color: theme.colors.text }]}
-              placeholder="Date (YYYY-MM-DD)"
-              placeholderTextColor={theme.colors.textSecondary}
-              value={selectedDate}
-              onChangeText={setSelectedDate}
-            />
-          </View>
+          <DatePicker
+            value={selectedDate}
+            onDateChange={setSelectedDate}
+            placeholder="Select Date"
+            minimumDate={new Date()}
+          />
 
           <TouchableOpacity 
             style={[styles.searchButton, { backgroundColor: theme.colors.primary }]}
@@ -186,6 +242,127 @@ export default function FindRideScreen() {
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Advanced Filters Modal */}
+      <Modal
+        visible={showFilters}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowFilters(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.filtersModal, { backgroundColor: theme.colors.card }]}>
+            <View style={styles.filtersHeader}>
+              <Text style={[styles.filtersTitle, { color: theme.colors.text }]}>
+                Advanced Filters
+              </Text>
+              <TouchableOpacity onPress={() => setShowFilters(false)}>
+                <X size={24} color={theme.colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.filtersContent}>
+              {/* Price Range */}
+              <View style={styles.filterSection}>
+                <Text style={[styles.filterTitle, { color: theme.colors.text }]}>
+                  Price Range
+                </Text>
+                <View style={styles.priceRange}>
+                  <View style={[styles.priceInput, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+                    <DollarSign size={16} color={theme.colors.textSecondary} />
+                    <Text style={[styles.priceText, { color: theme.colors.text }]}>
+                      {filters.priceRange.min}
+                    </Text>
+                  </View>
+                  <Text style={[styles.priceRangeSeparator, { color: theme.colors.textSecondary }]}>to</Text>
+                  <View style={[styles.priceInput, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+                    <DollarSign size={16} color={theme.colors.textSecondary} />
+                    <Text style={[styles.priceText, { color: theme.colors.text }]}>
+                      {filters.priceRange.max}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Minimum Seats */}
+              <View style={styles.filterSection}>
+                <Text style={[styles.filterTitle, { color: theme.colors.text }]}>
+                  Minimum Available Seats
+                </Text>
+                <View style={styles.seatsSelector}>
+                  {[1, 2, 3, 4].map(seats => (
+                    <TouchableOpacity
+                      key={seats}
+                      style={[
+                        styles.seatOption,
+                        { backgroundColor: theme.colors.surface, borderColor: theme.colors.border },
+                        filters.minSeats === seats && { borderColor: theme.colors.primary, backgroundColor: theme.colors.primary + '20' },
+                      ]}
+                      onPress={() => setFilters(prev => ({ ...prev, minSeats: seats }))}
+                    >
+                      <Text style={[styles.seatOptionText, { color: theme.colors.text }]}>
+                        {seats}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              {/* Time Range */}
+              <View style={styles.filterSection}>
+                <Text style={[styles.filterTitle, { color: theme.colors.text }]}>
+                  Departure Time Range
+                </Text>
+                <View style={styles.timeRange}>
+                  <DatePicker
+                    value={filters.timeRange.start}
+                    onDateChange={(time) => setFilters(prev => ({ ...prev, timeRange: { ...prev.timeRange, start: time } }))}
+                    placeholder="Start Time"
+                    mode="time"
+                    style={styles.timeInput}
+                  />
+                  <DatePicker
+                    value={filters.timeRange.end}
+                    onDateChange={(time) => setFilters(prev => ({ ...prev, timeRange: { ...prev.timeRange, end: time } }))}
+                    placeholder="End Time"
+                    mode="time"
+                    style={styles.timeInput}
+                  />
+                </View>
+              </View>
+
+              {/* Preferences */}
+              <View style={styles.filterSection}>
+                <PreferencesSelector
+                  preferences={filters.preferences}
+                  onPreferencesChange={(prefs) => setFilters(prev => ({ ...prev, preferences: prefs }))}
+                  mode="passenger"
+                />
+              </View>
+            </ScrollView>
+
+            <View style={styles.filtersActions}>
+              <TouchableOpacity
+                style={[styles.clearFiltersButton, { backgroundColor: theme.colors.surface }]}
+                onPress={clearAllFilters}
+              >
+                <Text style={[styles.clearFiltersText, { color: theme.colors.textSecondary }]}>
+                  Clear All
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.applyFiltersButton, { backgroundColor: theme.colors.primary }]}
+                onPress={() => {
+                  setShowFilters(false);
+                  handleSearch();
+                }}
+              >
+                <Text style={styles.applyFiltersText}>Apply Filters</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <FlatList
         data={searchResults}
@@ -231,22 +408,10 @@ const styles = StyleSheet.create({
   },
   filterButton: {
     padding: 8,
+    position: 'relative',
   },
   searchContainer: {
     gap: 12,
-  },
-  searchInput: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 12,
-  },
-  input: {
-    flex: 1,
-    fontSize: 16,
   },
   searchButton: {
     flexDirection: 'row',
@@ -367,5 +532,109 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 16,
     textAlign: 'center',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  filtersModal: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '90%',
+  },
+  filtersHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  filtersTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  filtersContent: {
+    padding: 20,
+  },
+  filterSection: {
+    marginBottom: 24,
+  },
+  filterTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  priceRange: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  priceInput: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  priceText: {
+    fontSize: 16,
+  },
+  priceRangeSeparator: {
+    fontSize: 14,
+  },
+  seatsSelector: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  seatOption: {
+    flex: 1,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 12,
+  },
+  seatOptionText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  timeRange: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  timeInput: {
+    flex: 1,
+  },
+  filtersActions: {
+    flexDirection: 'row',
+    padding: 20,
+    gap: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+  },
+  clearFiltersButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  clearFiltersText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  applyFiltersButton: {
+    flex: 2,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  applyFiltersText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

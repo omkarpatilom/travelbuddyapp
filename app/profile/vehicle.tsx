@@ -12,6 +12,7 @@ import {
 import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Car, Hash, Palette, Calendar, Users, ArrowLeft, Save, Plus } from 'lucide-react-native';
+import PhotoUploader from '@/components/PhotoUploader';
 
 interface Vehicle {
   id: string;
@@ -21,6 +22,7 @@ interface Vehicle {
   color: string;
   licensePlate: string;
   seats: string;
+  photos: string[];
   isDefault: boolean;
 }
 
@@ -38,6 +40,7 @@ export default function VehicleDetailsScreen() {
       color: 'Blue',
       licensePlate: 'ABC123',
       seats: '4',
+      photos: ['https://images.pexels.com/photos/116675/pexels-photo-116675.jpeg?auto=compress&cs=tinysrgb&w=400'],
       isDefault: true,
     }
   ]);
@@ -53,6 +56,7 @@ export default function VehicleDetailsScreen() {
     color: '',
     licensePlate: '',
     seats: '4',
+    photos: [] as string[],
   });
 
   const updateFormData = (field: string, value: string) => {
@@ -80,14 +84,15 @@ export default function VehicleDetailsScreen() {
       color: vehicle.color,
       licensePlate: vehicle.licensePlate,
       seats: vehicle.seats,
+      photos: vehicle.photos,
     });
     setEditingVehicle(vehicle);
     setIsEditing(true);
   };
 
   const handleSaveVehicle = async () => {
-    if (!formData.make || !formData.model || !formData.year || !formData.color || !formData.licensePlate) {
-      Alert.alert('Missing Information', 'Please fill in all fields');
+    if (!formData.make || !formData.model || !formData.year || !formData.color || !formData.licensePlate || formData.photos.length < 3) {
+      Alert.alert('Missing Information', 'Please fill in all fields and add at least 3 photos');
       return;
     }
 
@@ -155,6 +160,9 @@ export default function VehicleDetailsScreen() {
           </Text>
           <Text style={[styles.vehicleDetails, { color: theme.colors.textSecondary }]}>
             {vehicle.color} • {vehicle.licensePlate} • {vehicle.seats} seats
+          </Text>
+          <Text style={[styles.vehiclePhotos, { color: theme.colors.textSecondary }]}>
+            {vehicle.photos.length} photo{vehicle.photos.length !== 1 ? 's' : ''}
           </Text>
         </View>
         {vehicle.isDefault && (
@@ -291,6 +299,13 @@ export default function VehicleDetailsScreen() {
               </View>
             </View>
           </View>
+
+          <PhotoUploader
+            photos={formData.photos}
+            onPhotosChange={(photos) => updateFormData('photos', photos)}
+            minPhotos={3}
+            maxPhotos={8}
+          />
 
           <TouchableOpacity 
             style={[styles.saveButtonLarge, { backgroundColor: theme.colors.primary }]}
@@ -455,6 +470,10 @@ const styles = StyleSheet.create({
   },
   vehicleDetails: {
     fontSize: 14,
+  },
+  vehiclePhotos: {
+    fontSize: 12,
+    marginTop: 2,
   },
   defaultBadge: {
     paddingVertical: 4,
