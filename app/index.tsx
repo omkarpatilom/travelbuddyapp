@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, Image, StyleSheet, Animated } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { storage, StorageKeys } from '@/utils/storage';
 import { useTheme } from '@/contexts/ThemeContext';
 
 // Prevent splash screen from auto-hiding
@@ -35,7 +35,7 @@ export default function SplashScreenComponent() {
 
       // Check for existing token
       try {
-        const token = await AsyncStorage.getItem('authToken');
+        const token = await storage.getItem<string>(StorageKeys.AUTH_TOKEN);
         if (token) {
           router.replace('/(tabs)/home');
         } else {

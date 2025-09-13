@@ -12,7 +12,8 @@ import {
 import * as Location from 'expo-location';
 import { useTheme } from '@/contexts/ThemeContext';
 import { MapPin, Navigation, Clock } from 'lucide-react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { storage, StorageKeys } from '@/utils/storage';
+import { requestLocationPermission } from '@/utils/permissions';
 
 interface LocationPickerProps {
   value: string;
@@ -49,9 +50,9 @@ export default function LocationPicker({
 
   const loadRecentLocations = async () => {
     try {
-      const stored = await AsyncStorage.getItem('recentLocations');
+      const stored = await storage.getItem<RecentLocation[]>(StorageKeys.RECENT_LOCATIONS);
       if (stored) {
-        setRecentLocations(JSON.parse(stored));
+        setRecentLocations(stored);
       }
     } catch (error) {
       console.error('Error loading recent locations:', error);
@@ -63,7 +64,7 @@ export default function LocationPicker({
       const updated = [location, ...recentLocations.filter(l => l.address !== location.address)]
         .slice(0, 5); // Keep only 5 recent locations
       setRecentLocations(updated);
-      await AsyncStorage.setItem('recentLocations', JSON.stringify(updated));
+      await storage.setItem(StorageKeys.RECENT_LOCATIONS, updated);
     } catch (error) {
       console.error('Error saving recent location:', error);
     }
@@ -72,17 +73,9 @@ export default function LocationPicker({
   const getCurrentLocation = async () => {
     setIsLoadingLocation(true);
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
+      const permission = await requestLocationPermission();
       
-      if (status !== 'granted') {
-        Alert.alert(
-          'Permission Required',
-          'Location permission is needed to use current location',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Settings', onPress: () => Location.requestForegroundPermissionsAsync() },
-          ]
-        );
+      if (!permission.granted) {
         return;
       }
 

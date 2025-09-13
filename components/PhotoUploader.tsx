@@ -12,6 +12,7 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Camera, Plus, X, CreditCard as Edit } from 'lucide-react-native';
+import { requestCameraPermission, requestMediaLibraryPermission } from '@/utils/permissions';
 
 interface PhotoUploaderProps {
   photos: string[];
@@ -31,21 +32,6 @@ export default function PhotoUploader({
   const [isUploading, setIsUploading] = useState(false);
   const { theme } = useTheme();
 
-  const requestPermissions = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert(
-        'Permission Required',
-        'Please grant camera roll permissions to upload photos',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Settings', onPress: () => ImagePicker.requestMediaLibraryPermissionsAsync() },
-        ]
-      );
-      return false;
-    }
-    return true;
-  };
 
   const pickImage = async () => {
     if (photos.length >= maxPhotos) {
@@ -53,8 +39,8 @@ export default function PhotoUploader({
       return;
     }
 
-    const hasPermission = await requestPermissions();
-    if (!hasPermission) return;
+    const permission = await requestMediaLibraryPermission();
+    if (!permission.granted) return;
 
     setIsUploading(true);
     try {
@@ -84,9 +70,8 @@ export default function PhotoUploader({
       return;
     }
 
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission Required', 'Please grant camera permissions to take photos');
+    const permission = await requestCameraPermission();
+    if (!permission.granted) {
       return;
     }
 
@@ -126,8 +111,8 @@ export default function PhotoUploader({
   };
 
   const editPhoto = async (index: number) => {
-    const hasPermission = await requestPermissions();
-    if (!hasPermission) return;
+    const permission = await requestMediaLibraryPermission();
+    if (!permission.granted) return;
 
     try {
       const result = await ImagePicker.launchImageLibraryAsync({

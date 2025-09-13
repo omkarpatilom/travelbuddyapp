@@ -30,6 +30,7 @@ export default function TabLayout() {
           tabBarIcon: ({ size, color }) => (
             <Home size={size} color={color} />
           ),
+          tabBarBadge: undefined,
         }}
       />
       <Tabs.Screen
@@ -39,6 +40,7 @@ export default function TabLayout() {
           tabBarIcon: ({ size, color }) => (
             <Calendar size={size} color={color} />
           ),
+          tabBarBadge: undefined,
         }}
       />
       <Tabs.Screen
@@ -48,6 +50,7 @@ export default function TabLayout() {
           tabBarIcon: ({ size, color }) => (
             <Car size={size} color={color} />
           ),
+          tabBarBadge: undefined,
         }}
       />
       <Tabs.Screen
@@ -57,6 +60,7 @@ export default function TabLayout() {
           tabBarIcon: ({ size, color }) => (
             <Bell size={size} color={color} />
           ),
+          tabBarBadge: undefined,
         }}
       />
       <Tabs.Screen
@@ -66,6 +70,7 @@ export default function TabLayout() {
           tabBarIcon: ({ size, color }) => (
             <User size={size} color={color} />
           ),
+          tabBarBadge: undefined,
         }}
       />
     </Tabs>

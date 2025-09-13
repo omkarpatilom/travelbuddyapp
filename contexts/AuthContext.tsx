@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { storage, StorageKeys } from '@/utils/storage';
+import { validateEmail, validatePassword } from '@/utils/validation';
 
 export interface User {
   id: string;
@@ -42,11 +43,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const checkAuthStatus = async () => {
     try {
-      const token = await AsyncStorage.getItem('authToken');
-      const userData = await AsyncStorage.getItem('userData');
+      const token = await storage.getItem<string>(StorageKeys.AUTH_TOKEN);
+      const userData = await storage.getItem(StorageKeys.USER_DATA);
       
       if (token && userData) {
-        setUser(JSON.parse(userData));
+        setUser(userData);
       }
     } catch (error) {
       console.error('Error checking auth status:', error);
@@ -56,6 +57,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const login = async (email: string, password: string): Promise<boolean> => {
+    if (!validateEmail(email)) {
+      return false;
+    }
+
     setIsLoading(true);
     try {
       // Mock authentication - replace with real API call
@@ -76,8 +81,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Mock validation
       if (email === 'demo@travelbuddy.com' && password === 'password') {
         const token = 'mock-jwt-token-' + Date.now();
-        await AsyncStorage.setItem('authToken', token);
-        await AsyncStorage.setItem('userData', JSON.stringify(mockUser));
+        await storage.setItem(StorageKeys.AUTH_TOKEN, token);
+        await storage.setItem(StorageKeys.USER_DATA, mockUser);
         setUser(mockUser);
         return true;
       }
@@ -91,6 +96,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const register = async (userData: RegisterData): Promise<boolean> => {
+    if (!validateEmail(userData.email)) {
+      return false;
+    }
+
+    const passwordValidation = validatePassword(userData.password);
+    if (!passwordValidation.isValid) {
+      return false;
+    }
+
     setIsLoading(true);
     try {
       // Mock registration - replace with real API call
@@ -109,8 +123,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await new Promise(resolve => setTimeout(resolve, 1000));
 
       const token = 'mock-jwt-token-' + Date.now();
-      await AsyncStorage.setItem('authToken', token);
-      await AsyncStorage.setItem('userData', JSON.stringify(newUser));
+      await storage.setItem(StorageKeys.AUTH_TOKEN, token);
+      await storage.setItem(StorageKeys.USER_DATA, newUser);
       setUser(newUser);
       return true;
     } catch (error) {
@@ -123,8 +137,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     try {
-      await AsyncStorage.removeItem('authToken');
-      await AsyncStorage.removeItem('userData');
+      await storage.removeItem(StorageKeys.AUTH_TOKEN);
+      await storage.removeItem(StorageKeys.USER_DATA);
       setUser(null);
     } catch (error) {
       console.error('Logout error:', error);
@@ -135,7 +149,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       if (user) {
         const updatedUser = { ...user, ...userData };
-        await AsyncStorage.setItem('userData', JSON.stringify(updatedUser));
+        await storage.setItem(StorageKeys.USER_DATA, updatedUser);
         setUser(updatedUser);
       }
     } catch (error) {

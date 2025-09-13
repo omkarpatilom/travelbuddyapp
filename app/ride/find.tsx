@@ -88,14 +88,23 @@ export default function FindRideScreen() {
       
       // Time range filter
       if (filters.timeRange.start && filters.timeRange.end) {
-        const rideTime = new Date(`2000-01-01 ${ride.time}`);
-        const startTime = new Date(`2000-01-01 ${filters.timeRange.start.toLocaleTimeString()}`);
-        const endTime = new Date(`2000-01-01 ${filters.timeRange.end.toLocaleTimeString()}`);
+        const [rideHour, rideMinute] = ride.time.split(':').map(Number);
+        const rideTimeMinutes = rideHour * 60 + rideMinute;
         
-        if (rideTime < startTime || rideTime > endTime) {
+        const startTimeMinutes = filters.timeRange.start.getHours() * 60 + filters.timeRange.start.getMinutes();
+        const endTimeMinutes = filters.timeRange.end.getHours() * 60 + filters.timeRange.end.getMinutes();
+        
+        if (rideTimeMinutes < startTimeMinutes || rideTimeMinutes > endTimeMinutes) {
           return false;
         }
       }
+      
+      // Preferences filter
+      const { preferences } = filters;
+      if (preferences.nonSmoking && !ride.preferences?.nonSmoking) return false;
+      if (preferences.musicAllowed && !ride.preferences?.musicAllowed) return false;
+      if (preferences.petsAllowed && !ride.preferences?.petsAllowed) return false;
+      if (preferences.airConditioning && !ride.preferences?.airConditioning) return false;
       
       return true;
     });
@@ -121,9 +130,12 @@ export default function FindRideScreen() {
     if (filters.priceRange.min > 0 || filters.priceRange.max < 100) count++;
     if (filters.minSeats > 1) count++;
     if (filters.timeRange.start || filters.timeRange.end) count++;
-    if (Object.values(filters.preferences).some(v => v !== false && v !== 'moderate')) count++;
+    const prefValues = Object.values(filters.preferences);
+    if (prefValues.some(v => v !== false && v !== 'moderate')) count++;
     return count;
   };
+
+  const activeFiltersCount = getActiveFiltersCount();
   const renderRide = ({ item }: { item: any }) => (
     <TouchableOpacity 
       style={[styles.rideCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}

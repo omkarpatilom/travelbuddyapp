@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useColorScheme } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { storage, StorageKeys } from '@/utils/storage';
 
 export interface Theme {
   colors: {
@@ -125,7 +125,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   const loadThemePreference = async () => {
     try {
-      const savedTheme = await AsyncStorage.getItem('themePreference');
+      const savedTheme = await storage.getItem<string>(StorageKeys.THEME_PREFERENCE);
       if (savedTheme !== null) {
         setIsDark(savedTheme === 'dark');
       }
@@ -138,7 +138,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const newIsDark = !isDark;
     setIsDark(newIsDark);
     try {
-      await AsyncStorage.setItem('themePreference', newIsDark ? 'dark' : 'light');
+      await storage.setItem(StorageKeys.THEME_PREFERENCE, newIsDark ? 'dark' : 'light');
     } catch (error) {
       console.error('Error saving theme preference:', error);
     }
