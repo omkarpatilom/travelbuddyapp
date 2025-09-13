@@ -15,18 +15,7 @@ import * as Location from 'expo-location';
 import * as SMS from 'expo-sms';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useNotifications } from '@/contexts/NotificationContext';
-import { 
-  Shield, 
-  Phone, 
-  MapPin, 
-  Users, 
-  Plus, 
-  X, 
-  AlertTriangle,
-  Camera,
-  FileText,
-  CheckCircle
-} from 'lucide-react-native';
+import { Shield, Phone, MapPin, Users, Plus, X, TriangleAlert as AlertTriangle, Camera, FileText, CircleCheck as CheckCircle } from 'lucide-react-native';
 import { requestLocationPermission } from '@/utils/permissions';
 
 interface EmergencyContact {
