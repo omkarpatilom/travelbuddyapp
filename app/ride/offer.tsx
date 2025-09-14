@@ -16,6 +16,7 @@ import DatePicker from '@/components/DatePicker';
 import LocationPicker from '@/components/LocationPicker';
 import VehicleSelector from '@/components/VehicleSelector';
 import PreferencesSelector, { RidePreferences } from '@/components/PreferencesSelector';
+import MapLocationSelector from '@/components/MapLocationSelector';
 
 export default function OfferRideScreen() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
@@ -27,6 +28,8 @@ export default function OfferRideScreen() {
     price: '',
     description: '',
   });
+  const [fromLocationData, setFromLocationData] = useState<any>(null);
+  const [toLocationData, setToLocationData] = useState<any>(null);
   
   // Mock vehicles data - in real app, this would come from user's vehicles
   const [vehicles] = useState([
@@ -162,6 +165,17 @@ export default function OfferRideScreen() {
         <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Route Details</Text>
           
+          <MapLocationSelector
+            fromLocation={fromLocationData}
+            toLocation={toLocationData}
+            onLocationsSelected={(from, to) => {
+              setFromLocationData(from);
+              setToLocationData(to);
+              updateFormData('from', from.address);
+              updateFormData('to', to.address);
+            }}
+          />
+
           <LocationPicker
             value={formData.from}
             onLocationChange={(location) => updateFormData('from', location)}

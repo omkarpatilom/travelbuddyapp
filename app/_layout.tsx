@@ -26,6 +26,7 @@ export default function RootLayout() {
                 <Stack.Screen name="ride/offer" />
                 <Stack.Screen name="ride/find" />
                 <Stack.Screen name="ride/book" />
+                <Stack.Screen name="ride/map-select" />
                 <Stack.Screen name="booking/details" />
                 <Stack.Screen name="profile/edit" />
                 <Stack.Screen name="profile/vehicle" />

@@ -19,12 +19,15 @@ import { mockRides } from '@/data/mockData';
 import DatePicker from '@/components/DatePicker';
 import LocationPicker from '@/components/LocationPicker';
 import PreferencesSelector, { RidePreferences } from '@/components/PreferencesSelector';
+import MapLocationSelector from '@/components/MapLocationSelector';
 
 export default function FindRideScreen() {
   const [fromLocation, setFromLocation] = useState('');
   const [toLocation, setToLocation] = useState('');
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [searchResults, setSearchResults] = useState(mockRides);
+  const [fromLocationData, setFromLocationData] = useState<any>(null);
+  const [toLocationData, setToLocationData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   
@@ -51,6 +54,23 @@ export default function FindRideScreen() {
     if (params.from) setFromLocation(decodeURIComponent(params.from as string));
     if (params.to) setToLocation(decodeURIComponent(params.to as string));
     if (params.date) setSelectedDate(new Date(params.date as string));
+    
+    // Handle locations from map selection
+    if (params.fromLocation) {
+      const fromData = JSON.parse(params.fromLocation as string);
+      setFromLocationData(fromData);
+      setFromLocation(fromData.address);
+    }
+    if (params.toLocation) {
+      const toData = JSON.parse(params.toLocation as string);
+      setToLocationData(toData);
+      setToLocation(toData.address);
+    }
+    
+    // Auto-search if locations are provided from map
+    if (params.fromMap === 'true' && params.fromLocation && params.toLocation) {
+      handleSearch();
+    }
   }, [params]);
 
   const handleSearch = async () => {
@@ -219,6 +239,17 @@ export default function FindRideScreen() {
         </View>
 
         <View style={styles.searchContainer}>
+          <MapLocationSelector
+            fromLocation={fromLocationData}
+            toLocation={toLocationData}
+            onLocationsSelected={(from, to) => {
+              setFromLocationData(from);
+              setToLocationData(to);
+              setFromLocation(from.address);
+              setToLocation(to.address);
+            }}
+          />
+
           <LocationPicker
             value={fromLocation}
             onLocationChange={setFromLocation}
