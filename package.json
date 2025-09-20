@@ -39,7 +39,7 @@
     "react-native": "0.79.1",
     "react-native-gesture-handler": "~2.24.0",
     "react-native-google-places-autocomplete": "~2.5.6",
-    "react-native-maps": "^1.19.0",
+    "react-native-maps": "^1.26.0",
     "react-native-maps-directions": "~1.9.0",
     "react-native-modal-datetime-picker": "^18.0.0",
     "react-native-ratings": "~8.1.0",
