@@ -10,12 +10,11 @@ import {
   Alert,
   ActivityIndicator,
   Modal,
-  TextInput,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useRides } from '@/contexts/RideContext';
-import { Search, MapPin, Calendar, Clock, Star, Users, Filter, ArrowLeft, X, DollarSign, CreditCard as Edit3, Check } from 'lucide-react-native';
+import { Search, MapPin, Calendar, Clock, Star, Users, Filter, ArrowLeft, X, DollarSign } from 'lucide-react-native';
 import { mockRides } from '@/data/mockData';
 import DatePicker from '@/components/DatePicker';
 import LocationPicker from '@/components/LocationPicker';
@@ -31,9 +30,6 @@ export default function FindRideScreen() {
   const [toLocationData, setToLocationData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
-  const [isEditingLocations, setIsEditingLocations] = useState(false);
-  const [tempFromLocation, setTempFromLocation] = useState('');
-  const [tempToLocation, setTempToLocation] = useState('');
   
   // Advanced filters
   const [filters, setFilters] = useState({
@@ -77,31 +73,6 @@ export default function FindRideScreen() {
     }
   }, [params]);
 
-  const handleEditLocations = () => {
-    setTempFromLocation(fromLocation);
-    setTempToLocation(toLocation);
-    setIsEditingLocations(true);
-  };
-
-  const handleSaveLocations = () => {
-    if (!tempFromLocation || !tempToLocation) {
-      Alert.alert('Missing Information', 'Please enter both pickup and destination locations');
-      return;
-    }
-    
-    setFromLocation(tempFromLocation);
-    setToLocation(tempToLocation);
-    setIsEditingLocations(false);
-    
-    // Auto-search with new locations
-    handleSearch();
-  };
-
-  const handleCancelEdit = () => {
-    setTempFromLocation(fromLocation);
-    setTempToLocation(toLocation);
-    setIsEditingLocations(false);
-  };
   const handleSearch = async () => {
     if (!fromLocation || !toLocation) {
       Alert.alert('Missing Information', 'Please enter both pickup and destination locations');
@@ -279,38 +250,17 @@ export default function FindRideScreen() {
             }}
           />
 
-          {/* Editable Location Display */}
-          <View style={[styles.locationDisplayContainer, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
-            <View style={styles.locationDisplayHeader}>
-              <Text style={[styles.locationDisplayTitle, { color: theme.colors.text }]}>
-                Search Route
-              </Text>
-              <TouchableOpacity 
-                style={[styles.editLocationButton, { backgroundColor: theme.colors.primary + '20' }]}
-                onPress={handleEditLocations}
-              >
-                <Edit3 size={16} color={theme.colors.primary} />
-                <Text style={[styles.editLocationText, { color: theme.colors.primary }]}>
-                  Edit
-                </Text>
-              </TouchableOpacity>
-            </View>
-            
-            <View style={styles.locationDisplay}>
-              <View style={styles.locationRow}>
-                <MapPin size={16} color={theme.colors.secondary} />
-                <Text style={[styles.locationText, { color: theme.colors.text }]} numberOfLines={1}>
-                  From: {fromLocation || 'Select pickup location'}
-                </Text>
-              </View>
-              <View style={styles.locationRow}>
-                <MapPin size={16} color={theme.colors.error} />
-                <Text style={[styles.locationText, { color: theme.colors.text }]} numberOfLines={1}>
-                  To: {toLocation || 'Select destination'}
-                </Text>
-              </View>
-            </View>
-          </View>
+          <LocationPicker
+            value={fromLocation}
+            onLocationChange={setFromLocation}
+            placeholder="From"
+          />
+
+          <LocationPicker
+            value={toLocation}
+            onLocationChange={setToLocation}
+            placeholder="To"
+          />
 
           <DatePicker
             value={selectedDate}
@@ -336,59 +286,6 @@ export default function FindRideScreen() {
         </View>
       </View>
 
-      {/* Location Edit Modal */}
-      <Modal
-        visible={isEditingLocations}
-        transparent
-        animationType="slide"
-        onRequestClose={handleCancelEdit}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.editLocationModal, { backgroundColor: theme.colors.card }]}>
-            <View style={styles.editModalHeader}>
-              <Text style={[styles.editModalTitle, { color: theme.colors.text }]}>
-                Edit Locations
-              </Text>
-              <TouchableOpacity onPress={handleCancelEdit}>
-                <X size={24} color={theme.colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.editModalContent}>
-              <LocationPicker
-                value={tempFromLocation}
-                onLocationChange={setTempFromLocation}
-                placeholder="From (pickup location)"
-              />
-
-              <LocationPicker
-                value={tempToLocation}
-                onLocationChange={setTempToLocation}
-                placeholder="To (destination)"
-              />
-
-              <View style={styles.editModalActions}>
-                <TouchableOpacity
-                  style={[styles.cancelEditButton, { backgroundColor: theme.colors.surface }]}
-                  onPress={handleCancelEdit}
-                >
-                  <Text style={[styles.cancelEditText, { color: theme.colors.textSecondary }]}>
-                    Cancel
-                  </Text>
-                </TouchableOpacity>
-                
-                <TouchableOpacity
-                  style={[styles.saveEditButton, { backgroundColor: theme.colors.primary }]}
-                  onPress={handleSaveLocations}
-                >
-                  <Check size={20} color="#FFFFFF" />
-                  <Text style={styles.saveEditText}>Update & Search</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </View>
-      </Modal>
       {/* Advanced Filters Modal */}
       <Modal
         visible={showFilters}
@@ -569,95 +466,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   searchButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  locationDisplayContainer: {
-    borderWidth: 1,
-    borderRadius: 16,
-    padding: 16,
-    gap: 12,
-  },
-  locationDisplayHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  locationDisplayTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  editLocationButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 16,
-    gap: 4,
-  },
-  editLocationText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  locationDisplay: {
-    gap: 8,
-  },
-  locationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  locationText: {
-    flex: 1,
-    fontSize: 14,
-  },
-  editLocationModal: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: '80%',
-  },
-  editModalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-  },
-  editModalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  editModalContent: {
-    padding: 20,
-    gap: 16,
-  },
-  editModalActions: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 16,
-  },
-  cancelEditButton: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  cancelEditText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  saveEditButton: {
-    flex: 2,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    borderRadius: 12,
-    gap: 8,
-  },
-  saveEditText: {
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
