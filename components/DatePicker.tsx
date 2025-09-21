@@ -28,7 +28,7 @@ export default function DatePicker({
 
   const formatDate = (date: Date) => {
     if (mode === 'time') {
-      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
     }
     if (mode === 'datetime') {
       return date.toLocaleString([], {
@@ -37,6 +37,7 @@ export default function DatePicker({
         day: '2-digit',
         hour: '2-digit',
         minute: '2-digit',
+        hour12: false,
       });
     }
     return date.toLocaleDateString([], {

@@ -225,23 +225,65 @@ export default function OfferRideScreen() {
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Ride Details</Text>
           
           <View style={styles.row}>
-            <TouchableOpacity style={[styles.inputContainer, styles.halfWidth, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+            <View style={[styles.inputContainer, styles.halfWidth, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
               <Users size={20} color={theme.colors.textSecondary} />
-              <Text
-                style={[styles.input, { color: theme.colors.text }]}
+              <TouchableOpacity 
+                style={styles.seatSelector}
+                onPress={() => {
+                  Alert.prompt(
+                    'Number of Seats',
+                    'Enter the number of available seats (1-8)',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      { 
+                        text: 'OK', 
+                        onPress: (value) => {
+                          if (value && parseInt(value) >= 1 && parseInt(value) <= 8) {
+                            updateFormData('seats', value);
+                          }
+                        }
+                      }
+                    ],
+                    'plain-text',
+                    formData.seats
+                  );
+                }}
               >
-                {formData.seats} seat{parseInt(formData.seats) > 1 ? 's' : ''}
-              </Text>
-            </TouchableOpacity>
+                <Text style={[styles.input, { color: theme.colors.text }]}>
+                  {formData.seats} seat{parseInt(formData.seats) > 1 ? 's' : ''}
+                </Text>
+              </TouchableOpacity>
+            </View>
 
-            <TouchableOpacity style={[styles.inputContainer, styles.halfWidth, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+            <View style={[styles.inputContainer, styles.halfWidth, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
               <DollarSign size={20} color={theme.colors.textSecondary} />
-              <Text
-                style={[styles.input, { color: theme.colors.text }]}
+              <TouchableOpacity 
+                style={styles.priceSelector}
+                onPress={() => {
+                  Alert.prompt(
+                    'Price per Seat',
+                    'Enter the price per seat in dollars',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      { 
+                        text: 'OK', 
+                        onPress: (value) => {
+                          if (value && parseFloat(value) > 0) {
+                            updateFormData('price', value);
+                          }
+                        }
+                      }
+                    ],
+                    'plain-text',
+                    formData.price
+                  );
+                }}
               >
-                ${formData.price || '0'} per seat
-              </Text>
-            </TouchableOpacity>
+                <Text style={[styles.input, { color: theme.colors.text }]}>
+                  ${formData.price || '0'} per seat
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
 
@@ -321,6 +363,12 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     fontSize: 16,
+  },
+  seatSelector: {
+    flex: 1,
+  },
+  priceSelector: {
+    flex: 1,
   },
   row: {
     flexDirection: 'row',

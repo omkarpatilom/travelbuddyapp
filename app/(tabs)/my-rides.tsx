@@ -25,7 +25,10 @@ export default function MyRidesScreen() {
   const userRides = mockRides.filter(ride => ride.driverId === user?.id || ride.driverId === '1');
 
   const handleEditRide = (rideId: string) => {
-    router.push(`/ride/offer?edit=${rideId}`);
+    router.push({
+      pathname: '/ride/offer',
+      params: { edit: rideId }
+    });
   };
 
   const handleCancelRide = (rideId: string) => {
