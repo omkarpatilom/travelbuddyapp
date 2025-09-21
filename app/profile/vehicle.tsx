@@ -8,13 +8,13 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
+  Switch,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
-import { Car, Hash, Palette, Calendar, Users, ArrowLeft, Save, Plus } from 'lucide-react-native';
+import { Car, Hash, Palette, Calendar, Users, ArrowLeft, Save, Plus, Settings, Cigarette, Music, Heart, Wind, MessageCircle } from 'lucide-react-native';
 import PhotoUploader from '@/components/PhotoUploader';
 import VehicleFeatureTags from '@/components/VehicleFeatureTags';
-import RidePreferences, { UniversalRidePreferences } from '@/components/RidePreferences';
 
 interface Vehicle {
   id: string;
@@ -27,7 +27,19 @@ interface Vehicle {
   photos: string[];
   isDefault: boolean;
   features: string[];
-  preferences?: UniversalRidePreferences;
+  preferences?: RidePreferences;
+}
+
+interface RidePreferences {
+  nonSmoking: boolean;
+  musicAllowed: boolean;
+  petsAllowed: boolean;
+  airConditioning: boolean;
+  conversationLevel: 'quiet' | 'moderate' | 'chatty';
+  maxPassengers: number;
+  instantBooking: boolean;
+  femalePassengersOnly: boolean;
+  verifiedPassengersOnly: boolean;
 }
 
 export default function VehicleDetailsScreen() {
@@ -55,8 +67,8 @@ export default function VehicleDetailsScreen() {
         conversationLevel: 'moderate',
         maxPassengers: 3,
         instantBooking: false,
-        femalePassengersOnly: false,
         verifiedPassengersOnly: true,
+        femalePassengersOnly: false,
       },
     }
   ]);
@@ -82,9 +94,9 @@ export default function VehicleDetailsScreen() {
       conversationLevel: 'moderate' as const,
       maxPassengers: 4,
       instantBooking: false,
-      femalePassengersOnly: false,
       verifiedPassengersOnly: false,
-    } as UniversalRidePreferences,
+      femalePassengersOnly: false,
+    } as RidePreferences,
   });
 
   const updateFormData = (field: string, value: string) => {
@@ -167,6 +179,81 @@ export default function VehicleDetailsScreen() {
     }
   };
 
+  const updatePreference = (key: keyof RidePreferences, value: any) => {
+    setFormData(prev => ({
+      ...prev,
+      preferences: {
+        ...prev.preferences,
+        [key]: value,
+      },
+    }));
+  };
+
+  const renderPreferenceToggle = (
+    key: keyof RidePreferences,
+    label: string,
+    icon: React.ReactNode,
+    value: boolean
+  ) => (
+    <View style={[styles.preferenceItem, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+      <View style={styles.preferenceContent}>
+        <View style={[styles.iconContainer, { backgroundColor: value ? theme.colors.primary : theme.colors.background }]}>
+          {React.cloneElement(icon as React.ReactElement, {
+            size: 20,
+            color: value ? '#FFFFFF' : theme.colors.textSecondary,
+          })}
+        </View>
+        <View style={styles.preferenceText}>
+          <Text style={[styles.preferenceLabel, { color: theme.colors.text }]}>
+            {label}
+          </Text>
+        </View>
+      </View>
+      <Switch
+        value={value}
+        onValueChange={(newValue) => updatePreference(key, newValue)}
+        trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
+        thumbColor={value ? '#FFFFFF' : '#f4f3f4'}
+      />
+    </View>
+  );
+
+  const renderConversationSelector = () => {
+    const conversationLevels = [
+      { key: 'quiet', label: 'Quiet', icon: '🤫' },
+      { key: 'moderate', label: 'Moderate', icon: '😊' },
+      { key: 'chatty', label: 'Chatty', icon: '😄' },
+    ];
+
+    return (
+      <View style={styles.conversationSection}>
+        <Text style={[styles.conversationTitle, { color: theme.colors.text }]}>
+          Conversation Level
+        </Text>
+        <View style={styles.conversationOptions}>
+          {conversationLevels.map((level) => (
+            <TouchableOpacity
+              key={level.key}
+              style={[
+                styles.conversationOption,
+                { backgroundColor: theme.colors.surface, borderColor: theme.colors.border },
+                formData.preferences.conversationLevel === level.key && {
+                  borderColor: theme.colors.primary,
+                  backgroundColor: theme.colors.primary + '10',
+                },
+              ]}
+              onPress={() => updatePreference('conversationLevel', level.key)}
+            >
+              <Text style={styles.conversationEmoji}>{level.icon}</Text>
+              <Text style={[styles.conversationLabel, { color: theme.colors.text }]}>
+                {level.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+    );
+  };
   const handleDeleteVehicle = (vehicleId: string) => {
     Alert.alert(
       'Delete Vehicle',
@@ -355,13 +442,60 @@ export default function VehicleDetailsScreen() {
             onFeaturesChange={(features) => updateFormData('features', features)}
           />
 
-          <RidePreferences
-            preferences={formData.preferences}
-            onPreferencesChange={(preferences) => updateFormData('preferences', preferences)}
-            mode="driver"
-            canOverride={true}
-          />
+          {/* Vehicle Ride Preferences */}
+          <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+            <View style={styles.preferencesHeader}>
+              <Settings size={24} color={theme.colors.primary} />
+              <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+                Ride Preferences
+              </Text>
+            </View>
+            
+            <Text style={[styles.preferencesDescription, { color: theme.colors.textSecondary }]}>
+              Set your preferences for rides with this vehicle
+            </Text>
 
+            <View style={styles.preferencesGrid}>
+              {renderPreferenceToggle('nonSmoking', 'Non-smoking vehicle', <Cigarette />, formData.preferences.nonSmoking)}
+              {renderPreferenceToggle('musicAllowed', 'Music allowed', <Music />, formData.preferences.musicAllowed)}
+              {renderPreferenceToggle('petsAllowed', 'Pet friendly', <Heart />, formData.preferences.petsAllowed)}
+              {renderPreferenceToggle('airConditioning', 'Air conditioning', <Wind />, formData.preferences.airConditioning)}
+              {renderPreferenceToggle('instantBooking', 'Instant booking', <Car />, formData.preferences.instantBooking)}
+              {renderPreferenceToggle('verifiedPassengersOnly', 'Verified passengers only', <Settings />, formData.preferences.verifiedPassengersOnly)}
+              {renderPreferenceToggle('femalePassengersOnly', 'Female passengers only', <Users />, formData.preferences.femalePassengersOnly)}
+            </View>
+
+            {renderConversationSelector()}
+
+            <View style={styles.maxPassengersSection}>
+              <Text style={[styles.maxPassengersTitle, { color: theme.colors.text }]}>
+                Maximum Passengers
+              </Text>
+              <View style={styles.maxPassengersOptions}>
+                {[1, 2, 3, 4, 5, 6].map((num) => (
+                  <TouchableOpacity
+                    key={num}
+                    style={[
+                      styles.maxPassengersOption,
+                      { backgroundColor: theme.colors.surface, borderColor: theme.colors.border },
+                      formData.preferences.maxPassengers === num && {
+                        borderColor: theme.colors.primary,
+                        backgroundColor: theme.colors.primary + '10',
+                      },
+                    ]}
+                    onPress={() => updatePreference('maxPassengers', num)}
+                  >
+                    <Text style={[
+                      styles.maxPassengersText,
+                      { color: formData.preferences.maxPassengers === num ? theme.colors.primary : theme.colors.text }
+                    ]}>
+                      {num}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          </View>
           <TouchableOpacity 
             style={[styles.saveButtonLarge, { backgroundColor: theme.colors.primary }]}
             onPress={handleSaveVehicle}
@@ -499,6 +633,101 @@ const styles = StyleSheet.create({
   saveButtonText: {
     color: '#FFFFFF',
     fontSize: 18,
+    fontWeight: '600',
+  },
+  preferencesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 8,
+  },
+  preferencesDescription: {
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 20,
+  },
+  preferencesGrid: {
+    gap: 12,
+    marginBottom: 20,
+  },
+  preferenceItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 16,
+  },
+  preferenceContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  iconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  preferenceText: {
+    flex: 1,
+  },
+  preferenceLabel: {
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  conversationSection: {
+    marginBottom: 20,
+  },
+  conversationTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  conversationOptions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  conversationOption: {
+    flex: 1,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 8,
+    gap: 8,
+  },
+  conversationEmoji: {
+    fontSize: 24,
+  },
+  conversationLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  maxPassengersSection: {
+    marginBottom: 20,
+  },
+  maxPassengersTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  maxPassengersOptions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  maxPassengersOption: {
+    flex: 1,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 12,
+  },
+  maxPassengersText: {
+    fontSize: 16,
     fontWeight: '600',
   },
   vehiclesList: {

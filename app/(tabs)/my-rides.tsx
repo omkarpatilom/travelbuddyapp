@@ -147,6 +147,33 @@ export default function MyRidesScreen() {
             <Text style={styles.addButtonText}>Offer Ride</Text>
           </TouchableOpacity>
         </View>
+        
+        <View style={styles.quickStats}>
+          <View style={styles.statItem}>
+            <Text style={[styles.statNumber, { color: theme.colors.primary }]}>
+              {userRides.filter(r => r.status === 'active').length}
+            </Text>
+            <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>
+              Active
+            </Text>
+          </View>
+          <View style={styles.statItem}>
+            <Text style={[styles.statNumber, { color: theme.colors.secondary }]}>
+              {userRides.filter(r => r.status === 'completed').length}
+            </Text>
+            <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>
+              Completed
+            </Text>
+          </View>
+          <View style={styles.statItem}>
+            <Text style={[styles.statNumber, { color: theme.colors.accent }]}>
+              ${userRides.reduce((sum, ride) => sum + (ride.price * (ride.totalSeats - ride.availableSeats)), 0)}
+            </Text>
+            <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>
+              Earned
+            </Text>
+          </View>
+        </View>
       </View>
 
       <FlatList
@@ -209,6 +236,25 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '600',
+  },
+  quickStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.1)',
+    marginTop: 20,
+  },
+  statItem: {
+    alignItems: 'center',
+  },
+  statNumber: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  statLabel: {
+    fontSize: 12,
   },
   listContent: {
     padding: 20,
