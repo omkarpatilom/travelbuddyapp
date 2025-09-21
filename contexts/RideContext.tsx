@@ -47,11 +47,13 @@ interface RideContextType {
   isLoading: boolean;
   searchRides: (from: string, to: string, date: string) => Promise<Ride[]>;
   createRide: (rideData: Partial<Ride>) => Promise<boolean>;
+  updateRide: (rideId: string, rideData: Partial<Ride>) => Promise<boolean>;
   bookRide: (rideId: string, seats: number, passengerData: any) => Promise<boolean>;
   cancelBooking: (bookingId: string) => Promise<boolean>;
   rateRide: (rideId: string, rating: number, review: string) => Promise<boolean>;
   getUserRides: (userId: string) => Ride[];
   getUserBookings: (userId: string) => Booking[];
+  getRideById: (rideId: string) => Ride | null;
 }
 
 const RideContext = createContext<RideContextType | undefined>(undefined);
@@ -131,6 +133,32 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
       return true;
     } catch (error) {
       console.error('Error creating ride:', error);
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const updateRide = async (rideId: string, rideData: Partial<Ride>): Promise<boolean> => {
+    setIsLoading(true);
+    try {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      setRides(prev => prev.map(ride => 
+        ride.id === rideId 
+          ? { ...ride, ...rideData }
+          : ride
+      ));
+      
+      setMyRides(prev => prev.map(ride => 
+        ride.id === rideId 
+          ? { ...ride, ...rideData }
+          : ride
+      ));
+      
+      return true;
+    } catch (error) {
+      console.error('Error updating ride:', error);
       return false;
     } finally {
       setIsLoading(false);
@@ -220,6 +248,10 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
     return bookings.filter(booking => booking.userId === userId);
   };
 
+  const getRideById = (rideId: string): Ride | null => {
+    return rides.find(ride => ride.id === rideId) || null;
+  };
+
   return (
     <RideContext.Provider 
       value={{ 
@@ -229,11 +261,13 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
         isLoading, 
         searchRides, 
         createRide, 
+        updateRide,
         bookRide, 
         cancelBooking, 
         rateRide,
         getUserRides,
-        getUserBookings
+        getUserBookings,
+        getRideById
       }}
     >
       {children}
