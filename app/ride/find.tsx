@@ -15,7 +15,7 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useRides } from '@/contexts/RideContext';
-import { Search, MapPin, Calendar, Clock, Star, Users, Filter, ArrowLeft, X, DollarSign, Edit3, Check } from 'lucide-react-native';
+import { Search, MapPin, Calendar, Clock, Star, Users, Filter, ArrowLeft, X, DollarSign, CreditCard as Edit3, Check } from 'lucide-react-native';
 import { mockRides } from '@/data/mockData';
 import DatePicker from '@/components/DatePicker';
 import LocationPicker from '@/components/LocationPicker';
