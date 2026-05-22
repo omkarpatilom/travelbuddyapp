@@ -15,7 +15,6 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useRides } from '@/contexts/RideContext';
 import { Search, MapPin, Calendar, Clock, Star, Users, Filter, ArrowLeft, X, DollarSign } from 'lucide-react-native';
-import { mockRides } from '@/data/mockData';
 import DatePicker from '@/components/DatePicker';
 import LocationPicker from '@/components/LocationPicker';
 import PreferencesSelector, { RidePreferences } from '@/components/PreferencesSelector';
@@ -25,7 +24,7 @@ export default function FindRideScreen() {
   const [fromLocation, setFromLocation] = useState('');
   const [toLocation, setToLocation] = useState('');
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
-  const [searchResults, setSearchResults] = useState(mockRides);
+  const [searchResults, setSearchResults] = useState<any[]>([]);
   const [fromLocationData, setFromLocationData] = useState<any>(null);
   const [toLocationData, setToLocationData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);

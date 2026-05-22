@@ -21,8 +21,7 @@ export default function EditProfileScreen() {
   const router = useRouter();
 
   const [formData, setFormData] = useState({
-    firstName: user?.firstName || '',
-    lastName: user?.lastName || '',
+    fullName: user?.fullName || '',
     email: user?.email || '',
     phone: user?.phone || '',
   });
@@ -33,7 +32,7 @@ export default function EditProfileScreen() {
   };
 
   const handleSave = async () => {
-    if (!formData.firstName || !formData.lastName || !formData.email || !formData.phone) {
+    if (!formData.fullName || !formData.email || !formData.phone) {
       Alert.alert('Missing Information', 'Please fill in all fields');
       return;
     }
@@ -98,28 +97,15 @@ export default function EditProfileScreen() {
         <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Personal Information</Text>
           
-          <View style={styles.nameRow}>
-            <View style={[styles.inputContainer, styles.halfWidth, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-              <User size={20} color={theme.colors.textSecondary} />
-              <TextInput
-                style={[styles.input, { color: theme.colors.text }]}
-                placeholder="First Name"
-                placeholderTextColor={theme.colors.textSecondary}
-                value={formData.firstName}
-                onChangeText={(value) => updateFormData('firstName', value)}
-              />
-            </View>
-
-            <View style={[styles.inputContainer, styles.halfWidth, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-              <User size={20} color={theme.colors.textSecondary} />
-              <TextInput
-                style={[styles.input, { color: theme.colors.text }]}
-                placeholder="Last Name"
-                placeholderTextColor={theme.colors.textSecondary}
-                value={formData.lastName}
-                onChangeText={(value) => updateFormData('lastName', value)}
-              />
-            </View>
+          <View style={[styles.inputContainer, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+            <User size={20} color={theme.colors.textSecondary} />
+            <TextInput
+              style={[styles.input, { color: theme.colors.text }]}
+              placeholder="Full Name"
+              placeholderTextColor={theme.colors.textSecondary}
+              value={formData.fullName}
+              onChangeText={(value) => updateFormData('fullName', value)}
+            />
           </View>
 
           <View style={[styles.inputContainer, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
@@ -129,8 +115,7 @@ export default function EditProfileScreen() {
               placeholder="Email"
               placeholderTextColor={theme.colors.textSecondary}
               value={formData.email}
-              onChangeText={(value) => updateFormData('email', value)}
-              keyboardType="email-address"
+              editable={false} // Email usually shouldn't be edited easily
               autoCapitalize="none"
             />
           </View>
@@ -154,15 +139,15 @@ export default function EditProfileScreen() {
           
           <View style={styles.statsGrid}>
             <View style={styles.statItem}>
-              <Text style={[styles.statNumber, { color: theme.colors.primary }]}>{user?.totalRides}</Text>
-              <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Total Rides</Text>
-            </View>
-            <View style={styles.statItem}>
-              <Text style={[styles.statNumber, { color: theme.colors.secondary }]}>{user?.rating}</Text>
+              <Text style={[styles.statNumber, { color: theme.colors.primary }]}>{user?.rating}</Text>
               <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Rating</Text>
             </View>
             <View style={styles.statItem}>
-              <Text style={[styles.statNumber, { color: theme.colors.accent }]}>{user?.joinedDate}</Text>
+              <Text style={[styles.statNumber, { color: theme.colors.secondary }]}>{user?.role}</Text>
+              <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Role</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={[styles.statNumber, { color: theme.colors.accent }]}>{user?.createdAt ? new Date(user.createdAt).getFullYear() : 'N/A'}</Text>
               <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Member Since</Text>
             </View>
           </View>

@@ -36,7 +36,7 @@ export default function BookRideScreen() {
   // Auto-fill passenger details from user profile
   useEffect(() => {
     if (user) {
-      setPassengerName(`${user.firstName} ${user.lastName}`);
+      setPassengerName(user.fullName);
       setPassengerPhone(user.phone);
     }
   }, [user]);

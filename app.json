@@ -17,6 +17,7 @@
     },
     "android": {
       "package": "com.travelbuddy.ridesharing",
+      "usesCleartextTraffic": true,
       "adaptiveIcon": {
         "backgroundColor": "#2563EB"
       },
@@ -55,6 +56,11 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "00000000-0000-0000-0000-000000000000"
+      }
     }
   }
 }

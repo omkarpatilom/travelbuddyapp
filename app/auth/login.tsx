@@ -17,8 +17,8 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { Mail, Lock, Eye, EyeOff } from 'lucide-react-native';
 
 export default function LoginScreen() {
-  const [email, setEmail] = useState('demo@travelbuddy.com');
-  const [password, setPassword] = useState('password');
+  const [email, setEmail] = useState('test@travelbuddy.com');
+  const [password, setPassword] = useState('Password123!');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   
@@ -104,8 +104,8 @@ export default function LoginScreen() {
 
           <View style={styles.demoInfo}>
             <Text style={[styles.demoTitle, { color: theme.colors.textSecondary }]}>Demo Credentials:</Text>
-            <Text style={[styles.demoText, { color: theme.colors.textSecondary }]}>Email: demo@travelbuddy.com</Text>
-            <Text style={[styles.demoText, { color: theme.colors.textSecondary }]}>Password: password</Text>
+            <Text style={[styles.demoText, { color: theme.colors.textSecondary }]}>Email: test@travelbuddy.com</Text>
+            <Text style={[styles.demoText, { color: theme.colors.textSecondary }]}>Password: Password123!</Text>
           </View>
 
           <View style={styles.signupContainer}>

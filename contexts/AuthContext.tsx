@@ -1,17 +1,19 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { storage, StorageKeys } from '@/utils/storage';
 import { validateEmail, validatePassword } from '@/utils/validation';
+import { api } from '@/utils/api';
 
 export interface User {
   id: string;
   email: string;
-  firstName: string;
-  lastName: string;
+  fullName: string;
   phone: string;
-  avatar?: string;
+  role: string;
+  status: string;
   rating: number;
-  totalRides: number;
-  joinedDate: string;
+  isVerified: boolean;
+  avatar?: string;
+  createdAt: string;
 }
 
 interface AuthContextType {
@@ -44,10 +46,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const checkAuthStatus = async () => {
     try {
       const token = await storage.getItem<string>(StorageKeys.AUTH_TOKEN);
-      const userData = await storage.getItem<User>(StorageKeys.USER_DATA);
-      
-      if (token && userData) {
-        setUser(userData);
+      if (token) {
+        // Fetch fresh user data from server
+        try {
+          const profile = await api.get<any>('/users/me');
+          const mappedUser = mapUserProfile(profile);
+          await storage.setItem(StorageKeys.USER_DATA, mappedUser);
+          setUser(mappedUser);
+        } catch (error) {
+          console.error('Error fetching profile, using cached data:', error);
+          const cachedUser = await storage.getItem<User>(StorageKeys.USER_DATA);
+          if (cachedUser) {
+            setUser(cachedUser);
+          } else {
+            // Token is invalid or expired
+            await logout();
+          }
+        }
       }
     } catch (error) {
       console.error('Error checking auth status:', error);
@@ -56,6 +71,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const mapUserProfile = (profile: any): User => ({
+    id: profile.id,
+    email: profile.email,
+    fullName: profile.fullName,
+    phone: profile.phoneNumber,
+    role: profile.role,
+    status: profile.status,
+    rating: profile.rating,
+    isVerified: profile.isVerified,
+    avatar: profile.profilePictureUrl || undefined,
+    createdAt: profile.createdAt,
+  });
+
   const login = async (email: string, password: string): Promise<boolean> => {
     if (!validateEmail(email)) {
       return false;
@@ -63,27 +91,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     setIsLoading(true);
     try {
-      // Mock authentication - replace with real API call
-      const mockUser: User = {
-        id: '1',
-        email,
-        firstName: 'John',
-        lastName: 'Doe',
-        phone: '+1234567890',
-        rating: 4.8,
-        totalRides: 25,
-        joinedDate: '2023-01-15',
-      };
-
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      // Mock validation
-      if (email === 'demo@travelbuddy.com' && password === 'password') {
-        const token = 'mock-jwt-token-' + Date.now();
-        await storage.setItem(StorageKeys.AUTH_TOKEN, token);
-        await storage.setItem(StorageKeys.USER_DATA, mockUser);
-        setUser(mockUser);
+      const response = await api.post<any>('/auth/login', { email, password });
+      
+      if (response.accessToken) {
+        await storage.setItem(StorageKeys.AUTH_TOKEN, response.accessToken);
+        
+        // Fetch profile to get full user details
+        const profile = await api.get<any>('/users/me');
+        const mappedUser = mapUserProfile(profile);
+        
+        await storage.setItem(StorageKeys.USER_DATA, mappedUser);
+        setUser(mappedUser);
         return true;
       }
       return false;
@@ -107,26 +125,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     setIsLoading(true);
     try {
-      // Mock registration - replace with real API call
-      const newUser: User = {
-        id: Date.now().toString(),
+      const fullName = `${userData.firstName} ${userData.lastName}`.trim();
+      
+      await api.post<any>('/auth/register', {
+        fullName,
         email: userData.email,
-        firstName: userData.firstName,
-        lastName: userData.lastName,
-        phone: userData.phone,
-        rating: 5.0,
-        totalRides: 0,
-        joinedDate: new Date().toISOString().split('T')[0],
-      };
+        phoneNumber: userData.phone,
+        password: userData.password,
+        role: 'Passenger' // Default role
+      });
 
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      const token = 'mock-jwt-token-' + Date.now();
-      await storage.setItem(StorageKeys.AUTH_TOKEN, token);
-      await storage.setItem(StorageKeys.USER_DATA, newUser);
-      setUser(newUser);
-      return true;
+      // After successful registration, log in
+      return await login(userData.email, userData.password);
     } catch (error) {
       console.error('Registration error:', error);
       return false;
@@ -148,6 +158,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const updateUser = async (userData: Partial<User>) => {
     try {
       if (user) {
+        // If updating profile details, call the API
+        if (userData.fullName || userData.phone) {
+          await api.put('/users/me', {
+            fullName: userData.fullName || user.fullName,
+            phoneNumber: userData.phone || user.phone
+          });
+        }
+        
         const updatedUser = { ...user, ...userData };
         await storage.setItem(StorageKeys.USER_DATA, updatedUser);
         setUser(updatedUser);
@@ -163,6 +181,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     </AuthContext.Provider>
   );
 }
+
 
 export function useAuth() {
   const context = useContext(AuthContext);

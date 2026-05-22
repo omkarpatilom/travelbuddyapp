@@ -118,7 +118,7 @@ export default function ProfileScreen() {
 
           <View style={styles.profileInfo}>
             <Text style={styles.userName}>
-              {user?.firstName} {user?.lastName}
+              {user?.fullName}
             </Text>
             <Text style={styles.userEmail}>{user?.email}</Text>
             <View style={styles.userStats}>
@@ -127,12 +127,12 @@ export default function ProfileScreen() {
                 <Text style={styles.statText}>{user?.rating}</Text>
               </View>
               <View style={styles.statItem}>
-                <Car size={16} color="#FFFFFF" />
-                <Text style={styles.statText}>{user?.totalRides} rides</Text>
+                <Shield size={16} color="#FFFFFF" />
+                <Text style={styles.statText}>{user?.isVerified ? 'Verified' : 'Unverified'}</Text>
               </View>
               <View style={styles.statItem}>
                 <Calendar size={16} color="#FFFFFF" />
-                <Text style={styles.statText}>Since {user?.joinedDate}</Text>
+                <Text style={styles.statText}>Since {user?.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'}</Text>
               </View>
             </View>
           </View>

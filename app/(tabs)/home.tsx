@@ -91,7 +91,7 @@ export default function HomeScreen() {
         <View style={styles.headerContent}>
           <View style={styles.headerTop}>
             <View>
-              <Text style={styles.greeting}>Hello, {user?.firstName}! 👋</Text>
+              <Text style={styles.greeting}>Hello, {user?.fullName.split(' ')[0]}! 👋</Text>
               <Text style={styles.subtitle}>Where would you like to go today?</Text>
             </View>
             <TouchableOpacity onPress={toggleTheme} style={styles.themeToggle}>
@@ -165,7 +165,7 @@ export default function HomeScreen() {
           </View>
 
           <FlatList
-            data={mockRides.slice(0, 3)}
+            data={rides.slice(0, 3)}
             keyExtractor={(item) => item.id}
             renderItem={renderRecentRide}
             horizontal

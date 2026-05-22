@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { mockRides, mockBookings } from '@/data/mockData';
+import { api } from '@/utils/api';
+import { useAuth } from './AuthContext';
 
 export interface Ride {
   id: string;
@@ -46,14 +47,15 @@ interface RideContextType {
   myRides: Ride[];
   isLoading: boolean;
   searchRides: (from: string, to: string, date: string) => Promise<Ride[]>;
-  createRide: (rideData: Partial<Ride>) => Promise<boolean>;
+  createRide: (rideData: any) => Promise<boolean>;
   updateRide: (rideId: string, rideData: Partial<Ride>) => Promise<boolean>;
   bookRide: (rideId: string, seats: number, passengerData: any) => Promise<boolean>;
   cancelBooking: (bookingId: string) => Promise<boolean>;
   rateRide: (rideId: string, rating: number, review: string) => Promise<boolean>;
-  getUserRides: (userId: string) => Ride[];
-  getUserBookings: (userId: string) => Booking[];
-  getRideById: (rideId: string) => Ride | null;
+  getUserRides: (userId: string) => Promise<Ride[]>;
+  getUserBookings: (userId: string) => Promise<Booking[]>;
+  getRideById: (rideId: string) => Promise<Ride | null>;
+  loadInitialData: () => Promise<void>;
 }
 
 const RideContext = createContext<RideContextType | undefined>(undefined);
@@ -63,18 +65,33 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [myRides, setMyRides] = useState<Ride[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const { user } = useAuth();
 
   useEffect(() => {
-    loadInitialData();
-  }, []);
+    if (user) {
+      loadInitialData();
+    }
+  }, [user]);
 
   const loadInitialData = async () => {
     setIsLoading(true);
     try {
-      // Load mock data
-      setRides(mockRides);
-      setBookings(mockBookings);
-      setMyRides(mockRides.slice(0, 2)); // Mock user's rides
+      // Fetch active rides
+      const activeRidesData = await api.get<any[]>('/rides/active');
+      const mappedRides = await Promise.all(activeRidesData.map(mapRideData));
+      setRides(mappedRides);
+
+      // Fetch user's bookings
+      const bookingsData = await api.get<any[]>('/bookings/my-bookings');
+      const mappedBookings = await Promise.all(bookingsData.map(mapBookingData));
+      setBookings(mappedBookings);
+
+      // Fetch user's offered rides if they are a driver
+      if (user?.role === 'Driver') {
+        const myRidesData = await api.get<any[]>('/rides/my-rides');
+        const mappedMyRides = await Promise.all(myRidesData.map(mapRideData));
+        setMyRides(mappedMyRides);
+      }
     } catch (error) {
       console.error('Error loading initial data:', error);
     } finally {
@@ -82,19 +99,64 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const mapRideData = async (ride: any): Promise<Ride> => {
+    // In a real app, we'd fetch driver and vehicle details if not provided
+    // For now, we'll use placeholders for missing fields
+    return {
+      id: ride.id,
+      driverId: ride.driverId,
+      driverName: 'Driver', // Will be enriched if needed
+      driverRating: 4.5,
+      from: {
+        address: ride.from.address,
+        coordinates: { latitude: ride.from.latitude, longitude: ride.from.longitude }
+      },
+      to: {
+        address: ride.to.address,
+        coordinates: { latitude: ride.to.latitude, longitude: ride.to.longitude }
+      },
+      date: ride.departureTime.split('T')[0],
+      time: ride.departureTime.split('T')[1].substring(0, 5),
+      price: ride.pricePerSeat,
+      availableSeats: ride.availableSeats,
+      totalSeats: ride.totalSeats,
+      carModel: 'Vehicle', // Will be enriched
+      carColor: 'Silver',
+      status: ride.status.toLowerCase() === 'active' ? 'active' : ride.status.toLowerCase(),
+      distance: 'Unknown',
+      duration: 'Unknown',
+    };
+  };
+
+  const mapBookingData = async (booking: any): Promise<Booking> => {
+    let ride: Ride | null = null;
+    try {
+      const rideData = await api.get<any>(`/rides/${booking.rideId}`);
+      ride = await mapRideData(rideData);
+    } catch (e) {
+      console.error('Error fetching ride for booking:', e);
+    }
+
+    return {
+      id: booking.bookingId,
+      rideId: booking.rideId,
+      userId: booking.userId,
+      ride: ride!,
+      seats: booking.seats,
+      totalPrice: booking.totalPrice,
+      status: booking.status.toLowerCase() as any,
+      bookingDate: booking.bookingDate,
+      passengerName: booking.passengerName,
+      passengerPhone: booking.passengerPhone,
+    };
+  };
+
   const searchRides = async (from: string, to: string, date: string): Promise<Ride[]> => {
     setIsLoading(true);
     try {
-      // Mock search - replace with real API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      const filteredRides = mockRides.filter(ride => 
-        ride.from.address.toLowerCase().includes(from.toLowerCase()) &&
-        ride.to.address.toLowerCase().includes(to.toLowerCase()) &&
-        ride.date === date
-      );
-      
-      return filteredRides;
+      const results = await api.get<any[]>(`/rides/search?from=${from}&to=${to}&date=${date}`);
+      const mappedResults = await Promise.all(results.map(mapRideData));
+      return mappedResults;
     } catch (error) {
       console.error('Error searching rides:', error);
       return [];
@@ -103,33 +165,36 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const createRide = async (rideData: Partial<Ride>): Promise<boolean> => {
+  const createRide = async (rideData: any): Promise<boolean> => {
     setIsLoading(true);
     try {
-      const newRide: Ride = {
-        id: Date.now().toString(),
-        driverId: '1', // Current user ID
-        driverName: 'John Doe',
-        driverRating: 4.8,
-        from: rideData.from!,
-        to: rideData.to!,
-        date: rideData.date!,
-        time: rideData.time!,
-        price: rideData.price!,
-        availableSeats: rideData.availableSeats!,
-        totalSeats: rideData.totalSeats!,
-        carModel: rideData.carModel!,
-        carColor: rideData.carColor!,
-        status: 'active',
-        distance: '25 km',
-        duration: '30 min',
+      const departureTime = `${rideData.date}T${rideData.time}:00Z`;
+      
+      const payload = {
+        vehicleId: rideData.vehicleId, // Assumes vehicle selection is implemented
+        from: {
+          address: rideData.from.address,
+          latitude: rideData.from.coordinates.latitude,
+          longitude: rideData.from.coordinates.longitude
+        },
+        to: {
+          address: rideData.to.address,
+          latitude: rideData.to.coordinates.latitude,
+          longitude: rideData.to.coordinates.longitude
+        },
+        departureTime,
+        pricePerSeat: rideData.price,
+        totalSeats: rideData.totalSeats,
+        preference: {
+          allowMusic: true,
+          allowSmoking: false,
+          allowPets: false,
+          conversationLevel: 'Moderate'
+        }
       };
 
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      setRides(prev => [newRide, ...prev]);
-      setMyRides(prev => [newRide, ...prev]);
-      
+      await api.post('/rides', payload);
+      await loadInitialData();
       return true;
     } catch (error) {
       console.error('Error creating ride:', error);
@@ -142,20 +207,8 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
   const updateRide = async (rideId: string, rideData: Partial<Ride>): Promise<boolean> => {
     setIsLoading(true);
     try {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      setRides(prev => prev.map(ride => 
-        ride.id === rideId 
-          ? { ...ride, ...rideData }
-          : ride
-      ));
-      
-      setMyRides(prev => prev.map(ride => 
-        ride.id === rideId 
-          ? { ...ride, ...rideData }
-          : ride
-      ));
-      
+      await api.put(`/rides/${rideId}`, rideData);
+      await loadInitialData();
       return true;
     } catch (error) {
       console.error('Error updating ride:', error);
@@ -168,35 +221,16 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
   const bookRide = async (rideId: string, seats: number, passengerData: any): Promise<boolean> => {
     setIsLoading(true);
     try {
-      const ride = rides.find(r => r.id === rideId);
-      if (!ride || ride.availableSeats < seats) {
-        return false;
-      }
-
-      const newBooking: Booking = {
-        id: Date.now().toString(),
+      const payload = {
         rideId,
-        userId: '1', // Current user ID
-        ride,
         seats,
-        totalPrice: ride.price * seats,
-        status: 'confirmed',
-        bookingDate: new Date().toISOString(),
         passengerName: passengerData.name,
         passengerPhone: passengerData.phone,
+        acceptTerms: true
       };
 
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      // Update ride availability
-      setRides(prev => prev.map(r => 
-        r.id === rideId 
-          ? { ...r, availableSeats: r.availableSeats - seats }
-          : r
-      ));
-
-      setBookings(prev => [newBooking, ...prev]);
-      
+      await api.post('/bookings', payload);
+      await loadInitialData();
       return true;
     } catch (error) {
       console.error('Error booking ride:', error);
@@ -209,14 +243,8 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
   const cancelBooking = async (bookingId: string): Promise<boolean> => {
     setIsLoading(true);
     try {
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      setBookings(prev => prev.map(b => 
-        b.id === bookingId 
-          ? { ...b, status: 'cancelled' }
-          : b
-      ));
-      
+      await api.post(`/bookings/${bookingId}/cancel`, { reason: 'User cancelled' });
+      await loadInitialData();
       return true;
     } catch (error) {
       console.error('Error cancelling booking:', error);
@@ -229,8 +257,18 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
   const rateRide = async (rideId: string, rating: number, review: string): Promise<boolean> => {
     setIsLoading(true);
     try {
-      // Mock rating submission
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Find the booking for this ride
+      const booking = bookings.find(b => b.rideId === rideId && b.userId === user?.id);
+      if (!booking) return false;
+
+      await api.post('/reviews', {
+        bookingId: booking.id,
+        rideId,
+        targetUserId: booking.ride.driverId,
+        targetType: 'Driver',
+        rating,
+        comment: review
+      });
       return true;
     } catch (error) {
       console.error('Error rating ride:', error);
@@ -240,16 +278,31 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const getUserRides = (userId: string): Ride[] => {
-    return rides.filter(ride => ride.driverId === userId);
+  const getUserRides = async (userId: string): Promise<Ride[]> => {
+    try {
+      const data = await api.get<any[]>(`/rides/my-rides`);
+      return Promise.all(data.map(mapRideData));
+    } catch (e) {
+      return [];
+    }
   };
 
-  const getUserBookings = (userId: string): Booking[] => {
-    return bookings.filter(booking => booking.userId === userId);
+  const getUserBookings = async (userId: string): Promise<Booking[]> => {
+    try {
+      const data = await api.get<any[]>(`/bookings/my-bookings`);
+      return Promise.all(data.map(mapBookingData));
+    } catch (e) {
+      return [];
+    }
   };
 
-  const getRideById = (rideId: string): Ride | null => {
-    return rides.find(ride => ride.id === rideId) || null;
+  const getRideById = async (rideId: string): Promise<Ride | null> => {
+    try {
+      const data = await api.get<any>(`/rides/${rideId}`);
+      return mapRideData(data);
+    } catch (e) {
+      return null;
+    }
   };
 
   return (
@@ -267,7 +320,8 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
         rateRide,
         getUserRides,
         getUserBookings,
-        getRideById
+        getRideById,
+        loadInitialData
       }}
     >
       {children}
