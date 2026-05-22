@@ -87,7 +87,7 @@ export default function VehicleDetailsScreen() {
     } as UniversalRidePreferences,
   });
 
-  const updateFormData = (field: string, value: string) => {
+  const updateFormData = (field: string, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
@@ -99,6 +99,19 @@ export default function VehicleDetailsScreen() {
       color: '',
       licensePlate: '',
       seats: '4',
+      photos: [],
+      features: [],
+      preferences: {
+        nonSmoking: true,
+        musicAllowed: true,
+        petsAllowed: false,
+        airConditioning: true,
+        conversationLevel: 'moderate' as const,
+        maxPassengers: 4,
+        instantBooking: false,
+        femalePassengersOnly: false,
+        verifiedPassengersOnly: false,
+      },
     });
     setEditingVehicle(null);
     setIsEditing(true);
@@ -358,7 +371,7 @@ export default function VehicleDetailsScreen() {
           <RidePreferences
             preferences={formData.preferences}
             onPreferencesChange={(preferences) => updateFormData('preferences', preferences)}
-            mode="driver"
+            mode="edit"
             canOverride={true}
           />
 

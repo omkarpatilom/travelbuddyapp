@@ -8,6 +8,8 @@ Notifications.setNotificationHandler({
     shouldShowAlert: true,
     shouldPlaySound: false,
     shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
   }),
 });
 
@@ -36,8 +38,8 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     });
 
     return () => {
-      Notifications.removeNotificationSubscription(notificationListener);
-      Notifications.removeNotificationSubscription(responseListener);
+      notificationListener.remove();
+      responseListener.remove();
     };
   }, []);
 
@@ -97,7 +99,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         body: 'Your ride is starting in 1 hour. Get ready!',
         data: { rideId },
       },
-      trigger: reminderDate,
+      trigger: { date: reminderDate } as any,
     });
   };
 

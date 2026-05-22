@@ -12,10 +12,25 @@ interface RidePreference {
   defaultValue: boolean | string;
 }
 
+export interface UniversalRidePreferences {
+  nonSmoking: boolean;
+  musicAllowed: boolean;
+  petsAllowed: boolean;
+  airConditioning: boolean;
+  conversationLevel: 'quiet' | 'moderate' | 'talkative';
+  maxPassengers: number;
+  instantBooking: boolean;
+  femalePassengersOnly: boolean;
+  verifiedPassengersOnly: boolean;
+}
+
 interface RidePreferencesProps {
   vehicleId?: string;
   onPreferencesChange?: (preferences: Record<string, any>) => void;
   isUniversal?: boolean;
+  preferences?: UniversalRidePreferences;
+  mode?: 'view' | 'edit';
+  canOverride?: boolean;
 }
 
 const PREFERENCE_CATEGORIES = {

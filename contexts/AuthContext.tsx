@@ -44,7 +44,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const checkAuthStatus = async () => {
     try {
       const token = await storage.getItem<string>(StorageKeys.AUTH_TOKEN);
-      const userData = await storage.getItem(StorageKeys.USER_DATA);
+      const userData = await storage.getItem<User>(StorageKeys.USER_DATA);
       
       if (token && userData) {
         setUser(userData);

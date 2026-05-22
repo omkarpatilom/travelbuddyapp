@@ -112,7 +112,7 @@ export default function LocationPicker({
   const [error, setError] = useState<string | null>(null);
   
   const { theme } = useTheme();
-  const searchTimeoutRef = useRef<NodeJS.Timeout>();
+  const searchTimeoutRef = useRef<any>(null);
 
   useEffect(() => {
     loadStoredData();
@@ -236,7 +236,6 @@ export default function LocationPicker({
 
       const location = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.High,
-        timeout: 10000,
       });
 
       const reverseGeocode = await Location.reverseGeocodeAsync({

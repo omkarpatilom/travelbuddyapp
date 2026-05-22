@@ -19,8 +19,8 @@ import { useEffect } from 'react';
 
 export default function BookRideScreen() {
   const [selectedSeats, setSelectedSeats] = useState(1);
-  const [passengerName, setPassengerName] = useState(user?.firstName + ' ' + user?.lastName || '');
-  const [passengerPhone, setPassengerPhone] = useState(user?.phone || '');
+  const [passengerName, setPassengerName] = useState('');
+  const [passengerPhone, setPassengerPhone] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   
   const { theme } = useTheme();

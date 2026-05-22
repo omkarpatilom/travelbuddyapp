@@ -60,7 +60,7 @@ export default function PreferencesSelector({
     >
       <View style={styles.preferenceContent}>
         <View style={[styles.iconContainer, { backgroundColor: value ? theme.colors.primary : theme.colors.background }]}>
-          {React.cloneElement(icon as React.ReactElement, {
+          {React.cloneElement(icon as React.ReactElement<any>, {
             size: 20,
             color: value ? '#FFFFFF' : theme.colors.textSecondary,
           })}

@@ -65,21 +65,34 @@ A comprehensive ride-sharing application built with React Native and Expo, featu
 ### Prerequisites
 - Node.js 18+
 - Expo CLI
-- iOS Simulator or Android Emulator
-- Physical device for testing location services
+- iPhone with **Expo Go** app installed
+- Both computer and iPhone connected to the same network
 
-### Environment Setup
-```bash
-# Install dependencies
-npm install
+### Required Dependencies
+The following critical dependencies have been configured for **Expo SDK 54** and **Reanimated v4**:
+- `react-native-reanimated`: Core animation library.
+- `react-native-worklets`: Required companion for Reanimated v4 Babel plugin.
+- `expo-dev-client`: Required for testing native modules.
+- `babel-preset-expo`: Configured for proper bundling.
 
-# Start development server
-npm run dev
+### Running on iPhone (Windows/CMD)
+To ensure your iPhone can connect to your computer, you must force the local IP address and clear the bundler cache.
 
-# Run on specific platform
-npx expo run:ios
-npx expo run:android
+1. **Find your IP address**: Run `ipconfig` in your terminal.
+2. **Run the project**: Use the following command in **Command Prompt (CMD)**:
+
+```cmd
+set REACT_NATIVE_PACKAGER_HOSTNAME=10.106.57.252 && npx expo start -c --host lan --go
 ```
+
+*Note: Replace `10.106.57.252` with your current IPv4 address if it changes.*
+
+### Troubleshooting
+- **Babel Errors**: If you see "Cannot find module 'react-native-worklets/plugin'", ensure `react-native-worklets` is installed and run with the `-c` flag to clear the cache.
+- **Connection Issues**: 
+  - Ensure Windows Firewall allows Node.js through both Private and Public networks.
+  - Double check both devices are on the same Wi-Fi.
+- **Android SDK Error**: You can safely ignore "Failed to resolve Android SDK" errors when testing on a physical iPhone.
 
 ### API Configuration
 1. **Google Places API**:
