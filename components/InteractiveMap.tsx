@@ -82,10 +82,10 @@ export default function InteractiveMap({
   const [showDirections, setShowDirections] = useState(false);
 
   const mapRef = useRef<MapView>(null);
-  const searchTimeoutRef = useRef<NodeJS.Timeout>();
+  const searchTimeoutRef = useRef<any>(null);
   const slideAnim = useRef(new Animated.Value(0)).current;
 
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
 
   useEffect(() => {
     getCurrentLocation();
@@ -116,7 +116,6 @@ export default function InteractiveMap({
 
       const location = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.High,
-        timeout: 10000,
       });
 
       const newRegion = {
@@ -259,7 +258,6 @@ export default function InteractiveMap({
 
       const location = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.High,
-        timeout: 10000,
       });
 
       const reverseGeocode = await Location.reverseGeocodeAsync({
@@ -500,7 +498,7 @@ export default function InteractiveMap({
         showsScale
         loadingEnabled
         loadingIndicatorColor={theme.colors.primary}
-        customMapStyle={theme.isDark ? darkMapStyle : []}
+        customMapStyle={isDark ? darkMapStyle : []}
       >
         {renderMarkers()}
         

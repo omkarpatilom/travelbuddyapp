@@ -182,7 +182,7 @@ export default function NotificationsScreen() {
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <View style={[styles.header, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
         <View style={styles.headerContent}>
-          <Text style={[styles.title, { color: theme.colors.text }]}>Notifications</Text>
+          <Text style={[styles.headerTitle, { color: theme.colors.text }]}>Notifications</Text>
           {unreadCount > 0 && (
             <View style={[styles.badge, { backgroundColor: theme.colors.primary }]}>
               <Text style={styles.badgeText}>{unreadCount}</Text>
@@ -233,7 +233,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 12,
   },
-  title: {
+  headerTitle: {
     fontSize: 28,
     fontWeight: 'bold',
   },

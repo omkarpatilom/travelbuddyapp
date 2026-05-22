@@ -134,7 +134,7 @@ export default function VehicleFeatureTags({
         styles.featureIcon,
         { backgroundColor: isSelected ? getCategoryColor(feature.category) : theme.colors.background }
       ]}>
-        {React.cloneElement(feature.icon as React.ReactElement, {
+        {React.cloneElement(feature.icon as React.ReactElement<any>, {
           color: isSelected ? '#FFFFFF' : theme.colors.textSecondary,
         })}
       </View>

@@ -105,7 +105,6 @@ export default function SafetyFeatures({ style }: SafetyFeaturesProps) {
 
       const location = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.High,
-        timeout: 10000,
       });
 
       const { latitude, longitude } = location.coords;

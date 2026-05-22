@@ -237,7 +237,7 @@ export default function OfferRideScreen() {
                       { text: 'Cancel', style: 'cancel' },
                       { 
                         text: 'OK', 
-                        onPress: (value) => {
+                        onPress: (value?: string) => {
                           if (value && parseInt(value) >= 1 && parseInt(value) <= 8) {
                             updateFormData('seats', value);
                           }
@@ -267,7 +267,7 @@ export default function OfferRideScreen() {
                       { text: 'Cancel', style: 'cancel' },
                       { 
                         text: 'OK', 
-                        onPress: (value) => {
+                        onPress: (value?: string) => {
                           if (value && parseFloat(value) > 0) {
                             updateFormData('price', value);
                           }

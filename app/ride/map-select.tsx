@@ -28,7 +28,7 @@ export default function MapSelectScreen() {
     const returnScreen = params.returnScreen as string || '/ride/find';
     
     router.push({
-      pathname: returnScreen,
+      pathname: returnScreen as any,
       params: {
         fromLocation: JSON.stringify(from),
         toLocation: JSON.stringify(to),
