@@ -75,14 +75,20 @@ The following critical dependencies have been configured for **Expo SDK 54** and
 - `expo-dev-client`: Required for testing native modules.
 - `babel-preset-expo`: Configured for proper bundling.
 
-### Running on iPhone (Windows/CMD)
-To ensure your iPhone can connect to your computer, you must force the local IP address and clear the bundler cache.
+### Running on iPhone (Windows)
+To ensure your iPhone can connect to your computer, you must force the local IP address and clear the bundler cache. Use the `--offline` flag to bypass the Expo login prompt.
 
 1. **Find your IP address**: Run `ipconfig` in your terminal.
-2. **Run the project**: Use the following command in **Command Prompt (CMD)**:
+2. **Run the project**:
 
+**In PowerShell (Recommended for Windows):**
+```powershell
+$env:REACT_NATIVE_PACKAGER_HOSTNAME='10.106.57.252'; npx expo start -c --go --offline
+```
+
+**In Command Prompt (CMD):**
 ```cmd
-set REACT_NATIVE_PACKAGER_HOSTNAME=10.106.57.252 && npx expo start -c --host lan --go
+set REACT_NATIVE_PACKAGER_HOSTNAME=10.106.57.252 && npx expo start -c --go --offline
 ```
 
 *Note: Replace `10.106.57.252` with your current IPv4 address if it changes.*
