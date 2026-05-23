@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import * as Location from 'expo-location';
 import * as SMS from 'expo-sms';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useNotifications } from '@/contexts/NotificationContext';
+import { api } from '@/utils/api';
 import { Shield, Phone, MapPin, Users, Plus, X, TriangleAlert as AlertTriangle, Camera, FileText, CircleCheck as CheckCircle } from 'lucide-react-native';
 import { requestLocationPermission } from '@/utils/permissions';
 
@@ -38,37 +39,52 @@ interface VerificationDocument {
 }
 
 export default function SafetyFeatures({ style }: SafetyFeaturesProps) {
-  const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([
-    {
-      id: '1',
-      name: 'John Doe',
-      phone: '+1234567890',
-      relationship: 'Family',
-    },
-  ]);
+  const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([]);
   const [showAddContact, setShowAddContact] = useState(false);
   const [showSOSModal, setShowSOSModal] = useState(false);
   const [showVerificationModal, setShowVerificationModal] = useState(false);
   const [isTrackingEnabled, setIsTrackingEnabled] = useState(false);
   const [isSendingSOS, setIsSendingSOS] = useState(false);
   const [sosCountdown, setSOSCountdown] = useState(0);
+  const [isLoading, setIsLoading] = useState(false);
   const [newContact, setNewContact] = useState({
     name: '',
     phone: '',
     relationship: '',
   });
-  const [verificationDocs, setVerificationDocs] = useState<VerificationDocument[]>([
-    {
-      id: '1',
-      type: 'driving_license',
-      status: 'verified',
-      uploadDate: '2024-01-15',
-      documentNumber: 'DL1234567890',
-    },
-  ]);
+  const [verificationDocs, setVerificationDocs] = useState<VerificationDocument[]>([]);
 
   const { theme } = useTheme();
   const { sendLocalNotification } = useNotifications();
+
+  useEffect(() => {
+    fetchEmergencyContacts();
+    fetchVerificationStatus();
+  }, []);
+
+  const fetchEmergencyContacts = async () => {
+    try {
+      const data = await api.get<any[]>('/safety/emergency-contacts');
+      setEmergencyContacts(data.map(c => ({
+        id: c.id,
+        name: c.name,
+        phone: c.phoneNumber,
+        relationship: c.relation || 'Contact',
+      })));
+    } catch (error) {
+      console.error('Error fetching emergency contacts:', error);
+    }
+  };
+
+  const fetchVerificationStatus = async () => {
+    try {
+      const status = await api.get<any>('/verification/status');
+      // Map verification status to docs if needed
+      // This might require a different endpoint or logic depending on backend implementation
+    } catch (error) {
+      console.error('Error fetching verification status:', error);
+    }
+  };
 
   const handleSOSPress = () => {
     setShowSOSModal(true);
@@ -108,6 +124,14 @@ export default function SafetyFeatures({ style }: SafetyFeaturesProps) {
       });
 
       const { latitude, longitude } = location.coords;
+      
+      // Trigger SOS on backend
+      await api.post('/safety/sos/trigger', {
+        latitude,
+        longitude,
+        description: 'SOS triggered from mobile app',
+      });
+
       const locationUrl = `https://maps.google.com/?q=${latitude},${longitude}`;
       
       // Prepare SOS message
@@ -136,28 +160,37 @@ export default function SafetyFeatures({ style }: SafetyFeaturesProps) {
         [{ text: 'OK' }]
       );
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error sending SOS:', error);
-      Alert.alert('Error', 'Failed to send SOS alert. Please try again or call emergency services directly.');
+      Alert.alert('Error', error.message || 'Failed to send SOS alert. Please try again or call emergency services directly.');
     } finally {
       setIsSendingSOS(false);
     }
   };
 
-  const addEmergencyContact = () => {
+  const addEmergencyContact = async () => {
     if (!newContact.name || !newContact.phone) {
       Alert.alert('Error', 'Please fill in all required fields');
       return;
     }
 
-    const contact: EmergencyContact = {
-      id: Date.now().toString(),
-      ...newContact,
-    };
+    try {
+      setIsLoading(true);
+      await api.post('/safety/emergency-contacts', {
+        name: newContact.name,
+        phoneNumber: newContact.phone,
+        relation: newContact.relationship,
+        isPrimary: emergencyContacts.length === 0,
+      });
 
-    setEmergencyContacts([...emergencyContacts, contact]);
-    setNewContact({ name: '', phone: '', relationship: '' });
-    setShowAddContact(false);
+      setNewContact({ name: '', phone: '', relationship: '' });
+      setShowAddContact(false);
+      fetchEmergencyContacts();
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to add contact');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const removeEmergencyContact = (contactId: string) => {
@@ -169,8 +202,16 @@ export default function SafetyFeatures({ style }: SafetyFeaturesProps) {
         {
           text: 'Remove',
           style: 'destructive',
-          onPress: () => {
-            setEmergencyContacts(contacts => contacts.filter(c => c.id !== contactId));
+          onPress: async () => {
+            try {
+              setIsLoading(true);
+              await api.delete(`/safety/emergency-contacts/${contactId}`);
+              fetchEmergencyContacts();
+            } catch (error: any) {
+              Alert.alert('Error', error.message || 'Failed to remove contact');
+            } finally {
+              setIsLoading(false);
+            }
           },
         },
       ]

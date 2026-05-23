@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,9 +8,11 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
+import { api } from '@/utils/api';
 import { Car, Hash, Palette, Calendar, Users, ArrowLeft, Save, Plus } from 'lucide-react-native';
 import PhotoUploader from '@/components/PhotoUploader';
 import VehicleFeatureTags from '@/components/VehicleFeatureTags';
@@ -34,36 +36,11 @@ export default function VehicleDetailsScreen() {
   const { theme } = useTheme();
   const router = useRouter();
 
-  // Mock vehicle data
-  const [vehicles, setVehicles] = useState<Vehicle[]>([
-    {
-      id: '1',
-      make: 'Toyota',
-      model: 'Camry',
-      year: '2020',
-      color: 'Blue',
-      licensePlate: 'ABC123',
-      seats: '4',
-      photos: ['https://images.pexels.com/photos/116675/pexels-photo-116675.jpeg?auto=compress&cs=tinysrgb&w=400'],
-      isDefault: true,
-      features: ['ac', 'music_system', 'phone_charger'],
-      preferences: {
-        nonSmoking: true,
-        musicAllowed: true,
-        petsAllowed: false,
-        airConditioning: true,
-        conversationLevel: 'moderate',
-        maxPassengers: 3,
-        instantBooking: false,
-        femalePassengersOnly: false,
-        verifiedPassengersOnly: true,
-      },
-    }
-  ]);
-
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [isEditing, setIsEditing] = useState(false);
   const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const [formData, setFormData] = useState({
     make: '',
@@ -86,6 +63,87 @@ export default function VehicleDetailsScreen() {
       verifiedPassengersOnly: false,
     } as UniversalRidePreferences,
   });
+
+  useEffect(() => {
+    fetchVehicles();
+  }, []);
+
+  const fetchVehicles = async () => {
+    setIsLoading(true);
+    try {
+      const data = await api.get<any[]>('/vehicles/my-vehicles');
+      const mappedVehicles = await Promise.all(data.map(async (v: any) => {
+        // Fetch features and preferences for each vehicle
+        let features: string[] = [];
+        let preferences: UniversalRidePreferences | undefined;
+        
+        try {
+          const featureData = await api.get<any[]>(`/VehicleFeatures/${v.id}/features`);
+          features = featureData.map(f => f.featureCode);
+        } catch (e) { console.error('Error fetching features', e); }
+
+        try {
+          const prefData = await api.get<any>(`/VehiclePreferences/${v.id}/preferences`);
+          preferences = {
+            nonSmoking: !prefData.allowSmoking,
+            musicAllowed: prefData.allowMusic,
+            petsAllowed: prefData.allowPets,
+            airConditioning: true, // Default
+            conversationLevel: mapConversationLevel(prefData.conversationLevel),
+            maxPassengers: v.totalSeats,
+            instantBooking: false,
+            femalePassengersOnly: false,
+            verifiedPassengersOnly: prefData.requireVerifiedPassengers,
+          };
+        } catch (e) { console.error('Error fetching preferences', e); }
+
+        return {
+          id: v.id,
+          make: v.brand,
+          model: v.model,
+          year: new Date(v.createdAt).getFullYear().toString(),
+          color: v.color,
+          licensePlate: v.registrationNumber,
+          seats: v.totalSeats.toString(),
+          photos: [], // TODO: Fetch from VehiclePhotos
+          isDefault: v.isDefault,
+          features,
+          preferences,
+        };
+      }));
+      setVehicles(mappedVehicles);
+    } catch (error) {
+      console.error('Error fetching vehicles:', error);
+      // Fallback to mock data if API fails during development
+      // setVehicles(mockVehicles);
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  };
+
+  const mapConversationLevel = (level: number): 'quiet' | 'moderate' | 'chatty' => {
+    switch (level) {
+      case 0: return 'quiet';
+      case 1: return 'moderate';
+      case 2: return 'chatty';
+      default: return 'moderate';
+    }
+  };
+
+  const reverseMapConversationLevel = (level: string): number => {
+    switch (level) {
+      case 'quiet': return 0;
+      case 'moderate': return 1;
+      case 'chatty': return 2;
+      default: return 1;
+    }
+  };
+
+  const onRefresh = () => {
+    setIsRefreshing(true);
+    fetchVehicles();
+  };
 
   const updateFormData = (field: string, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -144,37 +202,60 @@ export default function VehicleDetailsScreen() {
   };
 
   const handleSaveVehicle = async () => {
-    if (!formData.make || !formData.model || !formData.year || !formData.color || !formData.licensePlate) {
+    if (!formData.make || !formData.model || !formData.color || !formData.licensePlate) {
       Alert.alert('Missing Information', 'Please fill in all required fields');
       return;
     }
 
     setIsLoading(true);
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
       if (editingVehicle) {
         // Update existing vehicle
-        setVehicles(prev => prev.map(v => 
-          v.id === editingVehicle.id 
-            ? { ...v, ...formData }
-            : v
-        ));
+        await api.put(`/vehicles/${editingVehicle.id}`, {
+          brand: formData.make,
+          model: formData.model,
+          color: formData.color,
+          totalSeats: parseInt(formData.seats),
+        });
+
+        // Update preferences
+        await api.put(`/VehiclePreferences/${editingVehicle.id}/preferences`, {
+          vehicleId: editingVehicle.id,
+          allowMusic: formData.preferences.musicAllowed,
+          allowSmoking: !formData.preferences.nonSmoking,
+          allowPets: formData.preferences.petsAllowed,
+          conversationLevel: reverseMapConversationLevel(formData.preferences.conversationLevel),
+          requireVerifiedPassengers: formData.preferences.verifiedPassengersOnly,
+        });
+
       } else {
         // Add new vehicle
-        const newVehicle: Vehicle = {
-          id: Date.now().toString(),
-          ...formData,
-          isDefault: vehicles.length === 0,
-        };
-        setVehicles(prev => [...prev, newVehicle]);
+        const me = await api.get<any>('/users/me');
+        const vehicleId = await api.post<string>('/vehicles', {
+          driverId: me.id,
+          brand: formData.make,
+          model: formData.model,
+          color: formData.color,
+          registrationNumber: formData.licensePlate,
+          totalSeats: parseInt(formData.seats),
+        });
+
+        // Set preferences for new vehicle
+        await api.put(`/VehiclePreferences/${vehicleId}/preferences`, {
+          vehicleId: vehicleId,
+          allowMusic: formData.preferences.musicAllowed,
+          allowSmoking: !formData.preferences.nonSmoking,
+          allowPets: formData.preferences.petsAllowed,
+          conversationLevel: reverseMapConversationLevel(formData.preferences.conversationLevel),
+          requireVerifiedPassengers: formData.preferences.verifiedPassengersOnly,
+        });
       }
 
       setIsEditing(false);
+      fetchVehicles();
       Alert.alert('Success', 'Vehicle saved successfully!');
-    } catch (error) {
-      Alert.alert('Error', 'Failed to save vehicle. Please try again.');
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to save vehicle. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -189,19 +270,32 @@ export default function VehicleDetailsScreen() {
         { 
           text: 'Delete', 
           style: 'destructive',
-          onPress: () => {
-            setVehicles(prev => prev.filter(v => v.id !== vehicleId));
+          onPress: async () => {
+            try {
+              setIsLoading(true);
+              await api.delete(`/vehicles/${vehicleId}`);
+              fetchVehicles();
+            } catch (error: any) {
+              Alert.alert('Error', error.message || 'Failed to delete vehicle');
+            } finally {
+              setIsLoading(false);
+            }
           }
         },
       ]
     );
   };
 
-  const handleSetDefault = (vehicleId: string) => {
-    setVehicles(prev => prev.map(v => ({
-      ...v,
-      isDefault: v.id === vehicleId
-    })));
+  const handleSetDefault = async (vehicleId: string) => {
+    try {
+      setIsLoading(true);
+      await api.patch(`/vehicles/${vehicleId}/default`, {});
+      fetchVehicles();
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to set default vehicle');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const renderVehicle = (vehicle: Vehicle) => (

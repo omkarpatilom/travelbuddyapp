@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,32 +7,57 @@ import {
   TouchableOpacity,
   Image,
   FlatList,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { api } from '@/utils/api';
 import { ArrowLeft, Star, TrendingUp, Award, Users } from 'lucide-react-native';
-import { mockReviews } from '@/data/mockData';
 
 export default function ReviewsScreen() {
   const [activeTab, setActiveTab] = useState<'received' | 'given'>('received');
+  const [receivedReviews, setReceivedReviews] = useState<any[]>([]);
+  const [givenReviews, setGivenReviews] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   
   const { theme } = useTheme();
   const { user } = useAuth();
   const router = useRouter();
 
-  // Mock data - in real app, this would come from API
-  const receivedReviews = mockReviews;
-  const givenReviews = mockReviews.slice(0, 2); // Mock given reviews
+  useEffect(() => {
+    fetchReviews();
+  }, []);
+
+  const fetchReviews = async () => {
+    if (!user?.id) return;
+    
+    setIsLoading(true);
+    try {
+      // Fetch received reviews
+      const received = await api.get<any[]>(`/Reviews/user/${user.id}`);
+      setReceivedReviews(received);
+      
+      // Backend doesn't seem to have a dedicated "given reviews" endpoint for current user yet
+      // but we might be able to filter from somewhere else if needed.
+      // For now we just use received reviews.
+    } catch (error) {
+      console.error('Error fetching reviews:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const calculateStats = () => {
-    const totalReviews = receivedReviews.length;
-    const averageRating = receivedReviews.reduce((sum, review) => sum + review.rating, 0) / totalReviews;
-    const ratingDistribution = [5, 4, 3, 2, 1].map(rating => 
+    const total = receivedReviews.length;
+    if (total === 0) return { totalReviews: 0, averageRating: 5.0, ratingDistribution: [0, 0, 0, 0, 0] };
+    
+    const average = receivedReviews.reduce((sum, review) => sum + review.rating, 0) / total;
+    const distribution = [5, 4, 3, 2, 1].map(rating => 
       receivedReviews.filter(review => review.rating === rating).length
     );
     
-    return { totalReviews, averageRating, ratingDistribution };
+    return { totalReviews: total, averageRating: average, ratingDistribution: distribution };
   };
 
   const { totalReviews, averageRating, ratingDistribution } = calculateStats();
@@ -40,9 +65,15 @@ export default function ReviewsScreen() {
   const renderReview = ({ item }: { item: any }) => (
     <View style={[styles.reviewCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
       <View style={styles.reviewHeader}>
-        <Image source={{ uri: item.userAvatar }} style={styles.userAvatar} />
+        {item.reviewerAvatar ? (
+          <Image source={{ uri: item.reviewerAvatar }} style={styles.userAvatar} />
+        ) : (
+          <View style={[styles.avatarPlaceholder, { backgroundColor: theme.colors.surface }]}>
+            <Users size={20} color={theme.colors.primary} />
+          </View>
+        )}
         <View style={styles.reviewInfo}>
-          <Text style={[styles.userName, { color: theme.colors.text }]}>{item.userName}</Text>
+          <Text style={[styles.userName, { color: theme.colors.text }]}>{item.reviewerName || 'Anonymous'}</Text>
           <View style={styles.ratingContainer}>
             {Array.from({ length: 5 }, (_, index) => (
               <Star
@@ -58,7 +89,7 @@ export default function ReviewsScreen() {
           </View>
         </View>
         <Text style={[styles.reviewDate, { color: theme.colors.textSecondary }]}>
-          {new Date(item.date).toLocaleDateString()}
+          {new Date(item.createdAt).toLocaleDateString()}
         </Text>
       </View>
       
@@ -92,6 +123,14 @@ export default function ReviewsScreen() {
       </View>
     );
   };
+
+  if (isLoading && receivedReviews.length === 0) {
+    return (
+      <View style={[styles.loadingContainer, { backgroundColor: theme.colors.background }]}>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -130,7 +169,7 @@ export default function ReviewsScreen() {
               <View style={styles.statItem}>
                 <TrendingUp size={20} color={theme.colors.secondary} />
                 <Text style={[styles.statNumber, { color: theme.colors.secondary }]}>
-                  {((receivedReviews.filter(r => r.rating >= 4).length / totalReviews) * 100).toFixed(0)}%
+                  {totalReviews > 0 ? ((receivedReviews.filter(r => r.rating >= 4).length / totalReviews) * 100).toFixed(0) : 0}%
                 </Text>
                 <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>
                   Positive
@@ -148,7 +187,7 @@ export default function ReviewsScreen() {
               <View style={styles.statItem}>
                 <Users size={20} color={theme.colors.primary} />
                 <Text style={[styles.statNumber, { color: theme.colors.primary }]}>
-                  {user?.totalRides}
+                  {user?.totalRides || 0}
                 </Text>
                 <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>
                   Total Rides
@@ -395,5 +434,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlign: 'center',
     lineHeight: 24,
+  },
+  avatarPlaceholder: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

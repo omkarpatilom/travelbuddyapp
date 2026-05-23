@@ -10,14 +10,16 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { User, Mail, Phone, Camera, ArrowLeft, Save } from 'lucide-react-native';
+import { api } from '@/utils/api';
+import { User, Mail, Phone, Camera, ArrowLeft, Save, Trash2 } from 'lucide-react-native';
 
 export default function EditProfileScreen() {
   const { theme } = useTheme();
-  const { user, updateUser } = useAuth();
+  const { user, updateUser, refreshProfile } = useAuth();
   const router = useRouter();
 
   const [formData, setFormData] = useState({
@@ -26,6 +28,7 @@ export default function EditProfileScreen() {
     phone: user?.phone || '',
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
 
   const updateFormData = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -50,8 +53,67 @@ export default function EditProfileScreen() {
     }
   };
 
-  const handleChangePhoto = () => {
-    Alert.alert('Change Photo', 'Photo upload feature coming soon!');
+  const handleChangePhoto = async () => {
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    if (permissionResult.granted === false) {
+      Alert.alert('Permission Denied', 'Permission to access gallery is required');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.5,
+    });
+
+    if (!result.canceled && result.assets[0].uri) {
+      setIsUploading(true);
+      try {
+        const formData = new FormData();
+        // @ts-ignore
+        formData.append('file', {
+          uri: result.assets[0].uri,
+          name: 'profile-photo.jpg',
+          type: 'image/jpeg',
+        });
+        
+        await api.post('/users/me/profile-photo', formData);
+        await refreshProfile();
+        Alert.alert('Success', 'Profile photo updated!');
+      } catch (error: any) {
+        Alert.alert('Error', error.message || 'Failed to upload photo');
+      } finally {
+        setIsUploading(false);
+      }
+    }
+  };
+
+  const handleDeletePhoto = async () => {
+    Alert.alert(
+      'Delete Photo',
+      'Are you sure you want to remove your profile photo?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setIsUploading(true);
+            try {
+              await api.delete('/users/me/profile-photo');
+              await refreshProfile();
+              Alert.alert('Success', 'Profile photo removed');
+            } catch (error: any) {
+              Alert.alert('Error', error.message || 'Failed to remove photo');
+            } finally {
+              setIsUploading(false);
+            }
+          }
+        }
+      ]
+    );
   };
 
   return (

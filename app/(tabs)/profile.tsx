@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,16 +8,22 @@ import {
   Image,
   Alert,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { User, Settings, Star, Car, Calendar, Phone, Mail, LogOut, CreditCard as Edit, Shield, CircleHelp as HelpCircle, CreditCard, Bell, ChevronRight } from 'lucide-react-native';
+import { User, Settings, Star, Car, Calendar, Phone, Mail, LogOut, CreditCard as Edit, Shield, CircleHelp as HelpCircle, CreditCard, Bell, ChevronRight, MapPin, TrendingUp, CheckCircle } from 'lucide-react-native';
 import { mockReviews } from '@/data/mockData';
 
 export default function ProfileScreen() {
   const { theme } = useTheme();
-  const { user, logout } = useAuth();
+  const { user, logout, refreshProfile, isLoading } = useAuth();
   const router = useRouter();
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshProfile();
+    }, [])
+  );
 
   const handleLogout = () => {
     Alert.alert(
@@ -37,49 +43,107 @@ export default function ProfileScreen() {
     );
   };
 
-  const menuItems = [
+  if (isLoading || !user) {
+    return (
+      <View style={[styles.container, styles.loadingContainer, { backgroundColor: theme.colors.background }]}>
+        <Text style={{ color: theme.colors.text }}>Loading profile...</Text>
+      </View>
+    );
+  }
+
+  const menuGroups = [
+    ...(user?.role === 'Driver' ? [{
+      title: 'Driver Dashboard',
+      items: [
+        {
+          icon: TrendingUp,
+          title: 'Earnings & Stats',
+          subtitle: 'View your performance and earnings',
+          onPress: () => Alert.alert('Coming Soon', 'Driver stats coming soon!'),
+        },
+        {
+          icon: CheckCircle,
+          title: 'Verification Status',
+          subtitle: user.isVerified ? 'Fully verified driver' : 'Verification pending or required',
+          onPress: () => router.push('/profile/verification'),
+        },
+      ]
+    }] : []),
     {
-      icon: Edit,
-      title: 'Edit Profile',
-      subtitle: 'Update your personal information',
-      onPress: () => router.push('/profile/edit'),
+      title: 'Account Settings',
+      items: [
+        {
+          icon: Edit,
+          title: 'Edit Profile',
+          subtitle: 'Update your personal information',
+          onPress: () => router.push('/profile/edit'),
+        },
+        {
+          icon: MapPin,
+          title: 'Saved Locations',
+          subtitle: 'Home, work, and favorite spots',
+          onPress: () => router.push('/profile/saved-locations'),
+        },
+        {
+          icon: Bell,
+          title: 'Notifications',
+          subtitle: 'Manage notification preferences',
+          onPress: () => router.push('/profile/notifications'),
+        },
+        {
+          icon: Shield,
+          title: 'Security',
+          subtitle: 'Password, 2FA, and active sessions',
+          onPress: () => router.push('/profile/security'),
+        },
+      ]
     },
     {
-      icon: Car,
-      title: 'Vehicle Details',
-      subtitle: 'Manage your vehicle information',
-      onPress: () => router.push('/profile/vehicle'),
+      title: 'Ride & Vehicle',
+      items: [
+        {
+          icon: Car,
+          title: 'Vehicle Details',
+          subtitle: 'Manage your vehicle information',
+          onPress: () => router.push('/profile/vehicle'),
+        },
+        {
+          icon: Settings,
+          title: 'Ride Preferences',
+          subtitle: 'Music, smoking, and passenger defaults',
+          onPress: () => router.push('/profile/preferences'),
+        },
+        {
+          icon: Star,
+          title: 'Reviews & Ratings',
+          subtitle: `${mockReviews.length} reviews`,
+          onPress: () => router.push('/profile/reviews'),
+        },
+        {
+          icon: CreditCard,
+          title: 'Payment Methods',
+          subtitle: 'Manage your cards and payments',
+          onPress: () => Alert.alert('Coming Soon', 'Payment methods feature coming soon!'),
+        },
+      ]
     },
     {
-      icon: Star,
-      title: 'Reviews & Ratings',
-      subtitle: `${mockReviews.length} reviews`,
-      onPress: () => router.push('/profile/reviews'),
-    },
-    {
-      icon: CreditCard,
-      title: 'Payment Methods',
-      subtitle: 'Manage your cards and payments',
-      onPress: () => Alert.alert('Coming Soon', 'Payment methods feature coming soon!'),
-    },
-    {
-      icon: Bell,
-      title: 'Notifications',
-      subtitle: 'Manage notification preferences',
-      onPress: () => Alert.alert('Coming Soon', 'Notification settings coming soon!'),
-    },
-    {
-      icon: Shield,
-      title: 'Safety & Security',
-      subtitle: 'Emergency contacts, SOS, and verification',
-      onPress: () => router.push('/profile/safety'),
-    },
-    {
-      icon: HelpCircle,
-      title: 'Help & Support',
-      subtitle: 'Get help and contact support',
-      onPress: () => Alert.alert('Coming Soon', 'Help center coming soon!'),
-    },
+      title: 'Safety & Support',
+      items: [
+        {
+          icon: Shield,
+          title: 'Safety Center',
+          subtitle: 'Emergency contacts and SOS',
+          onPress: () => router.push('/profile/safety'),
+        },
+        {
+          icon: HelpCircle,
+          title: 'Help & Support',
+          subtitle: 'Get help and contact support',
+          onPress: () => Alert.alert('Coming Soon', 'Help center coming soon!'),
+        },
+      ]
+    }
   ];
 
   const renderMenuItem = (item: any, index: number) => (
@@ -118,13 +182,13 @@ export default function ProfileScreen() {
 
           <View style={styles.profileInfo}>
             <Text style={styles.userName}>
-              {user?.fullName}
+              {user?.fullName || 'Traveler'}
             </Text>
             <Text style={styles.userEmail}>{user?.email}</Text>
             <View style={styles.userStats}>
               <View style={styles.statItem}>
                 <Star size={16} color="#FFD700" fill="#FFD700" />
-                <Text style={styles.statText}>{user?.rating}</Text>
+                <Text style={styles.statText}>{user?.rating?.toFixed(1) || '0.0'}</Text>
               </View>
               <View style={styles.statItem}>
                 <Shield size={16} color="#FFFFFF" />
@@ -132,7 +196,7 @@ export default function ProfileScreen() {
               </View>
               <View style={styles.statItem}>
                 <Calendar size={16} color="#FFFFFF" />
-                <Text style={styles.statText}>Since {user?.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'}</Text>
+                <Text style={styles.statText}>Since {user?.createdAt ? new Date(user.createdAt).getFullYear() : '2026'}</Text>
               </View>
             </View>
           </View>
@@ -143,7 +207,7 @@ export default function ProfileScreen() {
         <View style={[styles.quickStats, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
           <View style={styles.statColumn}>
             <Text style={[styles.statNumber, { color: theme.colors.primary }]}>
-              {user?.totalRides}
+              {user?.totalRides || 0}
             </Text>
             <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>
               Total Rides
@@ -152,7 +216,7 @@ export default function ProfileScreen() {
           <View style={[styles.statDivider, { backgroundColor: theme.colors.border }]} />
           <View style={styles.statColumn}>
             <Text style={[styles.statNumber, { color: theme.colors.secondary }]}>
-              {user?.rating}
+              {user?.rating?.toFixed(1) || '0.0'}
             </Text>
             <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>
               Average Rating
@@ -161,7 +225,7 @@ export default function ProfileScreen() {
           <View style={[styles.statDivider, { backgroundColor: theme.colors.border }]} />
           <View style={styles.statColumn}>
             <Text style={[styles.statNumber, { color: theme.colors.accent }]}>
-              $245
+              $0
             </Text>
             <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>
               Money Saved
@@ -169,12 +233,14 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        <View style={styles.menuSection}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Settings</Text>
-          <View style={styles.menuList}>
-            {menuItems.map((item, index) => renderMenuItem(item, index))}
+        {menuGroups.map((group, gIndex) => (
+          <View key={gIndex} style={styles.menuSection}>
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>{group.title}</Text>
+            <View style={styles.menuList}>
+              {group.items.map((item, index) => renderMenuItem(item, index))}
+            </View>
           </View>
-        </View>
+        ))}
 
         <TouchableOpacity
           style={[styles.logoutButton, { backgroundColor: theme.colors.error }]}
