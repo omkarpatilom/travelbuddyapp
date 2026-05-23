@@ -53,14 +53,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const mappedUser = mapUserProfile(profile);
           await storage.setItem(StorageKeys.USER_DATA, mappedUser);
           setUser(mappedUser);
-        } catch (error) {
-          console.error('Error fetching profile, using cached data:', error);
-          const cachedUser = await storage.getItem<User>(StorageKeys.USER_DATA);
-          if (cachedUser) {
-            setUser(cachedUser);
-          } else {
+        } catch (error: any) {
+          console.error('Error fetching profile:', error.message || error);
+          if (error.message?.includes('401')) {
             // Token is invalid or expired
             await logout();
+          } else {
+            const cachedUser = await storage.getItem<User>(StorageKeys.USER_DATA);
+            if (cachedUser) {
+              setUser(cachedUser);
+            } else {
+              await logout();
+            }
           }
         }
       }

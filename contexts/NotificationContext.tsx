@@ -71,8 +71,12 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     try {
       token = (await Notifications.getExpoPushTokenAsync()).data;
       console.log('Push token:', token);
-    } catch (error) {
-      console.error('Error getting push token:', error);
+    } catch (error: any) {
+      if (error?.message?.includes('projectId') || error?.message?.includes('VALIDATION_ERROR')) {
+        console.log('Skipping push token registration: Invalid or missing EAS projectId in local development.');
+      } else {
+        console.error('Error getting push token:', error);
+      }
     }
 
     return token;
