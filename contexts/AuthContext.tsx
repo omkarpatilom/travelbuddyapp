@@ -14,6 +14,7 @@ export interface User {
   isVerified: boolean;
   avatar?: string;
   createdAt: string;
+  totalRides?: number; // Added for UI consistency
 }
 
 interface AuthContextType {
@@ -23,6 +24,7 @@ interface AuthContextType {
   register: (userData: RegisterData) => Promise<boolean>;
   logout: () => Promise<void>;
   updateUser: (userData: Partial<User>) => Promise<void>;
+  refreshProfile: () => Promise<void>;
 }
 
 interface RegisterData {
@@ -179,8 +181,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const refreshProfile = async () => {
+    try {
+      const profile = await api.get<any>('/users/me');
+      const mappedUser = mapUserProfile(profile);
+      await storage.setItem(StorageKeys.USER_DATA, mappedUser);
+      setUser(mappedUser);
+    } catch (error) {
+      console.error('Error refreshing profile:', error);
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, register, logout, updateUser }}>
+    <AuthContext.Provider value={{ user, isLoading, login, register, logout, updateUser, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );

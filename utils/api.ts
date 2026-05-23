@@ -27,13 +27,14 @@ export const api = {
 
   async post<T>(endpoint: string, body: any): Promise<T> {
     const authHeader = await getAuthHeader();
+    const isFormData = body instanceof FormData;
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
+        ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
         ...authHeader,
       },
-      body: JSON.stringify(body),
+      body: isFormData ? body : JSON.stringify(body),
     });
 
     if (!response.ok) {
@@ -46,13 +47,34 @@ export const api = {
 
   async put<T>(endpoint: string, body: any): Promise<T> {
     const authHeader = await getAuthHeader();
+    const isFormData = body instanceof FormData;
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       method: 'PUT',
       headers: {
-        'Content-Type': 'application/json',
+        ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
         ...authHeader,
       },
-      body: JSON.stringify(body),
+      body: isFormData ? body : JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || `API Error: ${response.status} ${response.statusText}`);
+    }
+
+    return response.json();
+  },
+
+  async patch<T>(endpoint: string, body: any): Promise<T> {
+    const authHeader = await getAuthHeader();
+    const isFormData = body instanceof FormData;
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      method: 'PATCH',
+      headers: {
+        ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+        ...authHeader,
+      },
+      body: isFormData ? body : JSON.stringify(body),
     });
 
     if (!response.ok) {
