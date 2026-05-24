@@ -15,7 +15,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { api } from '@/utils/api';
 import { Car, Hash, Palette, Calendar, Users, ArrowLeft, Save, Plus } from 'lucide-react-native';
 import PhotoUploader from '@/components/PhotoUploader';
-import VehicleFeatureTags from '@/components/VehicleFeatureTags';
+import VehicleFeatureTags, { AVAILABLE_FEATURES } from '@/components/VehicleFeatureTags';
 import RidePreferences, { UniversalRidePreferences } from '@/components/RidePreferences';
 
 interface Vehicle {
@@ -73,14 +73,20 @@ export default function VehicleDetailsScreen() {
     try {
       const data = await api.get<any[]>('/vehicles/my-vehicles');
       const mappedVehicles = await Promise.all(data.map(async (v: any) => {
-        // Fetch features and preferences for each vehicle
+        // Fetch features, preferences, and photos for each vehicle
         let features: string[] = [];
         let preferences: UniversalRidePreferences | undefined;
+        let photos: string[] = [];
         
         try {
           const featureData = await api.get<any[]>(`/VehicleFeatures/${v.id}/features`);
           features = featureData.map(f => f.featureCode);
         } catch (e) { console.error('Error fetching features', e); }
+
+        try {
+          const photoData = await api.get<any[]>(`/VehiclePhotos/${v.id}/photos`);
+          photos = photoData.map(p => p.fileUrl);
+        } catch (e) { console.error('Error fetching photos', e); }
 
         try {
           const prefData = await api.get<any>(`/VehiclePreferences/${v.id}/preferences`);
@@ -99,14 +105,14 @@ export default function VehicleDetailsScreen() {
 
         return {
           id: v.id,
-          make: v.brand,
-          model: v.model,
-          year: new Date(v.createdAt).getFullYear().toString(),
-          color: v.color,
-          licensePlate: v.registrationNumber,
-          seats: v.totalSeats.toString(),
-          photos: [], // TODO: Fetch from VehiclePhotos
-          isDefault: v.isDefault,
+          make: v.brand || '',
+          model: v.model || '',
+          year: v.createdAt ? new Date(v.createdAt).getFullYear().toString() : '',
+          color: v.color || '',
+          licensePlate: v.registrationNumber || '',
+          seats: v.totalSeats?.toString() || '0',
+          photos,
+          isDefault: v.isDefault || false,
           features,
           preferences,
         };
@@ -122,11 +128,11 @@ export default function VehicleDetailsScreen() {
     }
   };
 
-  const mapConversationLevel = (level: number): 'quiet' | 'moderate' | 'chatty' => {
+  const mapConversationLevel = (level: number): 'quiet' | 'moderate' | 'talkative' => {
     switch (level) {
       case 0: return 'quiet';
       case 1: return 'moderate';
-      case 2: return 'chatty';
+      case 2: return 'talkative';
       default: return 'moderate';
     }
   };
@@ -135,7 +141,7 @@ export default function VehicleDetailsScreen() {
     switch (level) {
       case 'quiet': return 0;
       case 'moderate': return 1;
-      case 'chatty': return 2;
+      case 'talkative': return 2;
       default: return 1;
     }
   };
@@ -209,9 +215,12 @@ export default function VehicleDetailsScreen() {
 
     setIsLoading(true);
     try {
+      let vehicleId = editingVehicle?.id;
+
       if (editingVehicle) {
         // Update existing vehicle
         await api.put(`/vehicles/${editingVehicle.id}`, {
+          vehicleId: editingVehicle.id,
           brand: formData.make,
           model: formData.model,
           color: formData.color,
@@ -230,9 +239,7 @@ export default function VehicleDetailsScreen() {
 
       } else {
         // Add new vehicle
-        const me = await api.get<any>('/users/me');
-        const vehicleId = await api.post<string>('/vehicles', {
-          driverId: me.id,
+        vehicleId = await api.post<string>('/vehicles', {
           brand: formData.make,
           model: formData.model,
           color: formData.color,
@@ -251,6 +258,39 @@ export default function VehicleDetailsScreen() {
         });
       }
 
+      if (vehicleId) {
+        // Save features
+        for (const featureId of formData.features) {
+          const feature = AVAILABLE_FEATURES.find(f => f.id === featureId);
+          if (feature) {
+            try {
+              await api.post(`/VehicleFeatures/${vehicleId}/features`, {
+                vehicleId: vehicleId,
+                featureCode: feature.id,
+                featureName: feature.name,
+                category: mapFeatureCategory(feature.category),
+              });
+            } catch (e) {
+              console.log(`Error saving feature ${featureId}`, e);
+            }
+          }
+        }
+
+        // Save photos
+        const localPhotos = formData.photos.filter(p => p.startsWith('file://') || p.startsWith('content://'));
+        for (let i = 0; i < localPhotos.length; i++) {
+          try {
+            await api.post(`/VehiclePhotos/${vehicleId}/photos`, {
+              vehicleId: vehicleId,
+              fileUrl: localPhotos[i],
+              isPrimary: i === 0 && formData.photos[0] === localPhotos[i],
+            });
+          } catch (e) {
+            console.error(`Error saving photo ${i}`, e);
+          }
+        }
+      }
+
       setIsEditing(false);
       fetchVehicles();
       Alert.alert('Success', 'Vehicle saved successfully!');
@@ -258,6 +298,16 @@ export default function VehicleDetailsScreen() {
       Alert.alert('Error', error.message || 'Failed to save vehicle. Please try again.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const mapFeatureCategory = (category: string): number => {
+    switch (category) {
+      case 'comfort': return 0;
+      case 'entertainment': return 1;
+      case 'safety': return 2;
+      case 'convenience': return 3;
+      default: return 0;
     }
   };
 
@@ -489,7 +539,12 @@ export default function VehicleDetailsScreen() {
   }
 
   return (
-    <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]}>
+    <ScrollView 
+      style={[styles.container, { backgroundColor: theme.colors.background }]}
+      refreshControl={
+        <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} colors={[theme.colors.primary]} />
+      }
+    >
       <View style={[styles.header, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <ArrowLeft size={24} color={theme.colors.text} />

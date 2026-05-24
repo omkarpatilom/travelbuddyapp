@@ -1,34 +1,46 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   TouchableOpacity,
   FlatList,
   Image,
   Alert,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRides } from '@/contexts/RideContext';
 import { Calendar, Clock, MapPin, Star, Phone, X } from 'lucide-react-native';
-import { mockBookings } from '@/data/mockData';
 
 export default function BookingsScreen() {
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past'>('upcoming');
+  const [isRefreshing, setIsRefreshing] = useState(false);
   
   const { theme } = useTheme();
   const { user } = useAuth();
-  const { cancelBooking } = useRides();
+  const { bookings, cancelBooking, isLoading, loadInitialData } = useRides();
   const router = useRouter();
 
-  const upcomingBookings = mockBookings.filter(booking => 
+  const onRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      await loadInitialData();
+    } catch (error) {
+      console.error('Error refreshing bookings:', error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [loadInitialData]);
+
+  const upcomingBookings = (bookings || []).filter(booking => 
     booking.status === 'confirmed' || booking.status === 'pending'
   );
 
-  const pastBookings = mockBookings.filter(booking => 
+  const pastBookings = (bookings || []).filter(booking => 
     booking.status === 'completed' || booking.status === 'cancelled'
   );
 
@@ -103,15 +115,21 @@ export default function BookingsScreen() {
 
       <View style={styles.rideInfo}>
         <View style={styles.driverInfo}>
-          <Image source={{ uri: item.ride.driverAvatar }} style={styles.driverAvatar} />
+          {item.ride?.driverAvatar ? (
+            <Image source={{ uri: item.ride.driverAvatar }} style={styles.driverAvatar} />
+          ) : (
+            <View style={[styles.driverAvatar, { backgroundColor: theme.colors.border, justifyContent: 'center', alignItems: 'center' }]}>
+              <Star size={20} color={theme.colors.textSecondary} />
+            </View>
+          )}
           <View style={styles.driverDetails}>
             <Text style={[styles.driverName, { color: theme.colors.text }]}>
-              {item.ride.driverName}
+              {item.ride?.driverName || 'Driver'}
             </Text>
             <View style={styles.ratingContainer}>
               <Star size={14} color={theme.colors.warning} fill={theme.colors.warning} />
               <Text style={[styles.rating, { color: theme.colors.textSecondary }]}>
-                {item.ride.driverRating}
+                {item.ride?.driverRating || 5.0}
               </Text>
             </View>
           </View>
@@ -124,13 +142,13 @@ export default function BookingsScreen() {
           <View style={styles.locationRow}>
             <MapPin size={16} color={theme.colors.secondary} />
             <Text style={[styles.locationText, { color: theme.colors.text }]} numberOfLines={1}>
-              {item.ride.from.address}
+              {item.ride?.from?.address || 'Start Location'}
             </Text>
           </View>
           <View style={styles.locationRow}>
             <MapPin size={16} color={theme.colors.error} />
             <Text style={[styles.locationText, { color: theme.colors.text }]} numberOfLines={1}>
-              {item.ride.to.address}
+              {item.ride?.to?.address || 'Destination'}
             </Text>
           </View>
         </View>
@@ -139,7 +157,7 @@ export default function BookingsScreen() {
           <View style={styles.detailRow}>
             <Calendar size={16} color={theme.colors.textSecondary} />
             <Text style={[styles.detailText, { color: theme.colors.textSecondary }]}>
-              {item.ride.date} • {item.ride.time}
+              {item.ride?.date || ''} • {item.ride?.time || ''}
             </Text>
           </View>
           <View style={styles.priceContainer}>
@@ -154,6 +172,14 @@ export default function BookingsScreen() {
       </View>
     </TouchableOpacity>
   );
+
+  if (isLoading && (!bookings || bookings.length === 0) && !isRefreshing) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.colors.background, justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={theme.colors.primary} testID="loading-indicator" />
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -192,6 +218,14 @@ export default function BookingsScreen() {
         renderItem={renderBooking}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={onRefresh}
+            colors={[theme.colors.primary]}
+            tintColor={theme.colors.primary}
+          />
+        }
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>

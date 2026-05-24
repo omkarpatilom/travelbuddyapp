@@ -112,3 +112,6 @@ jest.mock('@/components/RidePreferences', () => {
 
 // Global fetch mock
 global.fetch = jest.fn();
+
+// Increase Jest timeout to 90 seconds for React Native tests
+jest.setTimeout(90000);

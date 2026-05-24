@@ -45,14 +45,28 @@ export default function SecurityScreen() {
   const fetchSecurityData = async () => {
     try {
       // Fetch active sessions
-      const sessionData = await api.get<any[]>('/security/sessions');
-      setSessions(sessionData.map(s => ({
-        id: s.id,
-        deviceName: s.device || 'Unknown Device',
-        location: s.location || 'Unknown Location',
-        lastActive: s.lastActive,
-        isCurrent: s.isCurrent,
-      })));
+      try {
+        const sessionData = await api.get<any[]>('/security/sessions');
+        setSessions(sessionData.map(s => ({
+          id: s.id,
+          deviceName: s.device || 'Unknown Device',
+          location: s.location || 'Unknown Location',
+          lastActive: s.lastActive,
+          isCurrent: s.isCurrent,
+        })));
+      } catch (e) {
+        console.warn('Sessions API not available, falling back to local device session info.');
+        // Fallback to local session (Current Device)
+        setSessions([
+          {
+            id: 'current',
+            deviceName: 'Active Session (Current Device)',
+            location: 'Local Connection',
+            lastActive: new Date().toISOString(),
+            isCurrent: true,
+          }
+        ]);
+      }
 
       // Fetch 2FA status - assuming an endpoint exists or part of user profile
       // For now we'll just mock or set to false

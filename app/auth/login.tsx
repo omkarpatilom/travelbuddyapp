@@ -27,6 +27,7 @@ export default function LoginScreen() {
   const router = useRouter();
 
   const handleLogin = async () => {
+    console.log('LoginScreen: handleLogin called', { email, password });
     if (!email || !password) {
       Alert.alert('Error', 'Please fill in all fields');
       return;

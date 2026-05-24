@@ -34,13 +34,17 @@ export default function ReviewsScreen() {
     
     setIsLoading(true);
     try {
-      // Fetch received reviews
-      const received = await api.get<any[]>(`/Reviews/user/${user.id}`);
+      // Fetch received reviews (where target is this user)
+      const received = await api.get<any[]>(`/Reviews/target/${user.id}`);
       setReceivedReviews(received);
       
-      // Backend doesn't seem to have a dedicated "given reviews" endpoint for current user yet
-      // but we might be able to filter from somewhere else if needed.
-      // For now we just use received reviews.
+      // Fetch given reviews (written by this user)
+      try {
+        const given = await api.get<any[]>(`/Reviews/user/${user.id}`);
+        setGivenReviews(given);
+      } catch (givenError) {
+        console.error('Error fetching given reviews:', givenError);
+      }
     } catch (error) {
       console.error('Error fetching reviews:', error);
     } finally {
