@@ -37,7 +37,7 @@ interface VehicleFeatureTagsProps {
   style?: any;
 }
 
-const AVAILABLE_FEATURES: VehicleFeature[] = [
+export const AVAILABLE_FEATURES: VehicleFeature[] = [
   // Comfort
   { id: 'ac', name: 'Air Conditioning', icon: <Wind size={16} />, category: 'comfort', popular: true },
   { id: 'heating', name: 'Heating', icon: <Zap size={16} />, category: 'comfort', popular: false },

@@ -1,104 +1,127 @@
-﻿import { storage, StorageKeys } from './storage';
+import { storage, StorageKeys } from './storage';
 
-const API_BASE_URL = 'http://10.106.57.252:5000/api/v1';
+const API_BASE_URL = 'https://whippet-concise-ghastly.ngrok-free.app/api/v1';
 
-async function getAuthHeader() {
+async function getAuthHeader(): Promise<Record<string, string>> {
   const token = await storage.getItem<string>(StorageKeys.AUTH_TOKEN);
-  return token ? { 'Authorization': `Bearer ${token}` } : {};
+  if (token) {
+    console.log('Sending Token:', token.substring(0, 10) + '...');
+    return { 'Authorization': `Bearer ${token}` };
+  }
+  console.log('No Token found in storage');
+  return {};
+}
+
+// Helper to bundle standard headers and bypass ngrok warning pages in Expo Go
+async function getApiHeaders(isFormData = false): Promise<Record<string, string>> {
+  const authHeader = await getAuthHeader();
+  const headers: Record<string, string> = {
+    'ngrok-skip-browser-warning': 'true',
+    ...authHeader,
+  };
+  if (!isFormData) {
+    headers['Content-Type'] = 'application/json';
+  }
+  return headers;
+}
+
+// Safe response JSON parser that handles empty responses (e.g. 204 No Content) and plain-text
+async function handleResponse<T>(response: Response, endpoint: string): Promise<T> {
+  const text = await response.text().catch(() => '');
+  
+  if (!response.ok) {
+    let errorMessage = `API Error: ${response.status} ${response.statusText}`;
+    try {
+      if (text) {
+        const errorData = JSON.parse(text);
+        errorMessage = errorData.message || errorData.error || errorMessage;
+      }
+    } catch {}
+    console.error(`Request Failed: ${endpoint}`, response.status, text);
+    throw new Error(errorMessage);
+  }
+
+  if (!text || text.trim() === '') {
+    return {} as T;
+  }
+
+  try {
+    return JSON.parse(text) as T;
+  } catch (e) {
+    // If it's not valid JSON, return as plain text (casted to T)
+    return text as unknown as T;
+  }
 }
 
 export const api = {
   async get<T>(endpoint: string): Promise<T> {
-    const authHeader = await getAuthHeader();
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        ...authHeader,
-      },
-    });
+    const headers = await getApiHeaders(false);
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), 10000); // 10s timeout
 
-    if (!response.ok) {
-      throw new Error(`API Error: ${response.status} ${response.statusText}`);
+    try {
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+        method: 'GET',
+        headers,
+        signal: controller.signal,
+      });
+      clearTimeout(id);
+
+      return handleResponse<T>(response, endpoint);
+    } catch (e: any) {
+      clearTimeout(id);
+      if (e.name === 'AbortError') throw new Error('Request Timeout');
+      throw e;
     }
-
-    return response.json();
   },
 
   async post<T>(endpoint: string, body: any): Promise<T> {
-    const authHeader = await getAuthHeader();
     const isFormData = body instanceof FormData;
+    const headers = await getApiHeaders(isFormData);
+
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       method: 'POST',
-      headers: {
-        ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
-        ...authHeader,
-      },
+      headers,
       body: isFormData ? body : JSON.stringify(body),
     });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.message || `API Error: ${response.status} ${response.statusText}`);
-    }
-
-    return response.json();
+    return handleResponse<T>(response, endpoint);
   },
 
   async put<T>(endpoint: string, body: any): Promise<T> {
-    const authHeader = await getAuthHeader();
     const isFormData = body instanceof FormData;
+    const headers = await getApiHeaders(isFormData);
+
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       method: 'PUT',
-      headers: {
-        ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
-        ...authHeader,
-      },
+      headers,
       body: isFormData ? body : JSON.stringify(body),
     });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.message || `API Error: ${response.status} ${response.statusText}`);
-    }
-
-    return response.json();
+    return handleResponse<T>(response, endpoint);
   },
 
   async patch<T>(endpoint: string, body: any): Promise<T> {
-    const authHeader = await getAuthHeader();
     const isFormData = body instanceof FormData;
+    const headers = await getApiHeaders(isFormData);
+
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       method: 'PATCH',
-      headers: {
-        ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
-        ...authHeader,
-      },
+      headers,
       body: isFormData ? body : JSON.stringify(body),
     });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.message || `API Error: ${response.status} ${response.statusText}`);
-    }
-
-    return response.json();
+    return handleResponse<T>(response, endpoint);
   },
 
   async delete<T>(endpoint: string): Promise<T> {
-    const authHeader = await getAuthHeader();
+    const headers = await getApiHeaders(false);
+
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       method: 'DELETE',
-      headers: {
-        'Content-Type': 'application/json',
-        ...authHeader,
-      },
+      headers,
     });
 
-    if (!response.ok) {
-      throw new Error(`API Error: ${response.status} ${response.statusText}`);
-    }
-
-    return response.json();
+    return handleResponse<T>(response, endpoint);
   },
 };

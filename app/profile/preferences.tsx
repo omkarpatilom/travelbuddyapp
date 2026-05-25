@@ -25,6 +25,7 @@ export default function PreferencesScreen() {
     allowSmoking: false,
     allowPets: false,
     preferredLanguage: 'English',
+    conversationLevel: 'Moderate',
   });
 
   useEffect(() => {
@@ -39,6 +40,7 @@ export default function PreferencesScreen() {
         allowSmoking: data.allowSmoking,
         allowPets: data.allowPets,
         preferredLanguage: data.preferredLanguage || 'English',
+        conversationLevel: data.conversationLevel || 'Moderate',
       });
     } catch (error) {
       console.error('Error fetching preferences:', error);

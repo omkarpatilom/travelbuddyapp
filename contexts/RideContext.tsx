@@ -55,6 +55,7 @@ interface RideContextType {
   getUserRides: (userId: string) => Promise<Ride[]>;
   getUserBookings: (userId: string) => Promise<Booking[]>;
   getRideById: (rideId: string) => Promise<Ride | null>;
+  getBookingById: (bookingId: string) => Promise<Booking | null>;
   loadInitialData: () => Promise<void>;
 }
 
@@ -305,6 +306,16 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const getBookingById = async (bookingId: string): Promise<Booking | null> => {
+    try {
+      const data = await api.get<any>(`/bookings/${bookingId}`);
+      return await mapBookingData(data);
+    } catch (e) {
+      console.error('Error fetching booking by ID:', e);
+      return null;
+    }
+  };
+
   return (
     <RideContext.Provider 
       value={{ 
@@ -321,6 +332,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
         getUserRides,
         getUserBookings,
         getRideById,
+        getBookingById,
         loadInitialData
       }}
     >

@@ -151,6 +151,9 @@ export default function ProfileScreen() {
       key={index}
       style={[styles.menuItem, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
       onPress={item.onPress}
+      accessibilityRole="button"
+      accessibilityLabel={item.title}
+      accessibilityHint={item.subtitle}
     >
       <View style={[styles.menuIcon, { backgroundColor: theme.colors.primary + '20' }]}>
         <item.icon size={20} color={theme.colors.primary} />
@@ -164,37 +167,42 @@ export default function ProfileScreen() {
   );
 
   return (
-    <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]}>
+    <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]} accessible={false}>
       <View style={[styles.header, { backgroundColor: theme.colors.primary }]}>
         <View style={styles.profileSection}>
           <View style={styles.avatarContainer}>
             {user?.avatar ? (
-              <Image source={{ uri: user.avatar }} style={styles.avatar} />
+              <Image source={{ uri: user.avatar }} style={styles.avatar} accessible={true} accessibilityLabel="Profile Picture" />
             ) : (
-              <View style={[styles.avatarPlaceholder, { backgroundColor: theme.colors.card }]}>
+              <View style={[styles.avatarPlaceholder, { backgroundColor: theme.colors.card }]} accessible={true} accessibilityLabel="Default Profile Picture">
                 <User size={40} color={theme.colors.primary} />
               </View>
             )}
-            <TouchableOpacity style={styles.editAvatarButton}>
+            <TouchableOpacity 
+              style={styles.editAvatarButton} 
+              accessibilityRole="button" 
+              accessibilityLabel="Edit Profile Picture"
+              onPress={() => router.push('/profile/edit')}
+            >
               <Edit size={16} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
 
-          <View style={styles.profileInfo}>
-            <Text style={styles.userName}>
+          <View style={styles.profileInfo} accessible={true}>
+            <Text style={styles.userName} accessibilityLabel={`User name ${user?.fullName || 'Traveler'}`}>
               {user?.fullName || 'Traveler'}
             </Text>
-            <Text style={styles.userEmail}>{user?.email}</Text>
+            <Text style={styles.userEmail} accessibilityLabel={`Email address ${user?.email}`}>{user?.email}</Text>
             <View style={styles.userStats}>
-              <View style={styles.statItem}>
+              <View style={styles.statItem} accessible={true} accessibilityLabel={`Rating ${user?.rating?.toFixed(1) || '0.0'}`}>
                 <Star size={16} color="#FFD700" fill="#FFD700" />
                 <Text style={styles.statText}>{user?.rating?.toFixed(1) || '0.0'}</Text>
               </View>
-              <View style={styles.statItem}>
+              <View style={styles.statItem} accessible={true} accessibilityLabel={`Verification status ${user?.isVerified ? 'Verified' : 'Unverified'}`}>
                 <Shield size={16} color="#FFFFFF" />
                 <Text style={styles.statText}>{user?.isVerified ? 'Verified' : 'Unverified'}</Text>
               </View>
-              <View style={styles.statItem}>
+              <View style={styles.statItem} accessible={true} accessibilityLabel={`Member since ${user?.createdAt ? new Date(user.createdAt).getFullYear() : '2026'}`}>
                 <Calendar size={16} color="#FFFFFF" />
                 <Text style={styles.statText}>Since {user?.createdAt ? new Date(user.createdAt).getFullYear() : '2026'}</Text>
               </View>
@@ -204,8 +212,8 @@ export default function ProfileScreen() {
       </View>
 
       <View style={styles.content}>
-        <View style={[styles.quickStats, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
-          <View style={styles.statColumn}>
+        <View style={[styles.quickStats, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]} accessible={true} accessibilityRole="summary">
+          <View style={styles.statColumn} accessible={true} accessibilityLabel={`Total Rides ${user?.totalRides || 0}`}>
             <Text style={[styles.statNumber, { color: theme.colors.primary }]}>
               {user?.totalRides || 0}
             </Text>
@@ -214,7 +222,7 @@ export default function ProfileScreen() {
             </Text>
           </View>
           <View style={[styles.statDivider, { backgroundColor: theme.colors.border }]} />
-          <View style={styles.statColumn}>
+          <View style={styles.statColumn} accessible={true} accessibilityLabel={`Average Rating ${user?.rating?.toFixed(1) || '0.0'}`}>
             <Text style={[styles.statNumber, { color: theme.colors.secondary }]}>
               {user?.rating?.toFixed(1) || '0.0'}
             </Text>
@@ -223,7 +231,7 @@ export default function ProfileScreen() {
             </Text>
           </View>
           <View style={[styles.statDivider, { backgroundColor: theme.colors.border }]} />
-          <View style={styles.statColumn}>
+          <View style={styles.statColumn} accessible={true} accessibilityLabel="Money Saved $0">
             <Text style={[styles.statNumber, { color: theme.colors.accent }]}>
               $0
             </Text>
@@ -235,7 +243,7 @@ export default function ProfileScreen() {
 
         {menuGroups.map((group, gIndex) => (
           <View key={gIndex} style={styles.menuSection}>
-            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>{group.title}</Text>
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]} accessibilityRole="header">{group.title}</Text>
             <View style={styles.menuList}>
               {group.items.map((item, index) => renderMenuItem(item, index))}
             </View>
@@ -245,6 +253,8 @@ export default function ProfileScreen() {
         <TouchableOpacity
           style={[styles.logoutButton, { backgroundColor: theme.colors.error }]}
           onPress={handleLogout}
+          accessibilityRole="button"
+          accessibilityLabel="Logout"
         >
           <LogOut size={20} color="#FFFFFF" />
           <Text style={styles.logoutText}>Logout</Text>
@@ -257,6 +267,10 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  loadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   header: {
     paddingTop: 60,

@@ -75,7 +75,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       if (error?.message?.includes('projectId') || error?.message?.includes('VALIDATION_ERROR')) {
         console.log('Skipping push token registration: Invalid or missing EAS projectId in local development.');
       } else {
-        console.error('Error getting push token:', error);
+        console.warn('Error getting push token:', error);
       }
     }
 

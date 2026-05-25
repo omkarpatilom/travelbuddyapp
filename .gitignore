@@ -33,3 +33,8 @@ yarn-error.*
 
 # typescript
 *.tsbuildinfo
+
+# agent data & caches
+.gemini/
+graphify-out/
+screen.png

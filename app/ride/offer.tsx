@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,12 +11,25 @@ import {
 import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useRides } from '@/contexts/RideContext';
+import { api } from '@/utils/api';
 import { Users, DollarSign, ArrowLeft } from 'lucide-react-native';
 import DatePicker from '@/components/DatePicker';
 import LocationPicker from '@/components/LocationPicker';
 import VehicleSelector from '@/components/VehicleSelector';
 import PreferencesSelector, { RidePreferences } from '@/components/PreferencesSelector';
 import MapLocationSelector from '@/components/MapLocationSelector';
+
+interface Vehicle {
+  id: string;
+  make: string;
+  model: string;
+  year: string;
+  color: string;
+  licensePlate: string;
+  seats: string;
+  photos: string[];
+  isDefault: boolean;
+}
 
 export default function OfferRideScreen() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
@@ -31,33 +44,8 @@ export default function OfferRideScreen() {
   const [fromLocationData, setFromLocationData] = useState<any>(null);
   const [toLocationData, setToLocationData] = useState<any>(null);
   
-  // Mock vehicles data - in real app, this would come from user's vehicles
-  const [vehicles] = useState([
-    {
-      id: '1',
-      make: 'Toyota',
-      model: 'Camry',
-      year: '2020',
-      color: 'Blue',
-      licensePlate: 'ABC123',
-      seats: '4',
-      photos: ['https://images.pexels.com/photos/116675/pexels-photo-116675.jpeg?auto=compress&cs=tinysrgb&w=400'],
-      isDefault: true,
-    },
-    {
-      id: '2',
-      make: 'Honda',
-      model: 'Civic',
-      year: '2019',
-      color: 'White',
-      licensePlate: 'XYZ789',
-      seats: '4',
-      photos: ['https://images.pexels.com/photos/1007410/pexels-photo-1007410.jpeg?auto=compress&cs=tinysrgb&w=400'],
-      isDefault: false,
-    },
-  ]);
-  
-  const [selectedVehicle, setSelectedVehicle] = useState(vehicles.find(v => v.isDefault) || vehicles[0]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
   const [preferences, setPreferences] = useState<RidePreferences>({
     nonSmoking: true,
     musicAllowed: true,
@@ -66,10 +54,47 @@ export default function OfferRideScreen() {
     conversationLevel: 'moderate',
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [isFetchingVehicles, setIsFetchingVehicles] = useState(true);
   
   const { theme } = useTheme();
   const { createRide } = useRides();
   const router = useRouter();
+
+  useEffect(() => {
+    fetchVehicles();
+  }, []);
+
+  const fetchVehicles = async () => {
+    try {
+      const data = await api.get<any[]>('/vehicles/my-vehicles');
+      const mappedVehicles = await Promise.all(data.map(async (v: any) => {
+        let photos: string[] = [];
+        try {
+          const photoData = await api.get<any[]>(`/VehiclePhotos/${v.id}/photos`);
+          photos = photoData.map(p => p.fileUrl);
+        } catch (e) { console.error('Error fetching photos', e); }
+
+        return {
+          id: v.id,
+          make: v.brand,
+          model: v.model,
+          year: new Date(v.createdAt).getFullYear().toString(),
+          color: v.color,
+          licensePlate: v.registrationNumber,
+          seats: v.totalSeats.toString(),
+          photos,
+          isDefault: v.isDefault,
+        };
+      }));
+      setVehicles(mappedVehicles);
+      const defaultVehicle = mappedVehicles.find(v => v.isDefault) || mappedVehicles[0];
+      if (defaultVehicle) setSelectedVehicle(defaultVehicle);
+    } catch (error) {
+      console.error('Error fetching vehicles:', error);
+    } finally {
+      setIsFetchingVehicles(false);
+    }
+  };
 
   const updateFormData = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -148,6 +173,14 @@ export default function OfferRideScreen() {
       setIsLoading(false);
     }
   };
+
+  if (isFetchingVehicles) {
+    return (
+      <View style={[styles.container, styles.center, { backgroundColor: theme.colors.background }]}>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -314,6 +347,10 @@ export default function OfferRideScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  center: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   header: {
     paddingTop: 60,
