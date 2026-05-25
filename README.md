@@ -83,7 +83,7 @@ To ensure your iPhone can connect to your computer, you must force the local IP 
 
 **In PowerShell (Recommended for Windows):**
 ```powershell
-$env:REACT_NATIVE_PACKAGER_HOSTNAME='10.106.57.252'; npx expo start -c --go --offline
+$env:REACT_NATIVE_PACKAGER_HOSTNAME='192.168.1.9'; npx expo start -c --go --offline
 ```
 
 **In Command Prompt (CMD):**
