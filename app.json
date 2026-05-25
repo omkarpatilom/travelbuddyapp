@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "TravelBuddy",
-    "slug": "travelbuddy-ride-sharing",
+    "slug": "travelbuddyapp",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -13,6 +13,9 @@
       "bundleIdentifier": "com.travelbuddy.ridesharing",
       "config": {
         "googleMapsApiKey": "YOUR_IOS_GOOGLE_MAPS_API_KEY"
+      },
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -25,7 +28,11 @@
         "googleMaps": {
           "apiKey": "YOUR_ANDROID_GOOGLE_MAPS_API_KEY"
         }
-      }
+      },
+      "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -59,8 +66,10 @@
     },
     "extra": {
       "eas": {
-        "projectId": "8d75e92a-3b4c-4d22-82f6-be582df2e6a4"
-      }
-    }
+        "projectId": "9c20730d-9aff-4652-bc7d-c0c376a2f451"
+      },
+      "router": {}
+    },
+    "owner": "omkarpatilom"
   }
 }

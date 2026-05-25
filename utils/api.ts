@@ -1,6 +1,10 @@
 import { storage, StorageKeys } from './storage';
 
-const API_BASE_URL = 'https://whippet-concise-ghastly.ngrok-free.app/api/v1';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
+
+if (!API_BASE_URL) {
+  console.warn('EXPO_PUBLIC_API_URL is not defined in environment variables');
+}
 
 async function getAuthHeader(): Promise<Record<string, string>> {
   const token = await storage.getItem<string>(StorageKeys.AUTH_TOKEN);
