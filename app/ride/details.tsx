@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,22 +8,45 @@ import {
   Image,
   Alert,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useRides, Ride } from '@/contexts/RideContext';
 import { MapPin, Calendar, Clock, Star, Phone, MessageCircle, Users, Car, ArrowLeft } from 'lucide-react-native';
-import { mockRides } from '@/data/mockData';
 
 const { width } = Dimensions.get('window');
 
 export default function RideDetailsScreen() {
   const { theme } = useTheme();
+  const { getRideById } = useRides();
   const router = useRouter();
   const params = useLocalSearchParams();
   const rideId = params.id as string;
 
-  // Find the ride by ID
-  const ride = mockRides.find(r => r.id === rideId);
+  const [ride, setRide] = useState<Ride | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    if (rideId) {
+      fetchRideDetails();
+    }
+  }, [rideId]);
+
+  const fetchRideDetails = async () => {
+    setIsLoading(true);
+    const data = await getRideById(rideId);
+    setRide(data);
+    setIsLoading(false);
+  };
+
+  if (isLoading) {
+    return (
+      <View style={[styles.loadingContainer, { backgroundColor: theme.colors.background }]}>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
+      </View>
+    );
+  }
 
   if (!ride) {
     return (

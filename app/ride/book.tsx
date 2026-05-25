@@ -21,17 +21,28 @@ export default function BookRideScreen() {
   const [selectedSeats, setSelectedSeats] = useState(1);
   const [passengerName, setPassengerName] = useState('');
   const [passengerPhone, setPassengerPhone] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [ride, setRide] = useState<Ride | null>(null);
   
   const { theme } = useTheme();
-  const { bookRide } = useRides();
+  const { bookRide, getRideById } = useRides();
   const { user } = useAuth();
   const router = useRouter();
   const params = useLocalSearchParams();
   const rideId = params.id as string;
 
-  // Find the ride by ID
-  const ride = mockRides.find(r => r.id === rideId);
+  useEffect(() => {
+    if (rideId) {
+      fetchRideDetails();
+    }
+  }, [rideId]);
+
+  const fetchRideDetails = async () => {
+    setIsLoading(true);
+    const data = await getRideById(rideId);
+    setRide(data);
+    setIsLoading(false);
+  };
 
   // Auto-fill passenger details from user profile
   useEffect(() => {
@@ -40,6 +51,14 @@ export default function BookRideScreen() {
       setPassengerPhone(user.phone);
     }
   }, [user]);
+
+  if (isLoading && !ride) {
+    return (
+      <View style={[styles.loadingContainer, { backgroundColor: theme.colors.background }]}>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
+      </View>
+    );
+  }
 
   if (!ride) {
     return (

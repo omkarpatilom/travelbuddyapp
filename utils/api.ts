@@ -29,8 +29,71 @@ async function getApiHeaders(isFormData = false): Promise<Record<string, string>
   return headers;
 }
 
-// Safe response JSON parser that handles empty responses (e.g. 204 No Content) and plain-text
-async function handleResponse<T>(response: Response, endpoint: string): Promise<T> {
+let isRefreshing = false;
+let refreshSubscribers: ((token: string) => void)[] = [];
+
+function subscribeTokenRefresh(cb: (token: string) => void) {
+  refreshSubscribers.push(cb);
+}
+
+function onRefreshed(token: string) {
+  refreshSubscribers.map((cb) => cb(token));
+  refreshSubscribers = [];
+}
+
+async function handleRefreshToken(): Promise<string | null> {
+  const accessToken = await storage.getItem<string>(StorageKeys.AUTH_TOKEN);
+  const refreshToken = await storage.getItem<string>(StorageKeys.REFRESH_TOKEN);
+
+  if (!accessToken || !refreshToken) return null;
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/auth/refresh-token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true',
+      },
+      body: JSON.stringify({ accessToken, refreshToken }),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      if (data.accessToken) {
+        await storage.setItem(StorageKeys.AUTH_TOKEN, data.accessToken);
+        if (data.refreshToken) {
+          await storage.setItem(StorageKeys.REFRESH_TOKEN, data.refreshToken);
+        }
+        return data.accessToken;
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error('Refresh token error:', error);
+    return null;
+  }
+}
+
+// Safe response JSON parser
+async function handleResponse<T>(response: Response, endpoint: string, originalRequest?: () => Promise<T>): Promise<T> {
+  if (response.status === 401 && !endpoint.includes('/auth/login') && !endpoint.includes('/auth/refresh-token')) {
+    if (!isRefreshing) {
+      isRefreshing = true;
+      const newToken = await handleRefreshToken();
+      isRefreshing = false;
+      if (newToken) {
+        onRefreshed(newToken);
+        if (originalRequest) return originalRequest();
+      }
+    } else {
+      return new Promise((resolve) => {
+        subscribeTokenRefresh((token) => {
+          resolve(originalRequest!());
+        });
+      });
+    }
+  }
+
   const text = await response.text().catch(() => '');
   
   if (!response.ok) {
@@ -52,80 +115,93 @@ async function handleResponse<T>(response: Response, endpoint: string): Promise<
   try {
     return JSON.parse(text) as T;
   } catch (e) {
-    // If it's not valid JSON, return as plain text (casted to T)
     return text as unknown as T;
   }
 }
 
 export const api = {
   async get<T>(endpoint: string): Promise<T> {
-    const headers = await getApiHeaders(false);
-    const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), 10000); // 10s timeout
+    const execute = async (): Promise<T> => {
+      const headers = await getApiHeaders(false);
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), 10000);
 
-    try {
-      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-        method: 'GET',
-        headers,
-        signal: controller.signal,
-      });
-      clearTimeout(id);
-
-      return handleResponse<T>(response, endpoint);
-    } catch (e: any) {
-      clearTimeout(id);
-      if (e.name === 'AbortError') throw new Error('Request Timeout');
-      throw e;
-    }
+      try {
+        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+          method: 'GET',
+          headers,
+          signal: controller.signal,
+        });
+        clearTimeout(id);
+        return handleResponse<T>(response, endpoint, execute);
+      } catch (e: any) {
+        clearTimeout(id);
+        if (e.name === 'AbortError') throw new Error('Request Timeout');
+        throw e;
+      }
+    };
+    return execute();
   },
 
   async post<T>(endpoint: string, body: any): Promise<T> {
-    const isFormData = body instanceof FormData;
-    const headers = await getApiHeaders(isFormData);
+    const execute = async (): Promise<T> => {
+      const isFormData = body instanceof FormData;
+      const headers = await getApiHeaders(isFormData);
 
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      method: 'POST',
-      headers,
-      body: isFormData ? body : JSON.stringify(body),
-    });
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+        method: 'POST',
+        headers,
+        body: isFormData ? body : JSON.stringify(body),
+      });
 
-    return handleResponse<T>(response, endpoint);
+      return handleResponse<T>(response, endpoint, execute);
+    };
+    return execute();
   },
 
   async put<T>(endpoint: string, body: any): Promise<T> {
-    const isFormData = body instanceof FormData;
-    const headers = await getApiHeaders(isFormData);
+    const execute = async (): Promise<T> => {
+      const isFormData = body instanceof FormData;
+      const headers = await getApiHeaders(isFormData);
 
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      method: 'PUT',
-      headers,
-      body: isFormData ? body : JSON.stringify(body),
-    });
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+        method: 'PUT',
+        headers,
+        body: isFormData ? body : JSON.stringify(body),
+      });
 
-    return handleResponse<T>(response, endpoint);
+      return handleResponse<T>(response, endpoint, execute);
+    };
+    return execute();
   },
 
   async patch<T>(endpoint: string, body: any): Promise<T> {
-    const isFormData = body instanceof FormData;
-    const headers = await getApiHeaders(isFormData);
+    const execute = async (): Promise<T> => {
+      const isFormData = body instanceof FormData;
+      const headers = await getApiHeaders(isFormData);
 
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      method: 'PATCH',
-      headers,
-      body: isFormData ? body : JSON.stringify(body),
-    });
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+        method: 'PATCH',
+        headers,
+        body: isFormData ? body : JSON.stringify(body),
+      });
 
-    return handleResponse<T>(response, endpoint);
+      return handleResponse<T>(response, endpoint, execute);
+    };
+    return execute();
   },
 
   async delete<T>(endpoint: string): Promise<T> {
-    const headers = await getApiHeaders(false);
+    const execute = async (): Promise<T> => {
+      const headers = await getApiHeaders(false);
 
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      method: 'DELETE',
-      headers,
-    });
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+        method: 'DELETE',
+        headers,
+      });
 
-    return handleResponse<T>(response, endpoint);
+      return handleResponse<T>(response, endpoint, execute);
+    };
+    return execute();
   },
 };

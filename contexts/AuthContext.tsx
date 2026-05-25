@@ -101,6 +101,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       if (response.accessToken) {
         await storage.setItem(StorageKeys.AUTH_TOKEN, response.accessToken);
+        if (response.refreshToken) {
+          await storage.setItem(StorageKeys.REFRESH_TOKEN, response.refreshToken);
+        }
         
         // Fetch profile to get full user details
         const profile = await api.get<any>('/users/me');
@@ -138,7 +141,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         email: userData.email,
         phoneNumber: userData.phone,
         password: userData.password,
-        role: 'Passenger' // Default role
+        role: 2 // 2 = Passenger in backend UserRole enum
       });
 
       // After successful registration, log in
@@ -153,7 +156,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     try {
+      // Optional: Call logout API to invalidate session on server
+      const refreshToken = await storage.getItem<string>(StorageKeys.REFRESH_TOKEN);
+      if (refreshToken) {
+        try {
+          await api.post('/security/logout', { refreshToken });
+        } catch (e) {
+          console.log('Server logout failed or already logged out:', e);
+        }
+      }
+      
       await storage.removeItem(StorageKeys.AUTH_TOKEN);
+      await storage.removeItem(StorageKeys.REFRESH_TOKEN);
       await storage.removeItem(StorageKeys.USER_DATA);
       setUser(null);
     } catch (error) {
