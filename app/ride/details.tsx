@@ -12,20 +12,23 @@ import {
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { useRides, Ride } from '@/contexts/RideContext';
-import { MapPin, Calendar, Clock, Star, Phone, MessageCircle, Users, Car, ArrowLeft } from 'lucide-react-native';
+import { MapPin, Calendar, Clock, Star, Phone, MessageCircle, Users, Car, ArrowLeft, Play, CheckCircle, XCircle } from 'lucide-react-native';
 
 const { width } = Dimensions.get('window');
 
 export default function RideDetailsScreen() {
   const { theme } = useTheme();
-  const { getRideById } = useRides();
+  const { user } = useAuth();
+  const { getRideById, startRide, completeRide, cancelRide } = useRides();
   const router = useRouter();
   const params = useLocalSearchParams();
   const rideId = params.id as string;
 
   const [ride, setRide] = useState<Ride | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isActionLoading, setIsActionLoading] = useState(false);
 
   useEffect(() => {
     if (rideId) {
@@ -35,9 +38,14 @@ export default function RideDetailsScreen() {
 
   const fetchRideDetails = async () => {
     setIsLoading(true);
-    const data = await getRideById(rideId);
-    setRide(data);
-    setIsLoading(false);
+    try {
+      const data = await getRideById(rideId);
+      setRide(data);
+    } catch (error) {
+      console.error('Error fetching ride details:', error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   if (isLoading) {
@@ -56,8 +64,55 @@ export default function RideDetailsScreen() {
     );
   }
 
+  const isDriver = user?.id === ride.driverId;
+
   const handleBookRide = () => {
     router.push(`/ride/book?id=${ride.id}`);
+  };
+
+  const handleStartRide = async () => {
+    setIsActionLoading(true);
+    const success = await startRide(ride.id);
+    setIsActionLoading(false);
+    if (success) {
+      Alert.alert('Success', 'Ride started successfully!');
+      fetchRideDetails();
+    } else {
+      Alert.alert('Error', 'Failed to start ride');
+    }
+  };
+
+  const handleCompleteRide = async () => {
+    setIsActionLoading(true);
+    const success = await completeRide(ride.id);
+    setIsActionLoading(false);
+    if (success) {
+      Alert.alert('Success', 'Ride completed successfully!');
+      fetchRideDetails();
+    } else {
+      Alert.alert('Error', 'Failed to complete ride');
+    }
+  };
+
+  const handleCancelRide = () => {
+    Alert.alert('Cancel Ride', 'Are you sure you want to cancel this ride?', [
+      { text: 'No', style: 'cancel' },
+      { 
+        text: 'Yes, Cancel', 
+        style: 'destructive',
+        onPress: async () => {
+          setIsActionLoading(true);
+          const success = await cancelRide(ride.id, 'Cancelled by driver');
+          setIsActionLoading(false);
+          if (success) {
+            Alert.alert('Success', 'Ride cancelled');
+            router.back();
+          } else {
+            Alert.alert('Error', 'Failed to cancel ride');
+          }
+        }
+      }
+    ]);
   };
 
   const handleCallDriver = () => {
@@ -69,6 +124,16 @@ export default function RideDetailsScreen() {
 
   const handleChatDriver = () => {
     Alert.alert('Chat', 'Chat feature coming soon!');
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'active': return theme.colors.success;
+      case 'started': return theme.colors.secondary;
+      case 'completed': return theme.colors.textSecondary;
+      case 'cancelled': return theme.colors.error;
+      default: return theme.colors.textSecondary;
+    }
   };
 
   return (
@@ -92,6 +157,11 @@ export default function RideDetailsScreen() {
           <Text style={[styles.mapSubtext, { color: theme.colors.textSecondary }]}>
             {ride.from.address} → {ride.to.address}
           </Text>
+          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(ride.status) + '20', marginTop: 8 }]}>
+            <Text style={[styles.statusText, { color: getStatusColor(ride.status) }]}>
+              {ride.status.toUpperCase()}
+            </Text>
+          </View>
         </View>
       </View>
 
@@ -191,31 +261,70 @@ export default function RideDetailsScreen() {
               </View>
               <Text style={[styles.phoneNumber, { color: theme.colors.textSecondary }]}>+1 (555) ***-**90</Text>
             </View>
-            <View style={styles.contactButtons}>
-              <TouchableOpacity 
-                style={[styles.contactButton, { backgroundColor: theme.colors.secondary }]}
-                onPress={handleCallDriver}
-              >
-                <Phone size={18} color="#FFFFFF" />
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.contactButton, { backgroundColor: theme.colors.primary }]}
-                onPress={handleChatDriver}
-              >
-                <MessageCircle size={18} color="#FFFFFF" />
-              </TouchableOpacity>
-            </View>
+            {!isDriver && (
+              <View style={styles.contactButtons}>
+                <TouchableOpacity 
+                  style={[styles.contactButton, { backgroundColor: theme.colors.secondary }]}
+                  onPress={handleCallDriver}
+                >
+                  <Phone size={18} color="#FFFFFF" />
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.contactButton, { backgroundColor: theme.colors.primary }]}
+                  onPress={handleChatDriver}
+                >
+                  <MessageCircle size={18} color="#FFFFFF" />
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         </View>
 
         {/* Action Buttons */}
         <View style={styles.actionButtons}>
-          <TouchableOpacity 
-            style={[styles.bookButton, { backgroundColor: theme.colors.primary }]}
-            onPress={handleBookRide}
-          >
-            <Text style={styles.bookButtonText}>Book This Ride</Text>
-          </TouchableOpacity>
+          {isDriver ? (
+            <>
+              {ride.status === 'active' && (
+                <TouchableOpacity 
+                  style={[styles.bookButton, { backgroundColor: theme.colors.secondary, flexDirection: 'row' }]}
+                  onPress={handleStartRide}
+                  disabled={isActionLoading}
+                >
+                  <Play size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+                  <Text style={styles.bookButtonText}>Start Ride</Text>
+                </TouchableOpacity>
+              )}
+              {ride.status === 'started' && (
+                <TouchableOpacity 
+                  style={[styles.bookButton, { backgroundColor: theme.colors.success, flexDirection: 'row' }]}
+                  onPress={handleCompleteRide}
+                  disabled={isActionLoading}
+                >
+                  <CheckCircle size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+                  <Text style={styles.bookButtonText}>Complete Ride</Text>
+                </TouchableOpacity>
+              )}
+              {(ride.status === 'active' || ride.status === 'started') && (
+                <TouchableOpacity 
+                  style={[styles.bookButton, { backgroundColor: theme.colors.error, marginTop: 12, flexDirection: 'row' }]}
+                  onPress={handleCancelRide}
+                  disabled={isActionLoading}
+                >
+                  <XCircle size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+                  <Text style={styles.bookButtonText}>Cancel Ride</Text>
+                </TouchableOpacity>
+              )}
+            </>
+          ) : (
+            ride.status === 'active' && (
+              <TouchableOpacity 
+                style={[styles.bookButton, { backgroundColor: theme.colors.primary }]}
+                onPress={handleBookRide}
+              >
+                <Text style={styles.bookButtonText}>Book This Ride</Text>
+              </TouchableOpacity>
+            )
+          )}
         </View>
       </View>
     </ScrollView>
@@ -246,7 +355,7 @@ const styles = StyleSheet.create({
     width: 40,
   },
   mapContainer: {
-    height: 200,
+    height: 220,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -261,6 +370,16 @@ const styles = StyleSheet.create({
   mapSubtext: {
     fontSize: 14,
     textAlign: 'center',
+    paddingHorizontal: 40,
+  },
+  statusBadge: {
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: 'bold',
   },
   content: {
     padding: 20,
@@ -366,6 +485,7 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 30,
+    backgroundColor: '#E1E1E1',
   },
   driverInfo: {
     flex: 1,
@@ -405,16 +525,23 @@ const styles = StyleSheet.create({
   actionButtons: {
     gap: 12,
     marginTop: 20,
+    marginBottom: 40,
   },
   bookButton: {
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   bookButtonText: {
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: '600',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   errorText: {
     fontSize: 18,

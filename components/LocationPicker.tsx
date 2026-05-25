@@ -44,37 +44,36 @@ interface FavoriteLocation {
   type: 'home' | 'work' | 'custom';
 }
 
-// Mock Google Places API - Replace with actual implementation
-const mockGooglePlacesAPI = {
+// OpenStreetMap Nominatim API implementation
+const nominatimAPI = {
   async searchPlaces(query: string): Promise<LocationSuggestion[]> {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 300));
-    
     if (query.length < 2) return [];
     
-    // Mock suggestions based on query
-    const mockSuggestions: LocationSuggestion[] = [
-      {
-        id: '1',
-        address: `${query} Street, San Francisco, CA`,
-        coordinates: { latitude: 37.7749, longitude: -122.4194 },
-        type: 'google',
-      },
-      {
-        id: '2',
-        address: `${query} Avenue, Oakland, CA`,
-        coordinates: { latitude: 37.8044, longitude: -122.2712 },
-        type: 'google',
-      },
-      {
-        id: '3',
-        address: `${query} Boulevard, Berkeley, CA`,
-        coordinates: { latitude: 37.8715, longitude: -122.2730 },
-        type: 'google',
-      },
-    ];
-    
-    return mockSuggestions;
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=8`,
+        {
+          headers: {
+            'User-Agent': 'TravelBuddyApp/1.0',
+          },
+        }
+      );
+      
+      const data = await response.json();
+      
+      return data.map((item: any) => ({
+        id: item.place_id.toString(),
+        address: item.display_name,
+        coordinates: {
+          latitude: parseFloat(item.lat),
+          longitude: parseFloat(item.lon),
+        },
+        type: 'google', // Reusing the type for now to avoid extensive refactoring
+      }));
+    } catch (error) {
+      console.error('Nominatim search failed:', error);
+      return [];
+    }
   }
 };
 
@@ -192,11 +191,11 @@ export default function LocationPicker({
       allSuggestions = [...matchingFavorites, ...matchingRecent];
       
       try {
-        // Try Google Places API first
-        const googleSuggestions = await mockGooglePlacesAPI.searchPlaces(query);
+        // Try Nominatim API (OpenStreetMap)
+        const googleSuggestions = await nominatimAPI.searchPlaces(query);
         allSuggestions = [...allSuggestions, ...googleSuggestions];
       } catch (googleError) {
-        console.warn('Google Places API failed, using fallback:', googleError);
+        console.warn('Nominatim API failed, using fallback:', googleError);
         
         // Use fallback search
         const fallbackSuggestions = await fallbackLocationSearch(query);

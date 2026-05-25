@@ -178,26 +178,28 @@ export default function InteractiveMap({
 
     setIsSearching(true);
     try {
-      // Mock Google Places API - replace with actual implementation
-      const mockResults = [
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=5`,
         {
-          place_id: '1',
-          description: `${query} Street, San Francisco, CA`,
-          geometry: { location: { lat: 37.7749, lng: -122.4194 } },
-        },
-        {
-          place_id: '2',
-          description: `${query} Avenue, Oakland, CA`,
-          geometry: { location: { lat: 37.8044, lng: -122.2712 } },
-        },
-        {
-          place_id: '3',
-          description: `${query} Boulevard, Berkeley, CA`,
-          geometry: { location: { lat: 37.8715, lng: -122.2730 } },
-        },
-      ];
+          headers: {
+            'User-Agent': 'TravelBuddyApp/1.0',
+          },
+        }
+      );
+      const data = await response.json();
 
-      setSearchSuggestions(mockResults);
+      const results = data.map((item: any) => ({
+        place_id: item.place_id.toString(),
+        description: item.display_name,
+        geometry: {
+          location: {
+            lat: parseFloat(item.lat),
+            lng: parseFloat(item.lon),
+          }
+        },
+      }));
+
+      setSearchSuggestions(results);
     } catch (error) {
       console.error('Error searching locations:', error);
     } finally {

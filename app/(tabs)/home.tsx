@@ -16,6 +16,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useRides } from '@/contexts/RideContext';
 import { Search, Plus, Car, MapPin, Clock, Star, Moon, Sun } from 'lucide-react-native';
 import { mockRides } from '@/data/mockData';
+import LocationPicker from '@/components/LocationPicker';
 
 export default function HomeScreen() {
   const [fromLocation, setFromLocation] = useState('');
@@ -32,7 +33,13 @@ export default function HomeScreen() {
       Alert.alert('Missing Information', 'Please enter both pickup and destination locations');
       return;
     }
-    router.push(`/ride/find?from=${encodeURIComponent(fromLocation)}&to=${encodeURIComponent(toLocation)}&date=${selectedDate}`);
+    
+    // Simplify addresses to city/area level for better matching
+    const simplify = (addr: string) => addr.split(',').slice(0, 2).join(',').trim();
+    const searchFrom = simplify(fromLocation);
+    const searchTo = simplify(toLocation);
+
+    router.push(`/ride/find?from=${encodeURIComponent(searchFrom)}&to=${encodeURIComponent(searchTo)}&date=${selectedDate}`);
   };
 
   const handleOfferRide = () => {
@@ -104,27 +111,19 @@ export default function HomeScreen() {
           </View>
 
           <View style={[styles.searchCard, { backgroundColor: theme.colors.card }]}>
-            <View style={[styles.searchInput, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-              <MapPin size={20} color={theme.colors.secondary} />
-              <TextInput
-                style={[styles.input, { color: theme.colors.text }]}
-                placeholder="From"
-                placeholderTextColor={theme.colors.textSecondary}
-                value={fromLocation}
-                onChangeText={setFromLocation}
-              />
-            </View>
+            <LocationPicker
+              value={fromLocation}
+              onLocationChange={(loc) => setFromLocation(loc)}
+              placeholder="From (pickup location)"
+              style={styles.locationPicker}
+            />
 
-            <View style={[styles.searchInput, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-              <MapPin size={20} color={theme.colors.error} />
-              <TextInput
-                style={[styles.input, { color: theme.colors.text }]}
-                placeholder="To"
-                placeholderTextColor={theme.colors.textSecondary}
-                value={toLocation}
-                onChangeText={setToLocation}
-              />
-            </View>
+            <LocationPicker
+              value={toLocation}
+              onLocationChange={(loc) => setToLocation(loc)}
+              placeholder="To (destination)"
+              style={styles.locationPicker}
+            />
 
             <TouchableOpacity 
               style={[styles.searchButton, { backgroundColor: theme.colors.primary }]}
@@ -239,6 +238,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 4,
+  },
+  locationPicker: {
+    marginBottom: 8,
   },
   searchInput: {
     flexDirection: 'row',

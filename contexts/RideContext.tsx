@@ -26,6 +26,13 @@ export interface Ride {
   status: 'active' | 'completed' | 'cancelled' | 'started';
   distance: string;
   duration: string;
+  preferences: {
+    nonSmoking: boolean;
+    musicAllowed: boolean;
+    petsAllowed: boolean;
+    airConditioning: boolean;
+    conversationLevel: 'quiet' | 'moderate' | 'chatty';
+  };
 }
 
 export interface Booking {
@@ -46,7 +53,12 @@ interface RideContextType {
   bookings: Booking[];
   myRides: Ride[];
   isLoading: boolean;
-  searchRides: (from: string, to: string, date: string) => Promise<Ride[]>;
+  searchRides: (
+    from: string, 
+    to: string, 
+    date: string, 
+    options?: { seats?: number; maxPrice?: number; allowPets?: boolean; allowMusic?: boolean }
+  ) => Promise<Ride[]>;
   createRide: (rideData: any) => Promise<boolean>;
   updateRide: (rideId: string, rideData: Partial<Ride>) => Promise<boolean>;
   cancelRide: (rideId: string, reason: string) => Promise<boolean>;
@@ -67,6 +79,8 @@ interface RideContextType {
 }
 
 const RideContext = createContext<RideContextType | undefined>(undefined);
+
+const driverCache: Record<string, any> = {};
 
 export function RideProvider({ children }: { children: React.ReactNode }) {
   const [rides, setRides] = useState<Ride[]>([]);
@@ -94,8 +108,8 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
       const mappedBookings = await Promise.all(bookingsData.map(mapBookingData));
       setBookings(mappedBookings);
 
-      // Fetch user's offered rides if they are a driver
-      if (user?.role === 'Driver') {
+      // Fetch user's offered rides if they are a driver or admin
+      if (user?.role === 'Driver' || user?.role === 'Admin') {
         const myRidesData = await api.get<any[]>('/rides/my-rides');
         const mappedMyRides = await Promise.all(myRidesData.map(mapRideData));
         setMyRides(mappedMyRides);
@@ -108,11 +122,28 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
   };
 
   const mapRideData = async (ride: any): Promise<Ride> => {
+    let driverName = 'Driver';
+    let driverRating = 4.5;
+    let driverAvatar = undefined;
+
+    try {
+      if (!driverCache[ride.driverId]) {
+        driverCache[ride.driverId] = await api.get<any>(`/users/${ride.driverId}`);
+      }
+      const driverProfile = driverCache[ride.driverId];
+      driverName = driverProfile.fullName;
+      driverRating = driverProfile.rating;
+      driverAvatar = driverProfile.profilePictureUrl;
+    } catch (e) {
+      console.warn(`Could not fetch driver profile for ${ride.driverId}`);
+    }
+
     return {
       id: ride.id,
       driverId: ride.driverId,
-      driverName: ride.driverName || 'Driver',
-      driverRating: ride.driverRating || 4.5,
+      driverName,
+      driverRating,
+      driverAvatar,
       from: {
         address: ride.from.address,
         coordinates: { latitude: ride.from.latitude, longitude: ride.from.longitude }
@@ -131,6 +162,14 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
       status: ride.status.toLowerCase() as any,
       distance: ride.distance || 'Unknown',
       duration: ride.duration || 'Unknown',
+      preferences: {
+        nonSmoking: !ride.preference?.allowSmoking,
+        musicAllowed: ride.preference?.allowMusic ?? true,
+        petsAllowed: ride.preference?.allowPets ?? false,
+        airConditioning: true, // Default
+        conversationLevel: (ride.preference?.conversationLevel === 0 ? 'quiet' : 
+                            ride.preference?.conversationLevel === 2 ? 'chatty' : 'moderate') as any,
+      },
     };
   };
 
@@ -157,10 +196,21 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
     };
   };
 
-  const searchRides = async (from: string, to: string, date: string): Promise<Ride[]> => {
+  const searchRides = async (
+    from: string, 
+    to: string, 
+    date: string, 
+    options?: { seats?: number; maxPrice?: number; allowPets?: boolean; allowMusic?: boolean }
+  ): Promise<Ride[]> => {
     setIsLoading(true);
     try {
-      const results = await api.get<any[]>(`/rides/search?from=${from}&to=${to}&date=${date}`);
+      let url = `/rides/search?from=${from}&to=${to}&date=${date}`;
+      if (options?.seats) url += `&seats=${options.seats}`;
+      if (options?.maxPrice) url += `&maxPrice=${options.maxPrice}`;
+      if (options?.allowPets !== undefined) url += `&allowPets=${options.allowPets}`;
+      if (options?.allowMusic !== undefined) url += `&allowMusic=${options.allowMusic}`;
+
+      const results = await api.get<any[]>(url);
       const mappedResults = await Promise.all(results.map(mapRideData));
       return mappedResults;
     } catch (error) {
@@ -178,25 +228,20 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
       
       const payload = {
         vehicleId: rideData.vehicleId,
-        from: {
-          address: rideData.from.address,
-          latitude: rideData.from.coordinates.latitude,
-          longitude: rideData.from.coordinates.longitude
-        },
-        to: {
-          address: rideData.to.address,
-          latitude: rideData.to.coordinates.latitude,
-          longitude: rideData.to.coordinates.longitude
-        },
+        fromAddress: rideData.from.address,
+        fromLat: rideData.from.coordinates.latitude,
+        fromLng: rideData.from.coordinates.longitude,
+        toAddress: rideData.to.address,
+        toLat: rideData.to.coordinates.latitude,
+        toLng: rideData.to.coordinates.longitude,
         departureTime,
         pricePerSeat: rideData.price,
         totalSeats: rideData.totalSeats,
-        preference: {
-          allowMusic: true,
-          allowSmoking: false,
-          allowPets: false,
-          conversationLevel: 1
-        }
+        allowMusic: rideData.preferences?.musicAllowed ?? true,
+        allowSmoking: !rideData.preferences?.nonSmoking,
+        allowPets: rideData.preferences?.petsAllowed ?? false,
+        conversationLevel: rideData.preferences?.conversationLevel === 'quiet' ? 0 :
+                          rideData.preferences?.conversationLevel === 'chatty' ? 2 : 1
       };
 
       await api.post('/rides', payload);

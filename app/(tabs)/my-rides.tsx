@@ -162,11 +162,13 @@ export default function MyRidesScreen() {
       </View>
 
       <FlatList
-        data={userRides}
+        data={myRides}
         keyExtractor={(item) => item.id}
         renderItem={renderRide}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
+        refreshing={isRefreshing}
+        onRefresh={onRefresh}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Text style={[styles.emptyIcon, { color: theme.colors.textSecondary }]}>🚗</Text>

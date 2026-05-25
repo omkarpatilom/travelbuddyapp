@@ -148,8 +148,8 @@ export default function OfferRideScreen() {
           address: formData.to,
           coordinates: { latitude: 37.4419, longitude: -122.1430 }
         },
-        date: selectedDate!.toLocaleDateString(),
-        time: selectedTime!.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        date: selectedDate!.toISOString().split('T')[0], // YYYY-MM-DD
+        time: selectedTime!.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }), // HH:mm
         availableSeats: parseInt(formData.seats),
         totalSeats: parseInt(formData.seats),
         price: parseFloat(formData.price),
