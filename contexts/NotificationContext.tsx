@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
+import { api } from '@/utils/api';
 
 // Configure notifications
 Notifications.setNotificationHandler({
@@ -13,11 +14,29 @@ Notifications.setNotificationHandler({
   }),
 });
 
+interface Notification {
+  id: string;
+  title: string;
+  message: string;
+  type: string;
+  isRead: boolean;
+  createdAt: string;
+}
+
 interface NotificationContextType {
   expoPushToken: string | null;
   notification: Notifications.Notification | null;
+  notifications: Notification[];
+  unreadCount: number;
+  isLoading: boolean;
   sendLocalNotification: (title: string, body: string) => Promise<void>;
   scheduleRideReminder: (rideId: string, rideDate: string) => Promise<void>;
+  fetchNotifications: () => Promise<void>;
+  markAsRead: (id: string) => Promise<void>;
+  markAllAsRead: () => Promise<void>;
+  deleteNotification: (id: string) => Promise<void>;
+  getSettings: () => Promise<any>;
+  updateSettings: (settings: any) => Promise<void>;
 }
 
 const NotificationContext = createContext<NotificationContextType | undefined>(undefined);
@@ -25,12 +44,17 @@ const NotificationContext = createContext<NotificationContextType | undefined>(u
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
   const [expoPushToken, setExpoPushToken] = useState<string | null>(null);
   const [notification, setNotification] = useState<Notifications.Notification | null>(null);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const unreadCount = notifications.filter(n => !n.isRead).length;
 
   useEffect(() => {
     registerForPushNotificationsAsync().then(token => setExpoPushToken(token));
 
     const notificationListener = Notifications.addNotificationReceivedListener(notification => {
       setNotification(notification);
+      fetchNotifications(); // Refresh list when new one arrives
     });
 
     const responseListener = Notifications.addNotificationResponseReceivedListener(response => {
@@ -42,6 +66,69 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       responseListener.remove();
     };
   }, []);
+
+  const fetchNotifications = async () => {
+    try {
+      setIsLoading(true);
+      const data = await api.get<any[]>('/notifications/my-notifications');
+      setNotifications(data.map(n => ({
+        id: n.id,
+        title: n.title,
+        message: n.message,
+        type: n.type,
+        isRead: n.isRead,
+        createdAt: n.createdAt
+      })));
+    } catch (e) {
+      console.error('Error fetching notifications:', e);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const markAsRead = async (id: string) => {
+    try {
+      await api.patch(`/notifications/${id}/read`, {});
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
+    } catch (e) {
+      console.error('Error marking notification as read:', e);
+    }
+  };
+
+  const markAllAsRead = async () => {
+    try {
+      await api.patch('/notifications/read-all', {});
+      setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+    } catch (e) {
+      console.error('Error marking all notifications as read:', e);
+    }
+  };
+
+  const deleteNotification = async (id: string) => {
+    try {
+      await api.delete(`/notifications/${id}`);
+      setNotifications(prev => prev.filter(n => n.id !== id));
+    } catch (e) {
+      console.error('Error deleting notification:', e);
+    }
+  };
+
+  const getSettings = async () => {
+    try {
+      return await api.get('/notifications/preferences');
+    } catch (e) {
+      console.error('Error getting notification settings:', e);
+      return null;
+    }
+  };
+
+  const updateSettings = async (settings: any) => {
+    try {
+      await api.put('/notifications/preferences', settings);
+    } catch (e) {
+      console.error('Error updating notification settings:', e);
+    }
+  };
 
   const registerForPushNotificationsAsync = async (): Promise<string | null> => {
     let token = null;
@@ -112,8 +199,17 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       value={{ 
         expoPushToken, 
         notification, 
+        notifications,
+        unreadCount,
+        isLoading,
         sendLocalNotification, 
-        scheduleRideReminder 
+        scheduleRideReminder,
+        fetchNotifications,
+        markAsRead,
+        markAllAsRead,
+        deleteNotification,
+        getSettings,
+        updateSettings
       }}
     >
       {children}

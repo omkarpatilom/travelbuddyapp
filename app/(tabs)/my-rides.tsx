@@ -18,11 +18,15 @@ import { mockRides } from '@/data/mockData';
 export default function MyRidesScreen() {
   const { theme } = useTheme();
   const { user } = useAuth();
-  const { myRides } = useRides();
+  const { myRides, cancelRide, isLoading, loadInitialData } = useRides();
   const router = useRouter();
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Filter rides for current user (mock data)
-  const userRides = mockRides.filter(ride => ride.driverId === user?.id || ride.driverId === '1');
+  const onRefresh = async () => {
+    setIsRefreshing(true);
+    await loadInitialData();
+    setIsRefreshing(false);
+  };
 
   const handleEditRide = (rideId: string) => {
     router.push({
@@ -40,8 +44,13 @@ export default function MyRidesScreen() {
         { 
           text: 'Yes, Cancel', 
           style: 'destructive',
-          onPress: () => {
-            Alert.alert('Success', 'Your ride has been cancelled. Passengers have been notified.');
+          onPress: async () => {
+            const success = await cancelRide(rideId, 'User cancelled from app');
+            if (success) {
+              Alert.alert('Success', 'Your ride has been cancelled. Passengers have been notified.');
+            } else {
+              Alert.alert('Error', 'Failed to cancel ride');
+            }
           }
         },
       ]

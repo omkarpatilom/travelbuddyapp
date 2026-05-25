@@ -23,7 +23,7 @@ export interface Ride {
   totalSeats: number;
   carModel: string;
   carColor: string;
-  status: 'active' | 'completed' | 'cancelled';
+  status: 'active' | 'completed' | 'cancelled' | 'started';
   distance: string;
   duration: string;
 }
@@ -49,9 +49,16 @@ interface RideContextType {
   searchRides: (from: string, to: string, date: string) => Promise<Ride[]>;
   createRide: (rideData: any) => Promise<boolean>;
   updateRide: (rideId: string, rideData: Partial<Ride>) => Promise<boolean>;
+  cancelRide: (rideId: string, reason: string) => Promise<boolean>;
+  startRide: (rideId: string) => Promise<boolean>;
+  completeRide: (rideId: string) => Promise<boolean>;
   bookRide: (rideId: string, seats: number, passengerData: any) => Promise<boolean>;
-  cancelBooking: (bookingId: string) => Promise<boolean>;
+  confirmBooking: (bookingId: string) => Promise<boolean>;
+  completeBooking: (bookingId: string) => Promise<boolean>;
+  cancelBooking: (bookingId: string, reason?: string) => Promise<boolean>;
   rateRide: (rideId: string, rating: number, review: string) => Promise<boolean>;
+  updateTracking: (rideId: string, latitude: number, longitude: number) => Promise<void>;
+  getTracking: (rideId: string) => Promise<any>;
   getUserRides: (userId: string) => Promise<Ride[]>;
   getUserBookings: (userId: string) => Promise<Booking[]>;
   getRideById: (rideId: string) => Promise<Ride | null>;
@@ -101,13 +108,11 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
   };
 
   const mapRideData = async (ride: any): Promise<Ride> => {
-    // In a real app, we'd fetch driver and vehicle details if not provided
-    // For now, we'll use placeholders for missing fields
     return {
       id: ride.id,
       driverId: ride.driverId,
-      driverName: 'Driver', // Will be enriched if needed
-      driverRating: 4.5,
+      driverName: ride.driverName || 'Driver',
+      driverRating: ride.driverRating || 4.5,
       from: {
         address: ride.from.address,
         coordinates: { latitude: ride.from.latitude, longitude: ride.from.longitude }
@@ -121,11 +126,11 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
       price: ride.pricePerSeat,
       availableSeats: ride.availableSeats,
       totalSeats: ride.totalSeats,
-      carModel: 'Vehicle', // Will be enriched
-      carColor: 'Silver',
-      status: ride.status.toLowerCase() === 'active' ? 'active' : ride.status.toLowerCase(),
-      distance: 'Unknown',
-      duration: 'Unknown',
+      carModel: ride.vehicleModel || 'Vehicle',
+      carColor: ride.vehicleColor || 'Silver',
+      status: ride.status.toLowerCase() as any,
+      distance: ride.distance || 'Unknown',
+      duration: ride.duration || 'Unknown',
     };
   };
 
@@ -139,7 +144,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
     }
 
     return {
-      id: booking.bookingId,
+      id: booking.bookingId || booking.id,
       rideId: booking.rideId,
       userId: booking.userId,
       ride: ride!,
@@ -172,7 +177,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
       const departureTime = `${rideData.date}T${rideData.time}:00Z`;
       
       const payload = {
-        vehicleId: rideData.vehicleId, // Assumes vehicle selection is implemented
+        vehicleId: rideData.vehicleId,
         from: {
           address: rideData.from.address,
           latitude: rideData.from.coordinates.latitude,
@@ -190,7 +195,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
           allowMusic: true,
           allowSmoking: false,
           allowPets: false,
-          conversationLevel: 'Moderate'
+          conversationLevel: 1
         }
       };
 
@@ -219,6 +224,40 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const cancelRide = async (rideId: string, reason: string): Promise<boolean> => {
+    setIsLoading(true);
+    try {
+      await api.post(`/rides/${rideId}/cancel`, { reason });
+      await loadInitialData();
+      return true;
+    } catch (error) {
+      console.error('Error cancelling ride:', error);
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const startRide = async (rideId: string): Promise<boolean> => {
+    try {
+      await api.post(`/rides/${rideId}/start`, {});
+      await loadInitialData();
+      return true;
+    } catch (e) {
+      return false;
+    }
+  };
+
+  const completeRide = async (rideId: string): Promise<boolean> => {
+    try {
+      await api.post(`/rides/${rideId}/complete`, {});
+      await loadInitialData();
+      return true;
+    } catch (e) {
+      return false;
+    }
+  };
+
   const bookRide = async (rideId: string, seats: number, passengerData: any): Promise<boolean> => {
     setIsLoading(true);
     try {
@@ -241,10 +280,30 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const cancelBooking = async (bookingId: string): Promise<boolean> => {
+  const confirmBooking = async (bookingId: string): Promise<boolean> => {
+    try {
+      await api.post(`/bookings/${bookingId}/confirm`, {});
+      await loadInitialData();
+      return true;
+    } catch (e) {
+      return false;
+    }
+  };
+
+  const completeBooking = async (bookingId: string): Promise<boolean> => {
+    try {
+      await api.post(`/bookings/${bookingId}/complete`, {});
+      await loadInitialData();
+      return true;
+    } catch (e) {
+      return false;
+    }
+  };
+
+  const cancelBooking = async (bookingId: string, reason: string = 'User cancelled'): Promise<boolean> => {
     setIsLoading(true);
     try {
-      await api.post(`/bookings/${bookingId}/cancel`, { reason: 'User cancelled' });
+      await api.post(`/bookings/${bookingId}/cancel`, { reason });
       await loadInitialData();
       return true;
     } catch (error) {
@@ -258,17 +317,17 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
   const rateRide = async (rideId: string, rating: number, review: string): Promise<boolean> => {
     setIsLoading(true);
     try {
-      // Find the booking for this ride
       const booking = bookings.find(b => b.rideId === rideId && b.userId === user?.id);
       if (!booking) return false;
 
       await api.post('/reviews', {
-        bookingId: booking.id,
-        rideId,
-        targetUserId: booking.ride.driverId,
-        targetType: 'Driver',
-        rating,
-        comment: review
+        BookingId: booking.id,
+        RideId: rideId,
+        ReviewedUserId: booking.ride.driverId,
+        TargetType: 0, // Driver
+        Rating: rating,
+        Comment: review,
+        IsAnonymous: false
       });
       return true;
     } catch (error) {
@@ -276,6 +335,22 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
       return false;
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const updateTracking = async (rideId: string, latitude: number, longitude: number) => {
+    try {
+      await api.post(`/rides/${rideId}/tracking`, { rideId, latitude, longitude });
+    } catch (e) {
+      console.error('Error updating tracking:', e);
+    }
+  };
+
+  const getTracking = async (rideId: string) => {
+    try {
+      return await api.get(`/rides/${rideId}/tracking`);
+    } catch (e) {
+      return null;
     }
   };
 
@@ -326,9 +401,16 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
         searchRides, 
         createRide, 
         updateRide,
+        cancelRide,
+        startRide,
+        completeRide,
         bookRide, 
+        confirmBooking,
+        completeBooking,
         cancelBooking, 
         rateRide,
+        updateTracking,
+        getTracking,
         getUserRides,
         getUserBookings,
         getRideById,
