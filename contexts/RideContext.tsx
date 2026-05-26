@@ -366,13 +366,13 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
       if (!booking) return false;
 
       await api.post('/reviews', {
-        BookingId: booking.id,
-        RideId: rideId,
-        ReviewedUserId: booking.ride.driverId,
-        TargetType: 0, // Driver
-        Rating: rating,
-        Comment: review,
-        IsAnonymous: false
+        bookingId: booking.id,
+        rideId: rideId,
+        reviewedUserId: booking.ride.driverId,
+        targetType: 0, // Driver
+        rating: rating,
+        comment: review,
+        isAnonymous: false
       });
       return true;
     } catch (error) {

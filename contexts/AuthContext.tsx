@@ -141,7 +141,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         email: userData.email,
         phoneNumber: userData.phone,
         password: userData.password,
-        role: 2 // 2 = Passenger in backend UserRole enum
+        role: 0 // 0 = Passenger in backend UserRole enum
       });
 
       // After successful registration, log in
