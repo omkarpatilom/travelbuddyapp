@@ -1,6 +1,10 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { api } from '@/utils/api';
+import { rideService } from '@/services/ride.service';
+import { bookingService } from '@/services/booking.service';
+import { reviewService } from '@/services/review.service';
+import { userService } from '@/services/user.service';
 import { useAuth } from './AuthContext';
+import { RideDto, BookingResponseDto, RideStatus, ConversationLevel } from '@/utils/types';
 
 export interface Ride {
   id: string;
@@ -23,7 +27,7 @@ export interface Ride {
   totalSeats: number;
   carModel: string;
   carColor: string;
-  status: 'active' | 'completed' | 'cancelled' | 'started';
+  status: 'active' | 'completed' | 'cancelled' | 'started' | 'scheduled';
   distance: string;
   duration: string;
   preferences: {
@@ -98,19 +102,16 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
   const loadInitialData = async () => {
     setIsLoading(true);
     try {
-      // Fetch active rides
-      const activeRidesData = await api.get<any[]>('/rides/active');
+      const activeRidesData = await rideService.getActiveRides();
       const mappedRides = await Promise.all(activeRidesData.map(mapRideData));
       setRides(mappedRides);
 
-      // Fetch user's bookings
-      const bookingsData = await api.get<any[]>('/bookings/my-bookings');
+      const bookingsData = await bookingService.getMyBookings();
       const mappedBookings = await Promise.all(bookingsData.map(mapBookingData));
       setBookings(mappedBookings);
 
-      // Fetch user's offered rides if they are a driver or admin
       if (user?.role === 'Driver' || user?.role === 'Admin') {
-        const myRidesData = await api.get<any[]>('/rides/my-rides');
+        const myRidesData = await rideService.getMyRides();
         const mappedMyRides = await Promise.all(myRidesData.map(mapRideData));
         setMyRides(mappedMyRides);
       }
@@ -121,22 +122,36 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const mapRideData = async (ride: any): Promise<Ride> => {
+  const mapRideData = async (ride: RideDto): Promise<Ride> => {
     let driverName = 'Driver';
     let driverRating = 4.5;
     let driverAvatar = undefined;
 
     try {
       if (!driverCache[ride.driverId]) {
-        driverCache[ride.driverId] = await api.get<any>(`/users/${ride.driverId}`);
+        driverCache[ride.driverId] = await userService.getById(ride.driverId);
       }
       const driverProfile = driverCache[ride.driverId];
       driverName = driverProfile.fullName;
       driverRating = driverProfile.rating;
-      driverAvatar = driverProfile.profilePictureUrl;
+      driverAvatar = driverProfile.profilePictureUrl || undefined;
     } catch (e) {
       console.warn(`Could not fetch driver profile for ${ride.driverId}`);
     }
+
+    const statusMap: Record<RideStatus, any> = {
+      [RideStatus.Scheduled]: 'scheduled',
+      [RideStatus.Active]: 'active',
+      [RideStatus.Started]: 'started',
+      [RideStatus.Completed]: 'completed',
+      [RideStatus.Cancelled]: 'cancelled',
+    };
+
+    const convMap: Record<ConversationLevel, any> = {
+      [ConversationLevel.Quiet]: 'quiet',
+      [ConversationLevel.Moderate]: 'moderate',
+      [ConversationLevel.Chatty]: 'chatty',
+    };
 
     return {
       id: ride.id,
@@ -157,33 +172,32 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
       price: ride.pricePerSeat,
       availableSeats: ride.availableSeats,
       totalSeats: ride.totalSeats,
-      carModel: ride.vehicleModel || 'Vehicle',
-      carColor: ride.vehicleColor || 'Silver',
-      status: ride.status.toLowerCase() as any,
-      distance: ride.distance || 'Unknown',
-      duration: ride.duration || 'Unknown',
+      carModel: 'Vehicle', // Backend doesn't return this in RideDto yet
+      carColor: 'Silver',
+      status: statusMap[ride.status] || 'active',
+      distance: 'Unknown',
+      duration: 'Unknown',
       preferences: {
-        nonSmoking: !ride.preference?.allowSmoking,
-        musicAllowed: ride.preference?.allowMusic ?? true,
-        petsAllowed: ride.preference?.allowPets ?? false,
-        airConditioning: true, // Default
-        conversationLevel: (ride.preference?.conversationLevel === 0 ? 'quiet' : 
-                            ride.preference?.conversationLevel === 2 ? 'chatty' : 'moderate') as any,
+        nonSmoking: !ride.preference.allowSmoking,
+        musicAllowed: ride.preference.allowMusic,
+        petsAllowed: ride.preference.allowPets,
+        airConditioning: true,
+        conversationLevel: convMap[ride.preference.conversationLevel] || 'moderate',
       },
     };
   };
 
-  const mapBookingData = async (booking: any): Promise<Booking> => {
+  const mapBookingData = async (booking: BookingResponseDto): Promise<Booking> => {
     let ride: Ride | null = null;
     try {
-      const rideData = await api.get<any>(`/rides/${booking.rideId}`);
+      const rideData = await rideService.getRideById(booking.rideId);
       ride = await mapRideData(rideData);
     } catch (e) {
       console.error('Error fetching ride for booking:', e);
     }
 
     return {
-      id: booking.bookingId || booking.id,
+      id: booking.bookingId,
       rideId: booking.rideId,
       userId: booking.userId,
       ride: ride!,
@@ -196,21 +210,18 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
     };
   };
 
-  const searchRides = async (
-    from: string, 
-    to: string, 
-    date: string, 
-    options?: { seats?: number; maxPrice?: number; allowPets?: boolean; allowMusic?: boolean }
-  ): Promise<Ride[]> => {
+  const searchRides = async (params: {
+    From: string;
+    To: string;
+    Date: string;
+    Seats?: number;
+    MaxPrice?: number;
+    AllowPets?: boolean;
+    AllowMusic?: boolean;
+  }): Promise<Ride[]> => {
     setIsLoading(true);
     try {
-      let url = `/rides/search?from=${from}&to=${to}&date=${date}`;
-      if (options?.seats) url += `&seats=${options.seats}`;
-      if (options?.maxPrice) url += `&maxPrice=${options.maxPrice}`;
-      if (options?.allowPets !== undefined) url += `&allowPets=${options.allowPets}`;
-      if (options?.allowMusic !== undefined) url += `&allowMusic=${options.allowMusic}`;
-
-      const results = await api.get<any[]>(url);
+      const results = await rideService.searchRides(params);
       const mappedResults = await Promise.all(results.map(mapRideData));
       return mappedResults;
     } catch (error) {
@@ -226,7 +237,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
     try {
       const departureTime = `${rideData.date}T${rideData.time}:00Z`;
       
-      const payload = {
+      await rideService.createRide({
         vehicleId: rideData.vehicleId,
         fromAddress: rideData.from.address,
         fromLat: rideData.from.coordinates.latitude,
@@ -240,11 +251,9 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
         allowMusic: rideData.preferences?.musicAllowed ?? true,
         allowSmoking: !rideData.preferences?.nonSmoking,
         allowPets: rideData.preferences?.petsAllowed ?? false,
-        conversationLevel: rideData.preferences?.conversationLevel === 'quiet' ? 0 :
-                          rideData.preferences?.conversationLevel === 'chatty' ? 2 : 1
-      };
-
-      await api.post('/rides', payload);
+        conversationLevel: rideData.preferences?.conversationLevel === 'quiet' ? ConversationLevel.Quiet :
+                          rideData.preferences?.conversationLevel === 'chatty' ? ConversationLevel.Chatty : ConversationLevel.Moderate
+      });
       await loadInitialData();
       return true;
     } catch (error) {
@@ -258,7 +267,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
   const updateRide = async (rideId: string, rideData: Partial<Ride>): Promise<boolean> => {
     setIsLoading(true);
     try {
-      await api.put(`/rides/${rideId}`, rideData);
+      await rideService.updateRide(rideId, rideData);
       await loadInitialData();
       return true;
     } catch (error) {
@@ -272,7 +281,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
   const cancelRide = async (rideId: string, reason: string): Promise<boolean> => {
     setIsLoading(true);
     try {
-      await api.post(`/rides/${rideId}/cancel`, { reason });
+      await rideService.cancelRide(rideId, reason);
       await loadInitialData();
       return true;
     } catch (error) {
@@ -285,7 +294,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
 
   const startRide = async (rideId: string): Promise<boolean> => {
     try {
-      await api.post(`/rides/${rideId}/start`, {});
+      await rideService.startRide(rideId);
       await loadInitialData();
       return true;
     } catch (e) {
@@ -295,7 +304,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
 
   const completeRide = async (rideId: string): Promise<boolean> => {
     try {
-      await api.post(`/rides/${rideId}/complete`, {});
+      await rideService.completeRide(rideId);
       await loadInitialData();
       return true;
     } catch (e) {
@@ -306,15 +315,13 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
   const bookRide = async (rideId: string, seats: number, passengerData: any): Promise<boolean> => {
     setIsLoading(true);
     try {
-      const payload = {
+      await bookingService.createBooking({
         rideId,
         seats,
         passengerName: passengerData.name,
         passengerPhone: passengerData.phone,
         acceptTerms: true
-      };
-
-      await api.post('/bookings', payload);
+      });
       await loadInitialData();
       return true;
     } catch (error) {
@@ -327,7 +334,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
 
   const confirmBooking = async (bookingId: string): Promise<boolean> => {
     try {
-      await api.post(`/bookings/${bookingId}/confirm`, {});
+      await bookingService.confirmBooking(bookingId);
       await loadInitialData();
       return true;
     } catch (e) {
@@ -337,7 +344,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
 
   const completeBooking = async (bookingId: string): Promise<boolean> => {
     try {
-      await api.post(`/bookings/${bookingId}/complete`, {});
+      await bookingService.completeBooking(bookingId);
       await loadInitialData();
       return true;
     } catch (e) {
@@ -348,7 +355,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
   const cancelBooking = async (bookingId: string, reason: string = 'User cancelled'): Promise<boolean> => {
     setIsLoading(true);
     try {
-      await api.post(`/bookings/${bookingId}/cancel`, { reason });
+      await bookingService.cancelBooking(bookingId, reason);
       await loadInitialData();
       return true;
     } catch (error) {
@@ -365,7 +372,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
       const booking = bookings.find(b => b.rideId === rideId && b.userId === user?.id);
       if (!booking) return false;
 
-      await api.post('/reviews', {
+      await reviewService.createReview({
         bookingId: booking.id,
         rideId: rideId,
         reviewedUserId: booking.ride.driverId,
@@ -385,7 +392,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
 
   const updateTracking = async (rideId: string, latitude: number, longitude: number) => {
     try {
-      await api.post(`/rides/${rideId}/tracking`, { rideId, latitude, longitude });
+      await rideService.updateTracking(rideId, { latitude, longitude });
     } catch (e) {
       console.error('Error updating tracking:', e);
     }
@@ -393,7 +400,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
 
   const getTracking = async (rideId: string) => {
     try {
-      return await api.get(`/rides/${rideId}/tracking`);
+      return await rideService.getTracking(rideId);
     } catch (e) {
       return null;
     }
@@ -401,7 +408,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
 
   const getUserRides = async (userId: string): Promise<Ride[]> => {
     try {
-      const data = await api.get<any[]>(`/rides/my-rides`);
+      const data = await rideService.getMyRides();
       return Promise.all(data.map(mapRideData));
     } catch (e) {
       return [];
@@ -410,7 +417,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
 
   const getUserBookings = async (userId: string): Promise<Booking[]> => {
     try {
-      const data = await api.get<any[]>(`/bookings/my-bookings`);
+      const data = await bookingService.getMyBookings();
       return Promise.all(data.map(mapBookingData));
     } catch (e) {
       return [];
@@ -419,7 +426,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
 
   const getRideById = async (rideId: string): Promise<Ride | null> => {
     try {
-      const data = await api.get<any>(`/rides/${rideId}`);
+      const data = await rideService.getRideById(rideId);
       return mapRideData(data);
     } catch (e) {
       return null;
@@ -428,7 +435,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
 
   const getBookingById = async (bookingId: string): Promise<Booking | null> => {
     try {
-      const data = await api.get<any>(`/bookings/${bookingId}`);
+      const data = await bookingService.getBookingById(bookingId);
       return await mapBookingData(data);
     } catch (e) {
       console.error('Error fetching booking by ID:', e);

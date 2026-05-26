@@ -36,13 +36,13 @@ export default function OfferRideScreen() {
   const [selectedTime, setSelectedTime] = useState<Date | null>(null);
   const [formData, setFormData] = useState({
     from: '',
+    fromCoords: { latitude: 0, longitude: 0 },
     to: '',
+    toCoords: { latitude: 0, longitude: 0 },
     seats: '1',
     price: '',
     description: '',
   });
-  const [fromLocationData, setFromLocationData] = useState<any>(null);
-  const [toLocationData, setToLocationData] = useState<any>(null);
   
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
@@ -96,6 +96,14 @@ export default function OfferRideScreen() {
     }
   };
 
+  const updateLocationData = (field: 'from' | 'to', location: string, coordinates?: { latitude: number; longitude: number }) => {
+    setFormData(prev => ({ 
+      ...prev, 
+      [field]: location,
+      [`${field}Coords`]: coordinates || prev[`${field}Coords` as keyof typeof prev]
+    }));
+  };
+
   const updateFormData = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
@@ -106,6 +114,11 @@ export default function OfferRideScreen() {
       return false;
     }
     
+    if (formData.fromCoords.latitude === 0 || formData.toCoords.latitude === 0) {
+      Alert.alert('Location Error', 'Please select a specific location from the dropdown suggestions.');
+      return false;
+    }
+
     if (!selectedDate || !selectedTime) {
       Alert.alert('Missing Information', 'Please select date and time');
       return false;
@@ -140,13 +153,14 @@ export default function OfferRideScreen() {
     setIsLoading(true);
     try {
       const rideData = {
+        vehicleId: selectedVehicle!.id,
         from: {
           address: formData.from,
-          coordinates: { latitude: 37.7749, longitude: -122.4194 }
+          coordinates: formData.fromCoords
         },
         to: {
           address: formData.to,
-          coordinates: { latitude: 37.4419, longitude: -122.1430 }
+          coordinates: formData.toCoords
         },
         date: selectedDate!.toISOString().split('T')[0], // YYYY-MM-DD
         time: selectedTime!.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }), // HH:mm
@@ -199,25 +213,23 @@ export default function OfferRideScreen() {
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Route Details</Text>
           
           <MapLocationSelector
-            fromLocation={fromLocationData}
-            toLocation={toLocationData}
+            fromLocation={{ address: formData.from, ...formData.fromCoords }}
+            toLocation={{ address: formData.to, ...formData.toCoords }}
             onLocationsSelected={(from, to) => {
-              setFromLocationData(from);
-              setToLocationData(to);
-              updateFormData('from', from.address);
-              updateFormData('to', to.address);
+              updateLocationData('from', from.address, { latitude: from.latitude, longitude: from.longitude });
+              updateLocationData('to', to.address, { latitude: to.latitude, longitude: to.longitude });
             }}
           />
 
           <LocationPicker
             value={formData.from}
-            onLocationChange={(location) => updateFormData('from', location)}
+            onLocationChange={(loc, coords) => updateLocationData('from', loc, coords)}
             placeholder="From (pickup location)"
           />
 
           <LocationPicker
             value={formData.to}
-            onLocationChange={(location) => updateFormData('to', location)}
+            onLocationChange={(loc, coords) => updateLocationData('to', loc, coords)}
             placeholder="To (destination)"
           />
         </View>
