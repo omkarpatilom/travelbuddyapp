@@ -1,0 +1,16 @@
+{
+  "vehicleId": "772cd25e-ffee-4837-ad14-08038ad3e846",
+  "fromAddress": "Race Condition Start",
+  "fromLat": 10.0,
+  "fromLng": 10.0,
+  "toAddress": "Race Condition End",
+  "toLat": 20.0,
+  "toLng": 20.0,
+  "departureTime": "2026-07-01T12:00:00Z",
+  "pricePerSeat": 50.0,
+  "totalSeats": 1,
+  "allowMusic": true,
+  "allowSmoking": false,
+  "allowPets": false,
+  "conversationLevel": 1
+}

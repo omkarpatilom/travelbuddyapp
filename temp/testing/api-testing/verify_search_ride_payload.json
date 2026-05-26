@@ -1,0 +1,16 @@
+{
+  "vehicleId": "772cd25e-ffee-4837-ad14-08038ad3e846",
+  "fromAddress": "Verification Start",
+  "fromLat": 18.5204,
+  "fromLng": 73.8567,
+  "toAddress": "Verification End",
+  "toLat": 16.7050,
+  "toLng": 74.2433,
+  "departureTime": "2026-06-15T10:00:00Z",
+  "pricePerSeat": 100.0,
+  "totalSeats": 4,
+  "allowMusic": true,
+  "allowSmoking": false,
+  "allowPets": true,
+  "conversationLevel": 1
+}

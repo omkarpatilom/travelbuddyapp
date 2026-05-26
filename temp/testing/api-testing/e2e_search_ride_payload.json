@@ -1,0 +1,16 @@
+{
+  "vehicleId": "772cd25e-ffee-4837-ad14-08038ad3e846",
+  "fromAddress": "Pune, Maharashtra, India",
+  "fromLat": 18.5204,
+  "fromLng": 73.8567,
+  "toAddress": "Mumbai, Maharashtra, India",
+  "toLat": 19.0760,
+  "toLng": 72.8777,
+  "departureTime": "2026-06-20T10:00:00Z",
+  "pricePerSeat": 150.0,
+  "totalSeats": 4,
+  "allowMusic": true,
+  "allowSmoking": false,
+  "allowPets": true,
+  "conversationLevel": 1
+}
