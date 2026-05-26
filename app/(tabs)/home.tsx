@@ -30,16 +30,19 @@ export default function HomeScreen() {
 
   const handleSearch = () => {
     if (!fromLocation || !toLocation) {
-      Alert.alert('Missing Information', 'Please enter both pickup and destination locations');
+      Alert.alert('Incomplete Search', 'Please provide both start and end locations.');
       return;
     }
     
-    // Simplify addresses to city/area level for better matching
-    const simplify = (addr: string) => addr.split(',').slice(0, 2).join(',').trim();
-    const searchFrom = simplify(fromLocation);
-    const searchTo = simplify(toLocation);
-
-    router.push(`/ride/find?from=${encodeURIComponent(searchFrom)}&to=${encodeURIComponent(searchTo)}&date=${selectedDate}`);
+    // We send the full location, find.tsx will simplify it for the API query
+    router.push({
+      pathname: '/ride/find',
+      params: {
+        from: fromLocation,
+        to: toLocation,
+        date: selectedDate
+      }
+    });
   };
 
   const handleOfferRide = () => {

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -6,109 +6,61 @@ import {
   FlatList,
   TouchableOpacity,
   Image,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useNotifications } from '@/contexts/NotificationContext';
 import { Bell, Car, Calendar, Star, CircleCheck as CheckCircle, X } from 'lucide-react-native';
-
-interface Notification {
-  id: string;
-  type: 'booking' | 'ride' | 'review' | 'system';
-  title: string;
-  message: string;
-  timestamp: string;
-  isRead: boolean;
-  avatar?: string;
-  actionRequired?: boolean;
-}
-
-const mockNotifications: Notification[] = [
-  {
-    id: '1',
-    type: 'booking',
-    title: 'New Booking Request',
-    message: 'John Doe wants to book 2 seats for your ride to San Francisco',
-    timestamp: '2 minutes ago',
-    isRead: false,
-    avatar: 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=150',
-    actionRequired: true,
-  },
-  {
-    id: '2',
-    type: 'ride',
-    title: 'Ride Confirmed',
-    message: 'Your booking for the ride to Berkeley has been confirmed',
-    timestamp: '1 hour ago',
-    isRead: false,
-    avatar: 'https://images.pexels.com/photos/614810/pexels-photo-614810.jpeg?auto=compress&cs=tinysrgb&w=150',
-  },
-  {
-    id: '3',
-    type: 'review',
-    title: 'New Review Received',
-    message: 'Sarah Wilson left you a 5-star review: "Great driver, very punctual!"',
-    timestamp: '3 hours ago',
-    isRead: true,
-    avatar: 'https://images.pexels.com/photos/733872/pexels-photo-733872.jpeg?auto=compress&cs=tinysrgb&w=150',
-  },
-  {
-    id: '4',
-    type: 'system',
-    title: 'Ride Reminder',
-    message: 'Your ride to Santa Clara starts in 1 hour. Get ready!',
-    timestamp: '5 hours ago',
-    isRead: true,
-  },
-  {
-    id: '5',
-    type: 'booking',
-    title: 'Booking Cancelled',
-    message: 'Mike Chen cancelled his booking for tomorrow\'s ride',
-    timestamp: '1 day ago',
-    isRead: true,
-    avatar: 'https://images.pexels.com/photos/614810/pexels-photo-614810.jpeg?auto=compress&cs=tinysrgb&w=150',
-  },
-];
 
 export default function NotificationsScreen() {
   const { theme } = useTheme();
-  const [notifications, setNotifications] = useState(mockNotifications);
+  const { 
+    notifications, 
+    unreadCount, 
+    isLoading, 
+    fetchNotifications, 
+    markAsRead, 
+    markAllAsRead, 
+    deleteNotification 
+  } = useNotifications();
+
+  const [refreshing, setRefreshing] = useState(false);
+
+  useEffect(() => {
+    fetchNotifications();
+  }, []);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchNotifications();
+    setRefreshing(false);
+  };
 
   const getNotificationIcon = (type: string) => {
-    switch (type) {
-      case 'booking':
-        return <Calendar size={20} color={theme.colors.primary} />;
-      case 'ride':
-        return <Car size={20} color={theme.colors.secondary} />;
-      case 'review':
-        return <Star size={20} color={theme.colors.warning} />;
-      case 'system':
-        return <Bell size={20} color={theme.colors.accent} />;
-      default:
-        return <Bell size={20} color={theme.colors.textSecondary} />;
-    }
+    const t = type.toLowerCase();
+    if (t.includes('booking')) return <Calendar size={20} color={theme.colors.primary} />;
+    if (t.includes('ride')) return <Car size={20} color={theme.colors.secondary} />;
+    if (t.includes('review')) return <Star size={20} color={theme.colors.warning} />;
+    return <Bell size={20} color={theme.colors.accent} />;
   };
 
-  const markAsRead = (notificationId: string) => {
-    setNotifications(prev => 
-      prev.map(notification => 
-        notification.id === notificationId 
-          ? { ...notification, isRead: true }
-          : notification
-      )
-    );
+  const formatTimestamp = (dateStr: string) => {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+    
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+
+    if (minutes < 1) return 'Just now';
+    if (minutes < 60) return `${minutes}m ago`;
+    if (hours < 24) return `${hours}h ago`;
+    return `${days}d ago`;
   };
 
-  const deleteNotification = (notificationId: string) => {
-    setNotifications(prev => prev.filter(n => n.id !== notificationId));
-  };
-
-  const markAllAsRead = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
-  };
-
-  const unreadCount = notifications.filter(n => !n.isRead).length;
-
-  const renderNotification = ({ item }: { item: Notification }) => (
+  const renderNotification = ({ item }: { item: any }) => (
     <TouchableOpacity 
       style={[
         styles.notificationCard, 
@@ -117,18 +69,14 @@ export default function NotificationsScreen() {
           borderColor: theme.colors.border 
         }
       ]}
-      onPress={() => markAsRead(item.id)}
+      onPress={() => !item.isRead && markAsRead(item.id)}
     >
       <View style={styles.notificationContent}>
         <View style={styles.notificationHeader}>
           <View style={styles.iconContainer}>
-            {item.avatar ? (
-              <Image source={{ uri: item.avatar }} style={styles.avatar} />
-            ) : (
-              <View style={[styles.iconPlaceholder, { backgroundColor: theme.colors.surface }]}>
-                {getNotificationIcon(item.type)}
-              </View>
-            )}
+            <View style={[styles.iconPlaceholder, { backgroundColor: theme.colors.surface }]}>
+              {getNotificationIcon(item.type)}
+            </View>
           </View>
           
           <View style={styles.textContent}>
@@ -146,27 +94,10 @@ export default function NotificationsScreen() {
             </Text>
             
             <Text style={[styles.timestamp, { color: theme.colors.textSecondary }]}>
-              {item.timestamp}
+              {formatTimestamp(item.createdAt)}
             </Text>
           </View>
         </View>
-
-        {item.actionRequired && (
-          <View style={styles.actionButtons}>
-            <TouchableOpacity 
-              style={[styles.actionButton, { backgroundColor: theme.colors.secondary }]}
-            >
-              <CheckCircle size={16} color="#FFFFFF" />
-              <Text style={styles.actionButtonText}>Accept</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.actionButton, { backgroundColor: theme.colors.error }]}
-            >
-              <X size={16} color="#FFFFFF" />
-              <Text style={styles.actionButtonText}>Decline</Text>
-            </TouchableOpacity>
-          </View>
-        )}
       </View>
 
       <TouchableOpacity 
@@ -203,14 +134,21 @@ export default function NotificationsScreen() {
         renderItem={renderNotification}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[theme.colors.primary]} />
+        }
         ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Bell size={60} color={theme.colors.textSecondary} />
-            <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>No notifications</Text>
-            <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>
-              You're all caught up! New notifications will appear here.
-            </Text>
-          </View>
+          isLoading ? (
+            <ActivityIndicator size="large" color={theme.colors.primary} style={{ marginTop: 40 }} />
+          ) : (
+            <View style={styles.emptyContainer}>
+              <Bell size={60} color={theme.colors.textSecondary} />
+              <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>No notifications</Text>
+              <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>
+                You're all caught up! New notifications will appear here.
+              </Text>
+            </View>
+          )
         }
       />
     </View>

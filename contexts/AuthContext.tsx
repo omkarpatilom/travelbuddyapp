@@ -1,7 +1,9 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { storage, StorageKeys } from '@/utils/storage';
 import { validateEmail, validatePassword } from '@/utils/validation';
-import { api } from '@/utils/api';
+import { authService } from '@/services/auth.service';
+import { userService } from '@/services/user.service';
+import { UserProfileDto, UserRole } from '@/utils/types';
 
 export interface User {
   id: string;
@@ -14,7 +16,6 @@ export interface User {
   isVerified: boolean;
   avatar?: string;
   createdAt: string;
-  totalRides?: number; // Added for UI consistency
 }
 
 interface AuthContextType {
@@ -33,6 +34,7 @@ interface RegisterData {
   firstName: string;
   lastName: string;
   phone: string;
+  role?: UserRole;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -49,16 +51,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const token = await storage.getItem<string>(StorageKeys.AUTH_TOKEN);
       if (token) {
-        // Fetch fresh user data from server
         try {
-          const profile = await api.get<any>('/users/me');
+          const profile = await userService.getMe();
           const mappedUser = mapUserProfile(profile);
           await storage.setItem(StorageKeys.USER_DATA, mappedUser);
           setUser(mappedUser);
         } catch (error: any) {
           console.error('Error fetching profile:', error.message || error);
           if (error.message?.includes('401')) {
-            // Token is invalid or expired
             await logout();
           } else {
             const cachedUser = await storage.getItem<User>(StorageKeys.USER_DATA);
@@ -77,7 +77,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const mapUserProfile = (profile: any): User => ({
+  const mapUserProfile = (profile: UserProfileDto): User => ({
     id: profile.id,
     email: profile.email,
     fullName: profile.fullName,
@@ -91,13 +91,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   });
 
   const login = async (email: string, password: string): Promise<boolean> => {
-    if (!validateEmail(email)) {
-      return false;
-    }
+    if (!validateEmail(email)) return false;
 
     setIsLoading(true);
     try {
-      const response = await api.post<any>('/auth/login', { email, password });
+      const response = await authService.login({ email, password });
       
       if (response.accessToken) {
         await storage.setItem(StorageKeys.AUTH_TOKEN, response.accessToken);
@@ -105,8 +103,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           await storage.setItem(StorageKeys.REFRESH_TOKEN, response.refreshToken);
         }
         
-        // Fetch profile to get full user details
-        const profile = await api.get<any>('/users/me');
+        const profile = await userService.getMe();
         const mappedUser = mapUserProfile(profile);
         
         await storage.setItem(StorageKeys.USER_DATA, mappedUser);
@@ -123,28 +120,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const register = async (userData: RegisterData): Promise<boolean> => {
-    if (!validateEmail(userData.email)) {
-      return false;
-    }
+    if (!validateEmail(userData.email)) return false;
 
     const passwordValidation = validatePassword(userData.password);
-    if (!passwordValidation.isValid) {
-      return false;
-    }
+    if (!passwordValidation.isValid) return false;
 
     setIsLoading(true);
     try {
       const fullName = `${userData.firstName} ${userData.lastName}`.trim();
       
-      await api.post<any>('/auth/register', {
+      await authService.register({
         fullName,
         email: userData.email,
         phoneNumber: userData.phone,
         password: userData.password,
-        role: 0 // 0 = Passenger in backend UserRole enum
+        role: userData.role ?? UserRole.Passenger
       });
 
-      // After successful registration, log in
       return await login(userData.email, userData.password);
     } catch (error) {
       console.error('Registration error:', error);
@@ -156,11 +148,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     try {
-      // Optional: Call logout API to invalidate session on server
       const refreshToken = await storage.getItem<string>(StorageKeys.REFRESH_TOKEN);
       if (refreshToken) {
         try {
-          await api.post('/security/logout', { refreshToken });
+          await authService.logout(refreshToken);
         } catch (e) {
           console.log('Server logout failed or already logged out:', e);
         }
@@ -178,9 +169,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const updateUser = async (userData: Partial<User>) => {
     try {
       if (user) {
-        // If updating profile details, call the API
         if (userData.fullName || userData.phone) {
-          await api.put('/users/me', {
+          await userService.updateProfile({
             fullName: userData.fullName || user.fullName,
             phoneNumber: userData.phone || user.phone
           });
@@ -197,7 +187,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refreshProfile = async () => {
     try {
-      const profile = await api.get<any>('/users/me');
+      const profile = await userService.getMe();
       const mappedUser = mapUserProfile(profile);
       await storage.setItem(StorageKeys.USER_DATA, mappedUser);
       setUser(mappedUser);

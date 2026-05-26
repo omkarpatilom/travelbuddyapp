@@ -6,12 +6,12 @@ import {
   TouchableOpacity,
   TextInput,
   FlatList,
-  Alert,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import * as Location from 'expo-location';
 import { useTheme } from '@/contexts/ThemeContext';
-import { MapPin, Navigation, Clock, Star, Search } from 'lucide-react-native';
+import { MapPin, Navigation, Clock, Star, Search, X, Map as MapIcon } from 'lucide-react-native';
 import { storage, StorageKeys } from '@/utils/storage';
 import { requestLocationPermission } from '@/utils/permissions';
 
@@ -20,13 +20,15 @@ interface LocationPickerProps {
   onLocationChange: (location: string, coordinates?: { latitude: number; longitude: number }) => void;
   placeholder?: string;
   style?: any;
+  showIcon?: boolean;
 }
 
 interface LocationSuggestion {
   id: string;
   address: string;
+  name?: string;
   coordinates?: { latitude: number; longitude: number };
-  type: 'google' | 'recent' | 'favorite' | 'fallback';
+  type: 'google' | 'recent' | 'favorite' | 'fallback' | 'current';
   distance?: number;
 }
 
@@ -44,14 +46,13 @@ interface FavoriteLocation {
   type: 'home' | 'work' | 'custom';
 }
 
-// OpenStreetMap Nominatim API implementation
 const nominatimAPI = {
   async searchPlaces(query: string): Promise<LocationSuggestion[]> {
-    if (query.length < 2) return [];
+    if (query.length < 3) return [];
     
     try {
       const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=8`,
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=6&accept-language=en`,
         {
           headers: {
             'User-Agent': 'TravelBuddyApp/1.0',
@@ -61,15 +62,22 @@ const nominatimAPI = {
       
       const data = await response.json();
       
-      return data.map((item: any) => ({
-        id: item.place_id.toString(),
-        address: item.display_name,
-        coordinates: {
-          latitude: parseFloat(item.lat),
-          longitude: parseFloat(item.lon),
-        },
-        type: 'google', // Reusing the type for now to avoid extensive refactoring
-      }));
+      return data.map((item: any) => {
+        const address = item.address;
+        const name = item.display_name.split(',')[0];
+        const fullAddress = item.display_name;
+
+        return {
+          id: item.place_id.toString(),
+          name: name,
+          address: fullAddress,
+          coordinates: {
+            latitude: parseFloat(item.lat),
+            longitude: parseFloat(item.lon),
+          },
+          type: 'google',
+        };
+      });
     } catch (error) {
       console.error('Nominatim search failed:', error);
       return [];
@@ -77,29 +85,12 @@ const nominatimAPI = {
   }
 };
 
-// Fallback location search for areas with limited Google API coverage
-const fallbackLocationSearch = async (query: string): Promise<LocationSuggestion[]> => {
-  const fallbackSuggestions: LocationSuggestion[] = [
-    {
-      id: 'fallback-1',
-      address: `${query} - Local Area`,
-      type: 'fallback',
-    },
-    {
-      id: 'fallback-2',
-      address: `Near ${query}`,
-      type: 'fallback',
-    },
-  ];
-  
-  return fallbackSuggestions;
-};
-
 export default function LocationPicker({
   value,
   onLocationChange,
   placeholder = 'Enter location',
   style,
+  showIcon = true,
 }: LocationPickerProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [searchText, setSearchText] = useState(value);
@@ -112,6 +103,7 @@ export default function LocationPicker({
   
   const { theme } = useTheme();
   const searchTimeoutRef = useRef<any>(null);
+  const inputRef = useRef<TextInput>(null);
 
   useEffect(() => {
     loadStoredData();
@@ -122,25 +114,17 @@ export default function LocationPicker({
   }, [value]);
 
   useEffect(() => {
-    if (searchText.length >= 2) {
-      // Debounce search
-      if (searchTimeoutRef.current) {
-        clearTimeout(searchTimeoutRef.current);
-      }
+    if (searchText.length >= 3 && isExpanded) {
+      if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
       
       searchTimeoutRef.current = setTimeout(() => {
         searchLocations(searchText);
-      }, 300);
-    } else {
+      }, 500);
+    } else if (searchText.length < 3 && isExpanded) {
       setSuggestions([]);
+      showRecents();
     }
-
-    return () => {
-      if (searchTimeoutRef.current) {
-        clearTimeout(searchTimeoutRef.current);
-      }
-    };
-  }, [searchText]);
+  }, [searchText, isExpanded]);
 
   const loadStoredData = async () => {
     try {
@@ -156,66 +140,41 @@ export default function LocationPicker({
     }
   };
 
+  const showRecents = () => {
+    const recentSugs: LocationSuggestion[] = recentLocations.map(loc => ({
+      id: `recent-${loc.timestamp}`,
+      address: loc.address,
+      coordinates: loc.coordinates,
+      type: 'recent',
+    }));
+    setSuggestions(recentSugs.slice(0, 5));
+  };
+
   const searchLocations = async (query: string) => {
     setIsLoadingSuggestions(true);
     setError(null);
     
     try {
-      let allSuggestions: LocationSuggestion[] = [];
+      const apiSuggestions = await nominatimAPI.searchPlaces(query);
       
-      // Add recent locations that match query
+      // Merge with matching favorites or recents if any
       const matchingRecent = recentLocations
         .filter(loc => loc.address.toLowerCase().includes(query.toLowerCase()))
-        .slice(0, 3)
         .map(loc => ({
           id: `recent-${loc.timestamp}`,
           address: loc.address,
           coordinates: loc.coordinates,
           type: 'recent' as const,
         }));
+
+      const combined = [...matchingRecent, ...apiSuggestions];
       
-      // Add favorite locations that match query
-      const matchingFavorites = favoriteLocations
-        .filter(loc => 
-          loc.name.toLowerCase().includes(query.toLowerCase()) ||
-          loc.address.toLowerCase().includes(query.toLowerCase())
-        )
-        .slice(0, 2)
-        .map(loc => ({
-          id: `favorite-${loc.id}`,
-          address: `${loc.name} - ${loc.address}`,
-          coordinates: loc.coordinates,
-          type: 'favorite' as const,
-        }));
-      
-      allSuggestions = [...matchingFavorites, ...matchingRecent];
-      
-      try {
-        // Try Nominatim API (OpenStreetMap)
-        const googleSuggestions = await nominatimAPI.searchPlaces(query);
-        allSuggestions = [...allSuggestions, ...googleSuggestions];
-      } catch (googleError) {
-        console.warn('Nominatim API failed, using fallback:', googleError);
-        
-        // Use fallback search
-        const fallbackSuggestions = await fallbackLocationSearch(query);
-        allSuggestions = [...allSuggestions, ...fallbackSuggestions];
-        
-        setError('Limited location data available in this area');
-      }
-      
-      // Remove duplicates and limit results
-      const uniqueSuggestions = allSuggestions
-        .filter((suggestion, index, self) => 
-          index === self.findIndex(s => s.address === suggestion.address)
-        )
-        .slice(0, 8);
-      
-      setSuggestions(uniqueSuggestions);
+      // Unique by address
+      const unique = combined.filter((v, i, a) => a.findIndex(t => t.address === v.address) === i);
+      setSuggestions(unique.slice(0, 8));
     } catch (error) {
       console.error('Error searching locations:', error);
-      setError('Unable to search locations. Please try again.');
-      setSuggestions([]);
+      setError('Search failed');
     } finally {
       setIsLoadingSuggestions(false);
     }
@@ -227,7 +186,6 @@ export default function LocationPicker({
     
     try {
       const permission = await requestLocationPermission();
-      
       if (!permission.granted) {
         setError('Location permission required');
         return;
@@ -244,170 +202,148 @@ export default function LocationPicker({
 
       if (reverseGeocode.length > 0) {
         const address = reverseGeocode[0];
-        const formattedAddress = `${address.street || ''} ${address.city || ''}, ${address.region || ''} ${address.postalCode || ''}`.trim();
+        const formattedAddress = `${address.street || ''} ${address.city || ''}, ${address.region || ''}`.trim().replace(/^ ,/, '');
         
-        const locationData = {
-          address: formattedAddress,
-          coordinates: {
-            latitude: location.coords.latitude,
-            longitude: location.coords.longitude,
-          },
-          timestamp: Date.now(),
+        const coordinates = {
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude,
         };
 
-        onLocationChange(formattedAddress, locationData.coordinates);
+        onLocationChange(formattedAddress, coordinates);
         setSearchText(formattedAddress);
-        await saveRecentLocation(locationData);
+        await saveRecentLocation({ address: formattedAddress, coordinates, timestamp: Date.now() });
         setIsExpanded(false);
       }
     } catch (error) {
-      console.error('Error getting current location:', error);
-      setError('Unable to get current location. Please try again.');
+      setError('Unable to get location');
     } finally {
       setIsLoadingLocation(false);
     }
   };
 
   const saveRecentLocation = async (location: RecentLocation) => {
-    try {
-      const updated = [location, ...recentLocations.filter(l => l.address !== location.address)]
-        .slice(0, 10); // Keep only 10 recent locations
-      setRecentLocations(updated);
-      await storage.setItem(StorageKeys.RECENT_LOCATIONS, updated);
-    } catch (error) {
-      console.error('Error saving recent location:', error);
-    }
+    const updated = [location, ...recentLocations.filter(l => l.address !== location.address)].slice(0, 10);
+    setRecentLocations(updated);
+    await storage.setItem(StorageKeys.RECENT_LOCATIONS, updated);
   };
 
   const selectSuggestion = async (suggestion: LocationSuggestion) => {
     onLocationChange(suggestion.address, suggestion.coordinates);
     setSearchText(suggestion.address);
     setIsExpanded(false);
-    setSuggestions([]);
     
-    // Save to recent locations if it has coordinates
-    if (suggestion.coordinates && suggestion.type !== 'recent') {
-      const locationData = {
+    if (suggestion.coordinates) {
+      await saveRecentLocation({
         address: suggestion.address,
         coordinates: suggestion.coordinates,
         timestamp: Date.now(),
-      };
-      await saveRecentLocation(locationData);
+      });
     }
   };
 
-  const handleTextChange = (text: string) => {
-    setSearchText(text);
-    onLocationChange(text);
-    if (!isExpanded) setIsExpanded(true);
+  const handleClear = () => {
+    setSearchText('');
+    onLocationChange('');
+    setSuggestions([]);
+    inputRef.current?.focus();
   };
 
   const getIconForSuggestionType = (type: string) => {
     switch (type) {
-      case 'recent':
-        return <Clock size={16} color={theme.colors.textSecondary} />;
-      case 'favorite':
-        return <Star size={16} color={theme.colors.warning} />;
-      case 'google':
-        return <MapPin size={16} color={theme.colors.primary} />;
-      case 'fallback':
-        return <Search size={16} color={theme.colors.textSecondary} />;
-      default:
-        return <MapPin size={16} color={theme.colors.textSecondary} />;
+      case 'recent': return <Clock size={18} color={theme.colors.textSecondary} />;
+      case 'favorite': return <Star size={18} color={theme.colors.warning} />;
+      case 'current': return <Navigation size={18} color={theme.colors.primary} />;
+      default: return <MapPin size={18} color={theme.colors.primary} />;
     }
   };
 
-  const renderSuggestion = ({ item }: { item: LocationSuggestion }) => (
-    <TouchableOpacity
-      style={[styles.suggestionItem, { backgroundColor: theme.colors.surface }]}
-      onPress={() => selectSuggestion(item)}
-    >
-      {getIconForSuggestionType(item.type)}
-      <View style={styles.suggestionContent}>
-        <Text style={[styles.suggestionText, { color: theme.colors.text }]} numberOfLines={1}>
-          {item.address}
-        </Text>
-        {item.distance && (
-          <Text style={[styles.suggestionDistance, { color: theme.colors.textSecondary }]}>
-            {item.distance}km away
-          </Text>
-        )}
-      </View>
-      {item.type === 'fallback' && (
-        <Text style={[styles.fallbackBadge, { color: theme.colors.warning }]}>
-          Limited data
-        </Text>
-      )}
-    </TouchableOpacity>
-  );
-
   return (
     <View style={[styles.container, style]}>
-      <TouchableOpacity
-        style={[
-          styles.inputContainer,
-          { backgroundColor: theme.colors.surface, borderColor: theme.colors.border },
-          isExpanded && styles.inputExpanded,
-          error && styles.inputError,
-        ]}
-        onPress={() => setIsExpanded(true)}
-      >
-        <MapPin size={20} color={theme.colors.textSecondary} />
+      <View style={[
+        styles.inputWrapper, 
+        { backgroundColor: theme.colors.surface, borderColor: isExpanded ? theme.colors.primary : theme.colors.border }
+      ]}>
+        {showIcon && <MapPin size={20} color={isExpanded ? theme.colors.primary : theme.colors.textSecondary} />}
         <TextInput
+          ref={inputRef}
           style={[styles.input, { color: theme.colors.text }]}
           placeholder={placeholder}
           placeholderTextColor={theme.colors.textSecondary}
           value={searchText}
-          onChangeText={handleTextChange}
-          onFocus={() => setIsExpanded(true)}
-          onBlur={() => setTimeout(() => setIsExpanded(false), 200)}
+          onChangeText={setSearchText}
+          onFocus={() => {
+            setIsExpanded(true);
+            if (searchText.length < 3) showRecents();
+          }}
+          autoCorrect={false}
         />
-        {isLoadingSuggestions && (
+        {isLoadingSuggestions ? (
           <ActivityIndicator size="small" color={theme.colors.primary} />
-        )}
-      </TouchableOpacity>
-
-      {error && (
-        <Text style={[styles.errorText, { color: theme.colors.error }]}>
-          {error}
-        </Text>
-      )}
+        ) : searchText.length > 0 ? (
+          <TouchableOpacity onPress={handleClear}>
+            <X size={18} color={theme.colors.textSecondary} />
+          </TouchableOpacity>
+        ) : null}
+      </View>
 
       {isExpanded && (
         <View style={[styles.dropdown, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
           <TouchableOpacity
-            style={[styles.currentLocationButton, { backgroundColor: theme.colors.primary }]}
+            style={[styles.currentLocationBtn, { borderBottomColor: theme.colors.border }]}
             onPress={getCurrentLocation}
             disabled={isLoadingLocation}
           >
             {isLoadingLocation ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
+              <ActivityIndicator size="small" color={theme.colors.primary} />
             ) : (
-              <Navigation size={16} color="#FFFFFF" />
+              <Navigation size={18} color={theme.colors.primary} />
             )}
-            <Text style={styles.currentLocationText}>
-              {isLoadingLocation ? 'Getting location...' : 'Use Current Location'}
+            <Text style={[styles.currentLocationText, { color: theme.colors.primary }]}>
+              {isLoadingLocation ? 'Locating...' : 'Use current location'}
             </Text>
           </TouchableOpacity>
 
-          {suggestions.length > 0 && (
-            <FlatList
-              data={suggestions}
-              keyExtractor={(item) => item.id}
-              renderItem={renderSuggestion}
-              style={styles.suggestionsList}
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-            />
-          )}
-
-          {suggestions.length === 0 && searchText.length >= 2 && !isLoadingSuggestions && (
-            <View style={styles.noResultsContainer}>
-              <Text style={[styles.noResultsText, { color: theme.colors.textSecondary }]}>
-                No locations found for "{searchText}"
-              </Text>
-            </View>
-          )}
+          <FlatList
+            data={suggestions}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={styles.suggestionItem}
+                onPress={() => selectSuggestion(item)}
+              >
+                <View style={[styles.iconBox, { backgroundColor: theme.colors.background }]}>
+                  {getIconForSuggestionType(item.type)}
+                </View>
+                <View style={styles.suggestionTextWrapper}>
+                  {item.name && <Text style={[styles.suggestionName, { color: theme.colors.text }]} numberOfLines={1}>{item.name}</Text>}
+                  <Text style={[styles.suggestionAddr, { color: theme.colors.textSecondary }]} numberOfLines={2}>
+                    {item.address}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            )}
+            keyboardShouldPersistTaps="handled"
+            ListHeaderComponent={
+              suggestions.length > 0 && searchText.length < 3 ? (
+                <Text style={[styles.sectionTitle, { color: theme.colors.textSecondary }]}>Recent Locations</Text>
+              ) : null
+            }
+            ListEmptyComponent={
+              !isLoadingSuggestions && searchText.length >= 3 ? (
+                <View style={styles.emptyBox}>
+                  <Search size={40} color={theme.colors.border} />
+                  <Text style={{ color: theme.colors.textSecondary, marginTop: 8 }}>No matches found</Text>
+                </View>
+              ) : null
+            }
+          />
+          
+          <TouchableOpacity 
+            style={[styles.closeBtn, { backgroundColor: theme.colors.surface }]}
+            onPress={() => setIsExpanded(false)}
+          >
+            <Text style={{ color: theme.colors.textSecondary, fontWeight: '600' }}>Close</Text>
+          </TouchableOpacity>
         </View>
       )}
     </View>
@@ -416,92 +352,90 @@ export default function LocationPicker({
 
 const styles = StyleSheet.create({
   container: {
-    position: 'relative',
     zIndex: 1000,
   },
-  inputContainer: {
+  inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: 12,
+    borderWidth: 1.5,
+    borderRadius: 14,
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    height: 56,
     gap: 12,
-  },
-  inputExpanded: {
-    borderBottomLeftRadius: 0,
-    borderBottomRightRadius: 0,
-  },
-  inputError: {
-    borderColor: '#EF4444',
   },
   input: {
     flex: 1,
     fontSize: 16,
-  },
-  errorText: {
-    fontSize: 12,
-    marginTop: 4,
-    marginLeft: 16,
+    fontWeight: '500',
   },
   dropdown: {
     position: 'absolute',
-    top: '100%',
+    top: 62,
     left: 0,
     right: 0,
+    borderRadius: 16,
     borderWidth: 1,
-    borderTopWidth: 0,
-    borderBottomLeftRadius: 12,
-    borderBottomRightRadius: 12,
-    padding: 12,
-    maxHeight: 300,
-    zIndex: 1001,
+    padding: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    elevation: 10,
+    maxHeight: 400,
   },
-  currentLocationButton: {
+  currentLocationBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    gap: 8,
-    marginBottom: 12,
+    padding: 16,
+    gap: 12,
+    borderBottomWidth: 1,
   },
   currentLocationText: {
-    color: '#FFFFFF',
-    fontSize: 14,
     fontWeight: '600',
-  },
-  suggestionsList: {
-    maxHeight: 200,
+    fontSize: 15,
   },
   suggestionItem: {
     flexDirection: 'row',
+    padding: 12,
     alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
     gap: 12,
-    marginBottom: 4,
   },
-  suggestionContent: {
+  iconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  suggestionTextWrapper: {
     flex: 1,
   },
-  suggestionText: {
-    fontSize: 14,
+  suggestionName: {
+    fontSize: 15,
+    fontWeight: '600',
     marginBottom: 2,
   },
-  suggestionDistance: {
+  suggestionAddr: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  sectionTitle: {
     fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 8,
+    letterSpacing: 1,
   },
-  fallbackBadge: {
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  noResultsContainer: {
-    paddingVertical: 20,
+  emptyBox: {
+    padding: 40,
     alignItems: 'center',
   },
-  noResultsText: {
-    fontSize: 14,
+  closeBtn: {
+    marginTop: 8,
+    padding: 12,
+    borderRadius: 12,
+    alignItems: 'center',
   },
 });

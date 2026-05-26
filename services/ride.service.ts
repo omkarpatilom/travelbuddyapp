@@ -1,0 +1,84 @@
+import { api } from '../utils/api';
+import { CreateRideCommand, RideDto, RideStatus } from '../utils/types';
+
+export const rideService = {
+  async createRide(data: CreateRideCommand) {
+    return api.post<{ id: string }>('/rides', data);
+  },
+
+  async getRideById(id: string) {
+    return api.get<RideDto>(`/rides/${id}`);
+  },
+
+  async updateRide(id: string, data: any) {
+    return api.put<void>(`/rides/${id}`, data);
+  },
+
+  async deleteRide(id: string) {
+    return api.delete<void>(`/rides/${id}`);
+  },
+
+  async searchRides(params: {
+    From?: string;
+    To?: string;
+    Date?: string;
+    Seats?: number;
+    MaxPrice?: number;
+    AllowPets?: boolean;
+    AllowMusic?: boolean;
+  }) {
+    const query = new URLSearchParams(params as any).toString();
+    return api.get<RideDto[]>(`/rides/search?${query}`);
+  },
+
+  async getNearbyRides(params: {
+    Latitude: number;
+    Longitude: number;
+    RadiusInKm: number;
+    Date?: string;
+    Seats?: number;
+  }) {
+    const query = new URLSearchParams(params as any).toString();
+    return api.get<RideDto[]>(`/rides/nearby?${query}`);
+  },
+
+  async getMyRides() {
+    return api.get<RideDto[]>('/rides/my-rides');
+  },
+
+  async getActiveRides() {
+    return api.get<RideDto[]>('/rides/active');
+  },
+
+  async startRide(id: string) {
+    return api.post<void>(`/rides/${id}/start`, {});
+  },
+
+  async completeRide(id: string) {
+    return api.post<void>(`/rides/${id}/complete`, {});
+  },
+
+  async cancelRide(id: string, reason?: string) {
+    return api.post<void>(`/rides/${id}/cancel`, reason ? { reason } : {});
+  },
+
+  async updatePreferences(id: string, data: any) {
+    return api.put<void>(`/rides/${id}/preferences`, data);
+  },
+
+  async bookSeat(id: string, seats: number = 1) {
+    return api.post<void>(`/rides/${id}/book-seat?seats=${seats}`, {});
+  },
+
+  async releaseSeat(id: string, seats: number = 1) {
+    return api.post<void>(`/rides/${id}/release-seat?seats=${seats}`, {});
+  },
+
+  async updateTracking(id: string, data: { latitude: number; longitude: number; address?: string }) {
+    return api.post<void>(`/rides/${id}/tracking`, data);
+  },
+
+  async getTracking(id: string) {
+    return api.get<any>(`/rides/${id}/tracking`);
+  },
+};

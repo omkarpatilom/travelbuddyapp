@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
-import { api } from '@/utils/api';
+import { notificationService } from '@/services/notification.service';
+import { NotificationResponseDto, NotificationPreferenceDto } from '@/utils/types';
 
 // Configure notifications
 Notifications.setNotificationHandler({
@@ -35,7 +36,7 @@ interface NotificationContextType {
   markAsRead: (id: string) => Promise<void>;
   markAllAsRead: () => Promise<void>;
   deleteNotification: (id: string) => Promise<void>;
-  getSettings: () => Promise<any>;
+  getSettings: () => Promise<NotificationPreferenceDto | null>;
   updateSettings: (settings: any) => Promise<void>;
 }
 
@@ -54,7 +55,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
     const notificationListener = Notifications.addNotificationReceivedListener(notification => {
       setNotification(notification);
-      fetchNotifications(); // Refresh list when new one arrives
+      fetchNotifications();
     });
 
     const responseListener = Notifications.addNotificationResponseReceivedListener(response => {
@@ -70,13 +71,13 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const fetchNotifications = async () => {
     try {
       setIsLoading(true);
-      const data = await api.get<any[]>('/notifications/my-notifications');
+      const data = await notificationService.getMyNotifications();
       setNotifications(data.map(n => ({
         id: n.id,
         title: n.title,
-        message: n.message,
-        type: n.type,
-        isRead: n.isRead,
+        message: n.body,
+        type: n.type.toString(),
+        isRead: n.status === 'Read',
         createdAt: n.createdAt
       })));
     } catch (e) {
@@ -88,7 +89,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
   const markAsRead = async (id: string) => {
     try {
-      await api.patch(`/notifications/${id}/read`, {});
+      await notificationService.markAsRead(id);
       setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
     } catch (e) {
       console.error('Error marking notification as read:', e);
@@ -97,7 +98,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
   const markAllAsRead = async () => {
     try {
-      await api.patch('/notifications/read-all', {});
+      await notificationService.markAllAsRead();
       setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
     } catch (e) {
       console.error('Error marking all notifications as read:', e);
@@ -106,7 +107,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
   const deleteNotification = async (id: string) => {
     try {
-      await api.delete(`/notifications/${id}`);
+      await notificationService.deleteNotification(id);
       setNotifications(prev => prev.filter(n => n.id !== id));
     } catch (e) {
       console.error('Error deleting notification:', e);
@@ -115,7 +116,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
   const getSettings = async () => {
     try {
-      return await api.get('/notifications/preferences');
+      return await notificationService.getPreferences();
     } catch (e) {
       console.error('Error getting notification settings:', e);
       return null;
@@ -124,7 +125,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
   const updateSettings = async (settings: any) => {
     try {
-      await api.put('/notifications/preferences', settings);
+      await notificationService.updatePreferences(settings);
     } catch (e) {
       console.error('Error updating notification settings:', e);
     }
@@ -151,18 +152,14 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     }
 
     if (finalStatus !== 'granted') {
-      console.log('Failed to get push token for push notification!');
       return null;
     }
 
     try {
       token = (await Notifications.getExpoPushTokenAsync()).data;
-      console.log('Push token:', token);
     } catch (error: any) {
       if (error?.message?.includes('projectId') || error?.message?.includes('VALIDATION_ERROR')) {
-        console.log('Skipping push token registration: Invalid or missing EAS projectId in local development.');
-      } else {
-        console.warn('Error getting push token:', error);
+        console.log('Skipping push token registration: EAS projectId missing.');
       }
     }
 
@@ -176,13 +173,13 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         body,
         data: { timestamp: Date.now() },
       },
-      trigger: null, // Show immediately
+      trigger: null,
     });
   };
 
   const scheduleRideReminder = async (rideId: string, rideDate: string) => {
     const reminderDate = new Date(rideDate);
-    reminderDate.setHours(reminderDate.getHours() - 1); // 1 hour before
+    reminderDate.setHours(reminderDate.getHours() - 1);
 
     await Notifications.scheduleNotificationAsync({
       content: {
