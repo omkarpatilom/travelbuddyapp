@@ -17,7 +17,7 @@ jest.mock('../components/RatingModal', () => 'RatingModal');
 jest.mock('lucide-react-native', () => {
   const React = require('react');
   const { View } = require('react-native');
-  const mockIcon = (name) => (props) => React.createElement(View, { ...props, testID: name });
+  const mockIcon = (name: string) => (props: any) => React.createElement(View, { ...props, testID: name });
   return {
     ArrowLeft: mockIcon('ArrowLeft'),
     MapPin: mockIcon('MapPin'),

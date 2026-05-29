@@ -4,7 +4,7 @@ import { bookingService } from '@/services/booking.service';
 import { reviewService } from '@/services/review.service';
 import { userService } from '@/services/user.service';
 import { useAuth } from './AuthContext';
-import { RideDto, BookingResponseDto, RideStatus, ConversationLevel } from '@/utils/types';
+import { RideDto, BookingResponseDto, RideStatus, ConversationLevel, RideSearchDto } from '@/utils/types';
 
 export interface Ride {
   id: string;
@@ -30,6 +30,9 @@ export interface Ride {
   status: 'active' | 'completed' | 'cancelled' | 'started' | 'scheduled';
   distance: string;
   duration: string;
+  pickupDistanceMeters?: number;
+  dropoffDistanceMeters?: number;
+  polyline?: string;
   preferences: {
     nonSmoking: boolean;
     musicAllowed: boolean;
@@ -58,10 +61,17 @@ interface RideContextType {
   myRides: Ride[];
   isLoading: boolean;
   searchRides: (
-    from: string, 
-    to: string, 
-    date: string, 
-    options?: { seats?: number; maxPrice?: number; allowPets?: boolean; allowMusic?: boolean }
+    params: {
+        from: string;
+        to: string;
+        date: string;
+        fromCoords?: { latitude: number; longitude: number };
+        toCoords?: { latitude: number; longitude: number };
+        seats?: number;
+        maxPrice?: number;
+        allowPets?: boolean;
+        allowMusic?: boolean;
+    }
   ) => Promise<Ride[]>;
   createRide: (rideData: any) => Promise<boolean>;
   updateRide: (rideId: string, rideData: Partial<Ride>) => Promise<boolean>;
@@ -122,7 +132,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const mapRideData = async (ride: RideDto): Promise<Ride> => {
+  const mapRideData = async (ride: RideDto | RideSearchDto): Promise<Ride> => {
     let driverName = 'Driver';
     let driverRating = 4.5;
     let driverAvatar = undefined;
@@ -153,6 +163,9 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
       [ConversationLevel.Chatty]: 'chatty',
     };
 
+    // Extract search specific fields if available
+    const searchData = ride as RideSearchDto;
+
     return {
       id: ride.id,
       driverId: ride.driverId,
@@ -172,11 +185,16 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
       price: ride.pricePerSeat,
       availableSeats: ride.availableSeats,
       totalSeats: ride.totalSeats,
-      carModel: 'Vehicle', // Backend doesn't return this in RideDto yet
+      carModel: 'Vehicle', 
       carColor: 'Silver',
       status: statusMap[ride.status] || 'active',
-      distance: 'Unknown',
+      distance: searchData.pickupDistanceMeters 
+        ? `${(searchData.pickupDistanceMeters / 1000).toFixed(1)}km away`
+        : 'Unknown',
       duration: 'Unknown',
+      pickupDistanceMeters: searchData.pickupDistanceMeters,
+      dropoffDistanceMeters: searchData.dropoffDistanceMeters,
+      polyline: searchData.polyline,
       preferences: {
         nonSmoking: !ride.preference.allowSmoking,
         musicAllowed: ride.preference.allowMusic,
@@ -211,17 +229,29 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
   };
 
   const searchRides = async (params: {
-    From: string;
-    To: string;
-    Date: string;
-    Seats?: number;
-    MaxPrice?: number;
-    AllowPets?: boolean;
-    AllowMusic?: boolean;
+    from: string;
+    to: string;
+    date: string;
+    fromCoords?: { latitude: number; longitude: number };
+    toCoords?: { latitude: number; longitude: number };
+    seats?: number;
+    maxPrice?: number;
+    allowPets?: boolean;
+    allowMusic?: boolean;
   }): Promise<Ride[]> => {
     setIsLoading(true);
     try {
-      const results = await rideService.searchRides(params);
+      const results = await rideService.searchRides({
+        From: params.from,
+        To: params.to,
+        Date: params.date,
+        FromCoords: params.fromCoords,
+        ToCoords: params.toCoords,
+        Seats: params.seats,
+        MaxPrice: params.maxPrice,
+        AllowPets: params.allowPets,
+        AllowMusic: params.allowMusic
+      });
       const mappedResults = await Promise.all(results.map(mapRideData));
       return mappedResults;
     } catch (error) {

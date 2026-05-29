@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
-import { useRides } from '@/contexts/RideContext';
+import { useRides, Ride } from '@/contexts/RideContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { User, Phone, Users, DollarSign, ArrowLeft, CreditCard } from 'lucide-react-native';
 import { mockRides } from '@/data/mockData';
@@ -413,5 +413,10 @@ const styles = StyleSheet.create({
     fontSize: 18,
     textAlign: 'center',
     marginTop: 100,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

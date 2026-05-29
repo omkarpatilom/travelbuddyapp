@@ -1,5 +1,13 @@
 import { Ride, Booking } from '@/contexts/RideContext';
 
+const defaultPreferences = {
+  nonSmoking: true,
+  musicAllowed: true,
+  petsAllowed: false,
+  airConditioning: true,
+  conversationLevel: 'moderate' as const,
+};
+
 export const mockRides: Ride[] = [
   {
     id: '1',
@@ -24,7 +32,8 @@ export const mockRides: Ride[] = [
     carColor: 'Blue',
     status: 'active',
     distance: '35 km',
-    duration: '45 min'
+    duration: '45 min',
+    preferences: defaultPreferences
   },
   {
     id: '2',
@@ -49,7 +58,8 @@ export const mockRides: Ride[] = [
     carColor: 'White',
     status: 'active',
     distance: '15 km',
-    duration: '25 min'
+    duration: '25 min',
+    preferences: defaultPreferences
   },
   {
     id: '3',
@@ -74,7 +84,8 @@ export const mockRides: Ride[] = [
     carColor: 'Gray',
     status: 'active',
     distance: '12 km',
-    duration: '20 min'
+    duration: '20 min',
+    preferences: defaultPreferences
   },
   {
     id: '4',
@@ -99,7 +110,8 @@ export const mockRides: Ride[] = [
     carColor: 'Red',
     status: 'active',
     distance: '20 km',
-    duration: '30 min'
+    duration: '30 min',
+    preferences: defaultPreferences
   }
 ];
 

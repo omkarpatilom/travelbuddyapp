@@ -13,6 +13,7 @@ export interface User {
   role: string;
   status: string;
   rating: number;
+  totalRides: number;
   isVerified: boolean;
   avatar?: string;
   createdAt: string;
@@ -85,6 +86,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     role: profile.role,
     status: profile.status,
     rating: profile.rating,
+    totalRides: 0, // Default value as it's not in the backend DTO yet
     isVerified: profile.isVerified,
     avatar: profile.profilePictureUrl || undefined,
     createdAt: profile.createdAt,

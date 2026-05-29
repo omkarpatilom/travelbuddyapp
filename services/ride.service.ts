@@ -1,5 +1,5 @@
 import { api } from '../utils/api';
-import { CreateRideCommand, RideDto, RideStatus } from '../utils/types';
+import { CreateRideCommand, RideDto, RideStatus, RideSearchDto } from '../utils/types';
 
 export const rideService = {
   async createRide(data: CreateRideCommand) {
@@ -22,13 +22,32 @@ export const rideService = {
     From?: string;
     To?: string;
     Date?: string;
+    FromCoords?: { latitude: number; longitude: number };
+    ToCoords?: { latitude: number; longitude: number };
     Seats?: number;
     MaxPrice?: number;
     AllowPets?: boolean;
     AllowMusic?: boolean;
   }) {
-    const query = new URLSearchParams(params as any).toString();
-    return api.get<RideDto[]>(`/rides/search?${query}`);
+    const queryParams: any = {
+      date: params.Date,
+      seats: params.Seats,
+      maxPrice: params.MaxPrice,
+      allowPets: params.AllowPets,
+      allowMusic: params.AllowMusic,
+    };
+
+    if (params.FromCoords) {
+      queryParams.srcLat = params.FromCoords.latitude;
+      queryParams.srcLon = params.FromCoords.longitude;
+    }
+    if (params.ToCoords) {
+      queryParams.dstLat = params.ToCoords.latitude;
+      queryParams.dstLon = params.ToCoords.longitude;
+    }
+
+    const query = new URLSearchParams(queryParams).toString();
+    return api.get<RideSearchDto[]>(`/rides/search?${query}`);
   },
 
   async getNearbyRides(params: {

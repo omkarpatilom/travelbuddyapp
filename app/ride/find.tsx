@@ -38,17 +38,20 @@ import {
 import DatePicker from '@/components/DatePicker';
 import PreferencesSelector from '@/components/PreferencesSelector';
 import LocationPicker from '@/components/LocationPicker';
+import { api } from '@/utils/api';
 
 const { width } = Dimensions.get('window');
 
 export default function FindRideScreen() {
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
   const { searchRides } = useRides();
   const router = useRouter();
-  const params = useLocalSearchParams();
+  const { from, to, date } = useLocalSearchParams();
 
   const [fromLocation, setFromLocation] = useState('');
   const [toLocation, setToLocation] = useState('');
+  const [fromCoords, setFromCoords] = useState<{ latitude: number; longitude: number } | undefined>();
+  const [toCoords, setToCoords] = useState<{ latitude: number; longitude: number } | undefined>();
   const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
   const [searchResults, setSearchResults] = useState<Ride[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -68,14 +71,36 @@ export default function FindRideScreen() {
   });
 
   useEffect(() => {
-    if (params.from) setFromLocation(decodeURIComponent(params.from as string));
-    if (params.to) setToLocation(decodeURIComponent(params.to as string));
-    if (params.date) setSelectedDate(new Date(params.date as string));
-    
-    if (params.from && params.to) {
-      setTimeout(() => performSearch(), 500);
+    const init = async () => {
+      if (from) {
+        const decodedFrom = decodeURIComponent(from as string);
+        setFromLocation(decodedFrom);
+        try {
+          const data = await api.get<any>(`/places/geocode?q=${encodeURIComponent(decodedFrom)}`);
+          if (data && data.lat) setFromCoords({ latitude: data.lat, longitude: data.lon });
+        } catch (e) { console.warn('Failed to geocode from location'); }
+      }
+      
+      if (to) {
+        const decodedTo = decodeURIComponent(to as string);
+        setToLocation(decodedTo);
+        try {
+          const data = await api.get<any>(`/places/geocode?q=${encodeURIComponent(decodedTo)}`);
+          if (data && data.lat) setToCoords({ latitude: data.lat, longitude: data.lon });
+        } catch (e) { console.warn('Failed to geocode to location'); }
+      }
+      
+      if (date) setSelectedDate(new Date(date as string));
+    };
+
+    init();
+  }, [from, to, date]);
+
+  useEffect(() => {
+    if (fromLocation && toLocation && fromCoords && toCoords) {
+      performSearch();
     }
-  }, [params]);
+  }, [fromCoords, toCoords]);
 
   const performSearch = async () => {
     if (!fromLocation || !toLocation) {
@@ -83,20 +108,53 @@ export default function FindRideScreen() {
       return;
     }
 
+    if (!fromCoords || !toCoords) {
+        setIsLoading(true);
+        try {
+            let fCoords = fromCoords;
+            let tCoords = toCoords;
+            
+            if (!fCoords) {
+                const data = await api.get<any>(`/places/geocode?q=${encodeURIComponent(fromLocation)}`);
+                if (data && data.lat) fCoords = { latitude: data.lat, longitude: data.lon };
+            }
+            if (!tCoords) {
+                const data = await api.get<any>(`/places/geocode?q=${encodeURIComponent(toLocation)}`);
+                if (data && data.lat) tCoords = { latitude: data.lat, longitude: data.lon };
+            }
+            
+            if (!fCoords || !tCoords) {
+                Alert.alert('Location Error', 'Could not resolve locations to coordinates.');
+                setIsLoading(false);
+                return;
+            }
+            
+            setFromCoords(fCoords);
+            setToCoords(tCoords);
+            return;
+        } catch (e) {
+            console.error('Final geocode attempt failed', e);
+            Alert.alert('Search Error', 'Unable to resolve locations.');
+            setIsLoading(false);
+            return;
+        }
+    }
+
     setIsLoading(true);
     setHasSearched(true);
     try {
       const dateString = selectedDate ? selectedDate.toISOString().split('T')[0] : '';
       
-      // We send the locations. Backend will handle string matching.
       const results = await searchRides({
-        From: fromLocation.trim(),
-        To: toLocation.trim(),
-        Date: dateString,
-        Seats: filters.minSeats,
-        MaxPrice: filters.priceRange.max,
-        AllowPets: filters.preferences.petsAllowed,
-        AllowMusic: filters.preferences.musicAllowed,
+        from: fromLocation.trim(),
+        to: toLocation.trim(),
+        date: dateString,
+        fromCoords,
+        toCoords,
+        seats: filters.minSeats,
+        maxPrice: filters.priceRange.max,
+        allowPets: filters.preferences.petsAllowed,
+        allowMusic: filters.preferences.musicAllowed,
       });
       
       setSearchResults(results);
@@ -109,9 +167,12 @@ export default function FindRideScreen() {
   };
 
   const swapLocations = () => {
-    const temp = fromLocation;
+    const tempLoc = fromLocation;
+    const tempCoords = fromCoords;
     setFromLocation(toLocation);
-    setToLocation(temp);
+    setFromCoords(toCoords);
+    setToLocation(tempLoc);
+    setToCoords(tempCoords);
   };
 
   const renderRide = ({ item }: { item: Ride }) => (
@@ -122,7 +183,15 @@ export default function FindRideScreen() {
       <View style={styles.rideTop}>
         <View style={styles.timeInfo}>
           <Text style={[styles.rideTime, { color: theme.colors.text }]}>{item.time}</Text>
-          <Text style={[styles.rideDuration, { color: theme.colors.textSecondary }]}>{item.duration || '2h 15m'}</Text>
+          {item.pickupDistanceMeters ? (
+            <Text style={[styles.rideDistance, { color: theme.colors.primary }]}>
+              {item.pickupDistanceMeters < 1000 
+                ? `${Math.round(item.pickupDistanceMeters)}m` 
+                : `${(item.pickupDistanceMeters / 1000).toFixed(1)}km`} away
+            </Text>
+          ) : (
+            <Text style={[styles.rideDuration, { color: theme.colors.textSecondary }]}>{item.duration || '2h 15m'}</Text>
+          )}
         </View>
         <View style={styles.routeVisual}>
           <Circle size={8} color={theme.colors.primary} fill={theme.colors.primary} />
@@ -172,7 +241,7 @@ export default function FindRideScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      <StatusBar barStyle={theme.dark ? 'light-content' : 'dark-content'} />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       
       {/* Search Header */}
       <View style={[styles.searchContainer, { backgroundColor: theme.colors.card }]}>
@@ -190,23 +259,36 @@ export default function FindRideScreen() {
         </View>
 
         <View style={styles.inputsWrapper}>
-          <View style={styles.locationInputs}>
-            <LocationPicker
-              value={fromLocation}
-              onLocationChange={setFromLocation}
-              placeholder="From where?"
-              style={styles.picker}
-              showIcon={false}
-            />
-            <View style={[styles.inputGap, { backgroundColor: theme.colors.border }]} />
-            <LocationPicker
-              value={toLocation}
-              onLocationChange={setToLocation}
-              placeholder="To where?"
-              style={styles.picker}
-              showIcon={false}
-            />
-            <TouchableOpacity style={[styles.swapBtn, { backgroundColor: theme.colors.card }]} onPress={swapLocations}>
+          <View style={styles.routeContainer}>
+            <View style={styles.routeVisual}>
+              <View style={[styles.dot, { backgroundColor: theme.colors.primary }]} />
+              <View style={[styles.line, { backgroundColor: theme.colors.border }]} />
+              <View style={[styles.square, { backgroundColor: theme.colors.secondary }]} />
+            </View>
+            <View style={styles.routeInputs}>
+              <LocationPicker
+                value={fromLocation}
+                onLocationChange={(loc, coords) => {
+                  setFromLocation(loc);
+                  if (coords) setFromCoords(coords);
+                }}
+                placeholder="From where?"
+                style={styles.picker}
+                showIcon={false}
+              />
+              <View style={[styles.inputGap, { backgroundColor: theme.colors.border }]} />
+              <LocationPicker
+                value={toLocation}
+                onLocationChange={(loc, coords) => {
+                  setToLocation(loc);
+                  if (coords) setToCoords(coords);
+                }}
+                placeholder="To where?"
+                style={styles.picker}
+                showIcon={false}
+              />
+            </View>
+            <TouchableOpacity style={[styles.swapBtn, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]} onPress={swapLocations}>
               <ArrowUpDown size={18} color={theme.colors.primary} />
             </TouchableOpacity>
           </View>
@@ -412,6 +494,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   },
+  rideDistance: {
+    fontSize: 10,
+    fontWeight: '600',
+    marginTop: 4,
+    textAlign: 'center',
+  },
   rideDuration: {
     fontSize: 11,
     marginTop: 2,
@@ -573,6 +661,11 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   applyBtnText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+});: {
     color: '#fff',
     fontSize: 18,
     fontWeight: '700',

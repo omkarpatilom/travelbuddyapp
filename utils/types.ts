@@ -100,6 +100,12 @@ export interface RideDto {
   createdAt: string;
 }
 
+export interface RideSearchDto extends RideDto {
+  pickupDistanceMeters: number;
+  dropoffDistanceMeters: number;
+  polyline: string;
+}
+
 export interface BookingResponseDto {
   bookingId: string;
   rideId: string;

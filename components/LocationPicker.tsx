@@ -8,12 +8,15 @@ import {
   FlatList,
   ActivityIndicator,
   Platform,
+  ScrollView,
+  Modal,
+  SafeAreaView,
+  StatusBar,
 } from 'react-native';
 import * as Location from 'expo-location';
+import { MapPin, Search, X, Navigation, Clock, Star, ArrowLeft } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
-import { MapPin, Navigation, Clock, Star, Search, X, Map as MapIcon } from 'lucide-react-native';
-import { storage, StorageKeys } from '@/utils/storage';
-import { requestLocationPermission } from '@/utils/permissions';
+import { api } from '@/utils/api';
 
 interface LocationPickerProps {
   value: string;
@@ -23,229 +26,96 @@ interface LocationPickerProps {
   showIcon?: boolean;
 }
 
-interface LocationSuggestion {
-  id: string;
-  address: string;
-  name?: string;
-  coordinates?: { latitude: number; longitude: number };
-  type: 'google' | 'recent' | 'favorite' | 'fallback' | 'current';
-  distance?: number;
-}
-
-interface RecentLocation {
-  address: string;
-  coordinates: { latitude: number; longitude: number };
-  timestamp: number;
-}
-
-interface FavoriteLocation {
-  id: string;
-  name: string;
-  address: string;
-  coordinates: { latitude: number; longitude: number };
-  type: 'home' | 'work' | 'custom';
-}
-
-const nominatimAPI = {
-  async searchPlaces(query: string): Promise<LocationSuggestion[]> {
-    if (query.length < 3) return [];
-    
-    try {
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=6&accept-language=en`,
-        {
-          headers: {
-            'User-Agent': 'TravelBuddyApp/1.0',
-          },
-        }
-      );
-      
-      const data = await response.json();
-      
-      return data.map((item: any) => {
-        const address = item.address;
-        const name = item.display_name.split(',')[0];
-        const fullAddress = item.display_name;
-
-        return {
-          id: item.place_id.toString(),
-          name: name,
-          address: fullAddress,
-          coordinates: {
-            latitude: parseFloat(item.lat),
-            longitude: parseFloat(item.lon),
-          },
-          type: 'google',
-        };
-      });
-    } catch (error) {
-      console.error('Nominatim search failed:', error);
-      return [];
-    }
-  }
-};
-
 export default function LocationPicker({
   value,
   onLocationChange,
-  placeholder = 'Enter location',
+  placeholder = 'Search location...',
   style,
   showIcon = true,
 }: LocationPickerProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [searchText, setSearchText] = useState(value);
-  const [suggestions, setSuggestions] = useState<LocationSuggestion[]>([]);
-  const [recentLocations, setRecentLocations] = useState<RecentLocation[]>([]);
-  const [favoriteLocations, setFavoriteLocations] = useState<FavoriteLocation[]>([]);
-  const [isLoadingLocation, setIsLoadingLocation] = useState(false);
+  const { theme, isDark } = useTheme();
+  const [isModalVisible, setIsModalVisible] = useState(false);
+  const [searchText, setSearchText] = useState('');
+  const [suggestions, setSuggestions] = useState<any[]>([]);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  
-  const { theme } = useTheme();
-  const searchTimeoutRef = useRef<any>(null);
+  const [isLoadingLocation, setIsLoadingLocation] = useState(false);
   const inputRef = useRef<TextInput>(null);
 
+  // Sync internal search text with prop value when modal opens
   useEffect(() => {
-    loadStoredData();
-  }, []);
-
-  useEffect(() => {
-    setSearchText(value);
-  }, [value]);
-
-  useEffect(() => {
-    if (searchText.length >= 3 && isExpanded) {
-      if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
-      
-      searchTimeoutRef.current = setTimeout(() => {
-        searchLocations(searchText);
-      }, 500);
-    } else if (searchText.length < 3 && isExpanded) {
-      setSuggestions([]);
-      showRecents();
+    if (isModalVisible) {
+      setSearchText(value);
+      if (value.length < 3) {
+        showRecents();
+      }
     }
-  }, [searchText, isExpanded]);
+  }, [isModalVisible]);
 
-  const loadStoredData = async () => {
-    try {
-      const [recent, favorites] = await Promise.all([
-        storage.getItem<RecentLocation[]>(StorageKeys.RECENT_LOCATIONS),
-        storage.getItem<FavoriteLocation[]>('favoriteLocations'),
-      ]);
-      
-      if (recent) setRecentLocations(recent);
-      if (favorites) setFavoriteLocations(favorites);
-    } catch (error) {
-      console.error('Error loading stored location data:', error);
-    }
-  };
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      if (searchText.length >= 3 && isModalVisible) {
+        fetchSuggestions(searchText);
+      }
+    }, 400);
 
-  const showRecents = () => {
-    const recentSugs: LocationSuggestion[] = recentLocations.map(loc => ({
-      id: `recent-${loc.timestamp}`,
-      address: loc.address,
-      coordinates: loc.coordinates,
-      type: 'recent',
-    }));
-    setSuggestions(recentSugs.slice(0, 5));
-  };
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchText]);
 
-  const searchLocations = async (query: string) => {
+  const fetchSuggestions = async (text: string) => {
     setIsLoadingSuggestions(true);
-    setError(null);
-    
     try {
-      const apiSuggestions = await nominatimAPI.searchPlaces(query);
-      
-      // Merge with matching favorites or recents if any
-      const matchingRecent = recentLocations
-        .filter(loc => loc.address.toLowerCase().includes(query.toLowerCase()))
-        .map(loc => ({
-          id: `recent-${loc.timestamp}`,
-          address: loc.address,
-          coordinates: loc.coordinates,
-          type: 'recent' as const,
-        }));
-
-      const combined = [...matchingRecent, ...apiSuggestions];
-      
-      // Unique by address
-      const unique = combined.filter((v, i, a) => a.findIndex(t => t.address === v.address) === i);
-      setSuggestions(unique.slice(0, 8));
+      const data = await api.get<any[]>(`/places/autocomplete?q=${encodeURIComponent(text)}`);
+      setSuggestions(data || []);
     } catch (error) {
-      console.error('Error searching locations:', error);
-      setError('Search failed');
+      console.error('Failed to fetch suggestions', error);
+      setSuggestions([]);
     } finally {
       setIsLoadingSuggestions(false);
     }
   };
 
+  const showRecents = () => {
+    // Mock recent locations
+    setSuggestions([
+      { id: 'r1', name: 'Home', address: '123 Main St, Springfield', type: 'recent' },
+      { id: 'r2', name: 'Work', address: '456 Business Ave, Metropolis', type: 'recent' },
+      { id: 'r3', name: 'Airport', address: 'International Terminal, Gateway City', type: 'recent' },
+    ]);
+  };
+
   const getCurrentLocation = async () => {
     setIsLoadingLocation(true);
-    setError(null);
-    
     try {
-      const permission = await requestLocationPermission();
-      if (!permission.granted) {
-        setError('Location permission required');
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        alert('Permission to access location was denied');
         return;
       }
 
-      const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
+      const location = await Location.getCurrentPositionAsync({});
+      const { latitude, longitude } = location.coords;
+      
+      // Reverse geocode
+      const data = await api.get<any>(`/places/reverse?lat=${latitude}&lon=${longitude}`);
+      const address = data.address || `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+      
+      handleSelect({
+        address,
+        lat: latitude,
+        lon: longitude,
+        name: 'Current Location'
       });
-
-      const reverseGeocode = await Location.reverseGeocodeAsync({
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
-      });
-
-      if (reverseGeocode.length > 0) {
-        const address = reverseGeocode[0];
-        const formattedAddress = `${address.street || ''} ${address.city || ''}, ${address.region || ''}`.trim().replace(/^ ,/, '');
-        
-        const coordinates = {
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
-        };
-
-        onLocationChange(formattedAddress, coordinates);
-        setSearchText(formattedAddress);
-        await saveRecentLocation({ address: formattedAddress, coordinates, timestamp: Date.now() });
-        setIsExpanded(false);
-      }
     } catch (error) {
-      setError('Unable to get location');
+      console.error('Error getting location', error);
     } finally {
       setIsLoadingLocation(false);
     }
   };
 
-  const saveRecentLocation = async (location: RecentLocation) => {
-    const updated = [location, ...recentLocations.filter(l => l.address !== location.address)].slice(0, 10);
-    setRecentLocations(updated);
-    await storage.setItem(StorageKeys.RECENT_LOCATIONS, updated);
-  };
-
-  const selectSuggestion = async (suggestion: LocationSuggestion) => {
-    onLocationChange(suggestion.address, suggestion.coordinates);
-    setSearchText(suggestion.address);
-    setIsExpanded(false);
-    
-    if (suggestion.coordinates) {
-      await saveRecentLocation({
-        address: suggestion.address,
-        coordinates: suggestion.coordinates,
-        timestamp: Date.now(),
-      });
-    }
-  };
-
-  const handleClear = () => {
-    setSearchText('');
-    onLocationChange('');
-    setSuggestions([]);
-    inputRef.current?.focus();
+  const handleSelect = (item: any) => {
+    const displayValue = item.name && item.name !== item.address ? item.name : item.address;
+    onLocationChange(displayValue, { latitude: item.lat, longitude: item.lon });
+    setIsModalVisible(false);
   };
 
   const getIconForSuggestionType = (type: string) => {
@@ -259,59 +129,77 @@ export default function LocationPicker({
 
   return (
     <View style={[styles.container, style]}>
-      <View style={[
-        styles.inputWrapper, 
-        { backgroundColor: theme.colors.surface, borderColor: isExpanded ? theme.colors.primary : theme.colors.border }
-      ]}>
-        {showIcon && <MapPin size={20} color={isExpanded ? theme.colors.primary : theme.colors.textSecondary} />}
-        <TextInput
-          ref={inputRef}
-          style={[styles.input, { color: theme.colors.text }]}
-          placeholder={placeholder}
-          placeholderTextColor={theme.colors.textSecondary}
-          value={searchText}
-          onChangeText={setSearchText}
-          onFocus={() => {
-            setIsExpanded(true);
-            if (searchText.length < 3) showRecents();
-          }}
-          autoCorrect={false}
-        />
-        {isLoadingSuggestions ? (
-          <ActivityIndicator size="small" color={theme.colors.primary} />
-        ) : searchText.length > 0 ? (
-          <TouchableOpacity onPress={handleClear}>
-            <X size={18} color={theme.colors.textSecondary} />
+      <TouchableOpacity 
+        style={[
+          styles.trigger, 
+          { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }
+        ]}
+        onPress={() => setIsModalVisible(true)}
+        activeOpacity={0.7}
+      >
+        {showIcon && <MapPin size={20} color={theme.colors.textSecondary} />}
+        <Text 
+          style={[
+            styles.triggerText, 
+            { color: value ? theme.colors.text : theme.colors.textSecondary }
+          ]}
+          numberOfLines={1}
+        >
+          {value || placeholder}
+        </Text>
+        {value ? (
+          <TouchableOpacity onPress={() => onLocationChange('')}>
+            <X size={16} color={theme.colors.textSecondary} />
           </TouchableOpacity>
-        ) : null}
-      </View>
+        ) : (
+          <Search size={16} color={theme.colors.textSecondary} />
+        )}
+      </TouchableOpacity>
 
-      {isExpanded && (
-        <View style={[styles.dropdown, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
-          <TouchableOpacity
-            style={[styles.currentLocationBtn, { borderBottomColor: theme.colors.border }]}
-            onPress={getCurrentLocation}
-            disabled={isLoadingLocation}
-          >
-            {isLoadingLocation ? (
-              <ActivityIndicator size="small" color={theme.colors.primary} />
-            ) : (
-              <Navigation size={18} color={theme.colors.primary} />
-            )}
-            <Text style={[styles.currentLocationText, { color: theme.colors.primary }]}>
-              {isLoadingLocation ? 'Locating...' : 'Use current location'}
-            </Text>
-          </TouchableOpacity>
+      <Modal
+        visible={isModalVisible}
+        animationType="slide"
+        onRequestClose={() => setIsModalVisible(false)}
+      >
+        <SafeAreaView style={[styles.modalContainer, { backgroundColor: theme.colors.background }]}>
+          <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
+          
+          <View style={styles.modalHeader}>
+            <TouchableOpacity 
+              onPress={() => setIsModalVisible(false)}
+              style={styles.backBtn}
+            >
+              <ArrowLeft size={24} color={theme.colors.text} />
+            </TouchableOpacity>
+            <View style={[styles.searchInputWrapper, { backgroundColor: theme.colors.surface }]}>
+              <Search size={20} color={theme.colors.textSecondary} />
+              <TextInput
+                ref={inputRef}
+                style={[styles.modalInput, { color: theme.colors.text }]}
+                placeholder={placeholder}
+                placeholderTextColor={theme.colors.textSecondary}
+                value={searchText}
+                onChangeText={setSearchText}
+                autoFocus={true}
+                autoCorrect={false}
+              />
+              {searchText.length > 0 && (
+                <TouchableOpacity onPress={() => setSearchText('')}>
+                  <X size={18} color={theme.colors.textSecondary} />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
 
           <FlatList
             data={suggestions}
-            keyExtractor={(item) => item.id}
+            keyExtractor={(item, index) => item.id || index.toString()}
             renderItem={({ item }) => (
               <TouchableOpacity
-                style={styles.suggestionItem}
-                onPress={() => selectSuggestion(item)}
+                style={[styles.suggestionItem, { borderBottomColor: theme.colors.border }]}
+                onPress={() => handleSelect(item)}
               >
-                <View style={[styles.iconBox, { backgroundColor: theme.colors.background }]}>
+                <View style={[styles.iconBox, { backgroundColor: theme.colors.surface }]}>
                   {getIconForSuggestionType(item.type)}
                 </View>
                 <View style={styles.suggestionTextWrapper}>
@@ -322,88 +210,123 @@ export default function LocationPicker({
                 </View>
               </TouchableOpacity>
             )}
-            keyboardShouldPersistTaps="handled"
             ListHeaderComponent={
-              suggestions.length > 0 && searchText.length < 3 ? (
-                <Text style={[styles.sectionTitle, { color: theme.colors.textSecondary }]}>Recent Locations</Text>
-              ) : null
+              <>
+                <TouchableOpacity
+                  style={[styles.currentLocationBtn, { borderBottomColor: theme.colors.border }]}
+                  onPress={getCurrentLocation}
+                  disabled={isLoadingLocation}
+                >
+                  <View style={[styles.iconBox, { backgroundColor: theme.colors.primary + '15' }]}>
+                    {isLoadingLocation ? (
+                      <ActivityIndicator size="small" color={theme.colors.primary} />
+                    ) : (
+                      <Navigation size={18} color={theme.colors.primary} />
+                    )}
+                  </View>
+                  <Text style={[styles.currentLocationText, { color: theme.colors.primary }]}>
+                    {isLoadingLocation ? 'Locating...' : 'Use current location'}
+                  </Text>
+                </TouchableOpacity>
+
+                {suggestions.length > 0 && searchText.length < 3 && (
+                  <Text style={[styles.sectionTitle, { color: theme.colors.textSecondary }]}>Recent Locations</Text>
+                )}
+              </>
             }
             ListEmptyComponent={
               !isLoadingSuggestions && searchText.length >= 3 ? (
                 <View style={styles.emptyBox}>
-                  <Search size={40} color={theme.colors.border} />
-                  <Text style={{ color: theme.colors.textSecondary, marginTop: 8 }}>No matches found</Text>
+                  <Search size={48} color={theme.colors.border} />
+                  <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>No matches found for "{searchText}"</Text>
                 </View>
               ) : null
             }
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={styles.listContent}
           />
           
-          <TouchableOpacity 
-            style={[styles.closeBtn, { backgroundColor: theme.colors.surface }]}
-            onPress={() => setIsExpanded(false)}
-          >
-            <Text style={{ color: theme.colors.textSecondary, fontWeight: '600' }}>Close</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+          {isLoadingSuggestions && (
+            <View style={styles.loaderContainer}>
+              <ActivityIndicator size="large" color={theme.colors.primary} />
+            </View>
+          )}
+        </SafeAreaView>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    zIndex: 1000,
+    width: '100%',
   },
-  inputWrapper: {
+  trigger: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1.5,
-    borderRadius: 14,
+    borderWidth: 1,
+    borderRadius: 12,
     paddingHorizontal: 16,
-    height: 56,
+    height: 52,
     gap: 12,
   },
-  input: {
+  triggerText: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  modalContainer: {
+    flex: 1,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 12,
+  },
+  backBtn: {
+    padding: 4,
+  },
+  searchInputWrapper: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 48,
+    gap: 8,
+  },
+  modalInput: {
     flex: 1,
     fontSize: 16,
     fontWeight: '500',
   },
-  dropdown: {
-    position: 'absolute',
-    top: 62,
-    left: 0,
-    right: 0,
-    borderRadius: 16,
-    borderWidth: 1,
-    padding: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.1,
-    shadowRadius: 20,
-    elevation: 10,
-    maxHeight: 400,
+  listContent: {
+    paddingBottom: 20,
   },
   currentLocationBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 16,
-    gap: 12,
+    gap: 16,
     borderBottomWidth: 1,
   },
   currentLocationText: {
     fontWeight: '600',
-    fontSize: 15,
+    fontSize: 16,
   },
   suggestionItem: {
     flexDirection: 'row',
-    padding: 12,
+    padding: 16,
     alignItems: 'center',
-    gap: 12,
+    gap: 16,
+    borderBottomWidth: 0.5,
   },
   iconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -411,31 +334,38 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   suggestionName: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '600',
     marginBottom: 2,
   },
   suggestionAddr: {
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 14,
+    lineHeight: 20,
   },
   sectionTitle: {
     fontSize: 12,
     fontWeight: '700',
     textTransform: 'uppercase',
     paddingHorizontal: 16,
-    paddingTop: 16,
+    paddingTop: 24,
     paddingBottom: 8,
     letterSpacing: 1,
   },
   emptyBox: {
-    padding: 40,
+    padding: 60,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  closeBtn: {
-    marginTop: 8,
-    padding: 12,
-    borderRadius: 12,
+  emptyText: {
+    marginTop: 16,
+    textAlign: 'center',
+    fontSize: 16,
+  },
+  loaderContainer: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255,255,255,0.5)',
+    justifyContent: 'center',
     alignItems: 'center',
+    zIndex: 10,
   },
 });

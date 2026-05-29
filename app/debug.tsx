@@ -40,7 +40,7 @@ export default function DebugScreen() {
 
       // 2. Rides Test
       addLog('Test 2: Ride Search Sync...');
-      const rides = await searchRides('Pune', 'Mumbai', '2026-06-01');
+      const rides = await searchRides({ from: 'Pune', to: 'Mumbai', date: '2026-06-01' });
       addLog(`Found ${rides.length} rides in search.`);
 
       // 3. Vehicles Test

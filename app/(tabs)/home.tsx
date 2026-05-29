@@ -166,14 +166,17 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
 
-          <FlatList
-            data={rides.slice(0, 3)}
-            keyExtractor={(item) => item.id}
-            renderItem={renderRecentRide}
-            horizontal
-            showsHorizontalScrollIndicator={false}
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false} 
             contentContainerStyle={styles.ridesContainer}
-          />
+          >
+            {rides.slice(0, 3).map((item) => (
+              <React.Fragment key={item.id}>
+                {renderRecentRide({ item })}
+              </React.Fragment>
+            ))}
+          </ScrollView>
         </View>
 
         <View style={[styles.statsCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
@@ -234,16 +237,51 @@ const styles = StyleSheet.create({
   },
   searchCard: {
     padding: 20,
-    borderRadius: 16,
-    gap: 12,
+    borderRadius: 24,
+    gap: 16,
     shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowRadius: 16,
+    elevation: 8,
+    marginTop: -20,
   },
-  locationPicker: {
-    marginBottom: 8,
+  routeContainer: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    backgroundColor: 'transparent',
+  },
+  routeVisual: {
+    width: 24,
+    alignItems: 'center',
+    paddingVertical: 18,
+    marginRight: 12,
+  },
+  dot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  line: {
+    width: 2,
+    flex: 1,
+    marginVertical: 4,
+  },
+  square: {
+    width: 10,
+    height: 10,
+    borderRadius: 2,
+  },
+  routeInputs: {
+    flex: 1,
+  },
+  locationPickerContainer: {
+    marginBottom: 0,
+  },
+  inputDivider: {
+    height: 1,
+    marginVertical: 8,
+    marginLeft: 10,
   },
   searchInput: {
     flexDirection: 'row',
@@ -397,6 +435,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   statNumber: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  statLabel: {
+    fontSize: 14,
+  },
+}); {
     fontSize: 24,
     fontWeight: 'bold',
     marginBottom: 4,

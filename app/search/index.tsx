@@ -1,9 +1,33 @@
 import React, { useState, useEffect } from 'react';
-import { View, TextInput, FlatList, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { 
+  View, 
+  TextInput, 
+  FlatList, 
+  Text, 
+  TouchableOpacity, 
+  StyleSheet, 
+  ActivityIndicator,
+  SafeAreaView,
+  StatusBar
+} from 'react-native';
+import { useRouter } from 'expo-router';
+import { useTheme } from '@/contexts/ThemeContext';
 import { SearchCacheService, CachedSearch } from '../../services/SearchCacheService';
+import { api } from '../../utils/api';
+import { 
+  Search, 
+  MapPin, 
+  History, 
+  ArrowLeft, 
+  ChevronRight,
+  Clock,
+  WifiOff
+} from 'lucide-react-native';
 
 export default function SearchScreen() {
+  const { theme, isDark } = useTheme();
+  const router = useRouter();
+  
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -41,11 +65,8 @@ export default function SearchScreen() {
     setLoading(true);
     setIsOffline(false);
     try {
-      const response = await fetch(`http://localhost:5000/api/places/autocomplete?q=${encodeURIComponent(text)}`);
-      if (response.ok) {
-        const data = await response.json();
-        setSuggestions(data);
-      }
+      const data = await api.get<any[]>(`/places/autocomplete?q=${encodeURIComponent(text)}`);
+      setSuggestions(data);
     } catch (error) {
       console.error('Failed to fetch suggestions', error);
       setIsOffline(true);
@@ -55,18 +76,16 @@ export default function SearchScreen() {
   };
 
   const handleSelect = async (place: any) => {
+    const selectedName = place.name || place.address || place.label;
     setQuery('');
     setSuggestions([]);
     setLoading(true);
     try {
-      const response = await fetch(`http://localhost:5000/api/places/geocode?q=${encodeURIComponent(place.name)}`);
-      if (response.ok) {
-        const data = await response.json();
-        if (focusedInput === 'pickup') {
-            setPickupPlace(data);
-        } else {
-            setDropoffPlace(data);
-        }
+      const data = await api.get<any>(`/places/geocode?q=${encodeURIComponent(selectedName)}`);
+      if (focusedInput === 'pickup') {
+          setPickupPlace(data);
+      } else {
+          setDropoffPlace(data);
       }
     } catch (error) {
       console.error('Failed to geocode', error);
@@ -82,131 +101,275 @@ export default function SearchScreen() {
     setLoading(true);
     setIsOffline(false);
     try {
-      const response = await fetch(
-        `http://localhost:5000/api/rides/search?srcLat=${pickupPlace.lat}&srcLon=${pickupPlace.lon}&dstLat=${dropoffPlace.lat}&dstLon=${dropoffPlace.lon}`
+      const data = await api.get<any[]>(
+        `/rides/search?srcLat=${pickupPlace.lat}&srcLon=${pickupPlace.lon}&dstLat=${dropoffPlace.lat}&dstLon=${dropoffPlace.lon}`
       );
-      if (response.ok) {
-        const data = await response.json();
-        setSearchResults(data);
-        const searchQuery = `${pickupPlace.name} to ${dropoffPlace.name}`;
-        await SearchCacheService.saveSearch(searchQuery, data);
-        await loadHistory();
-      }
+      
+      // Navigate to FindRide with these results or just show them here
+      // To keep it seamless, let's navigate to /ride/find with the correct params
+      router.push({
+        pathname: '/ride/find',
+        params: {
+          from: pickupPlace.name || pickupPlace.address,
+          to: dropoffPlace.name || dropoffPlace.address,
+          date: new Date().toISOString()
+        }
+      });
+      
+      const searchQuery = `${pickupPlace.name || pickupPlace.address} to ${dropoffPlace.name || dropoffPlace.address}`;
+      await SearchCacheService.saveSearch(searchQuery, data);
     } catch (error) {
-      console.error('Failed to search rides, falling back to offline', error);
+      console.error('Failed to search rides', error);
       setIsOffline(true);
-      // Fallback: try to find a matching query in history
-      const searchQuery = `${pickupPlace.name} to ${dropoffPlace.name}`;
-      const cached = history.find(h => h.query === searchQuery);
-      if (cached) {
-          setSearchResults(cached.results);
-      }
     } finally {
       setLoading(false);
     }
   };
 
   const loadFromHistory = (item: CachedSearch) => {
-      setSearchResults(item.results);
-      setIsOffline(true); // Indicate we are viewing offline results
+      // Split query back to from/to if possible
+      const parts = item.query.split(' to ');
+      if (parts.length === 2) {
+          router.push({
+              pathname: '/ride/find',
+              params: { from: parts[0], to: parts[1], date: new Date().toISOString() }
+          });
+      }
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
+      
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <ArrowLeft size={24} color={theme.colors.text} />
+        </TouchableOpacity>
+        <Text style={[styles.title, { color: theme.colors.text }]}>Search History</Text>
+      </View>
+
       {isOffline && (
-          <View style={styles.offlineBanner}>
-              <Text style={styles.offlineText}>You are offline. Showing cached results.</Text>
+          <View style={[styles.offlineBanner, { backgroundColor: theme.colors.error + '20' }]}>
+              <WifiOff size={16} color={theme.colors.error} />
+              <Text style={[styles.offlineText, { color: theme.colors.error }]}>Offline Mode - Showing Cached Results</Text>
           </View>
       )}
       
-      <View style={styles.formContainer}>
-        <TextInput
-            style={[styles.input, focusedInput === 'pickup' && styles.activeInput]}
-            placeholder={pickupPlace ? pickupPlace.name : "Pickup location"}
-            value={focusedInput === 'pickup' ? query : ''}
-            onChangeText={(text) => { setFocusedInput('pickup'); setQuery(text); }}
-            onFocus={() => { setFocusedInput('pickup'); setQuery(''); }}
-        />
-        <TextInput
-            style={[styles.input, focusedInput === 'dropoff' && styles.activeInput]}
-            placeholder={dropoffPlace ? dropoffPlace.name : "Drop-off location"}
-            value={focusedInput === 'dropoff' ? query : ''}
-            onChangeText={(text) => { setFocusedInput('dropoff'); setQuery(text); }}
-            onFocus={() => { setFocusedInput('dropoff'); setQuery(''); }}
-        />
-        <TouchableOpacity style={styles.searchButton} onPress={handleSearchRides}>
+      <View style={styles.content}>
+        <View style={[styles.searchBox, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+          <View style={styles.inputRow}>
+            <MapPin size={20} color={theme.colors.primary} />
+            <TextInput
+                style={[styles.input, { color: theme.colors.text }]}
+                placeholder={pickupPlace ? (pickupPlace.name || pickupPlace.address) : "Pickup location"}
+                placeholderTextColor={theme.colors.textSecondary}
+                value={focusedInput === 'pickup' ? query : ''}
+                onChangeText={(text) => { setFocusedInput('pickup'); setQuery(text); }}
+                onFocus={() => { setFocusedInput('pickup'); setQuery(''); }}
+            />
+          </View>
+          <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
+          <View style={{ height: 10 }} />
+          <View style={styles.inputRow}>
+            <MapPin size={20} color={theme.colors.secondary} />
+            <TextInput
+                style={[styles.input, { color: theme.colors.text }]}
+                placeholder={dropoffPlace ? (dropoffPlace.name || dropoffPlace.address) : "Drop-off location"}
+                placeholderTextColor={theme.colors.textSecondary}
+                value={focusedInput === 'dropoff' ? query : ''}
+                onChangeText={(text) => { setFocusedInput('dropoff'); setQuery(text); }}
+                onFocus={() => { setFocusedInput('dropoff'); setQuery(''); }}
+            />
+          </View>
+          
+          <TouchableOpacity 
+            style={[styles.searchButton, { backgroundColor: theme.colors.primary }]} 
+            onPress={handleSearchRides}
+          >
             <Text style={styles.searchButtonText}>Find Rides</Text>
-        </TouchableOpacity>
-      </View>
-      
-      {loading && <ActivityIndicator style={styles.loader} />}
+          </TouchableOpacity>
+        </View>
 
-      {suggestions.length > 0 && !isOffline && (
-        <FlatList
-            data={suggestions}
-            keyExtractor={(item, index) => `${item.name}-${index}`}
-            renderItem={({ item }) => (
-            <TouchableOpacity style={styles.item} onPress={() => handleSelect(item)}>
-                <Text style={styles.itemText}>{item.name}, {item.country}</Text>
-            </TouchableOpacity>
-            )}
-        />
-      )}
+        {loading && <ActivityIndicator style={styles.loader} color={theme.colors.primary} />}
 
-      {searchResults.length > 0 && (
-        <FlatList
-            data={searchResults}
-            keyExtractor={(item) => item.rideId}
-            renderItem={({ item }) => (
-            <View style={styles.resultContainer}>
-                <Text style={styles.resultTitle}>Driver ID: {item.driverId}</Text>
-                <Text style={styles.resultText}>Departure: {new Date(item.departureTime).toLocaleString()}</Text>
-                <Text style={styles.resultText}>Price: ${item.price}</Text>
-                <Text style={styles.resultText}>Seats: {item.availableSeats}</Text>
-                <Text style={styles.resultText}>Walk to pickup: {item.pickupDistanceMeters?.toFixed(0)}m</Text>
-                <Text style={styles.resultText}>Walk from drop-off: {item.dropoffDistanceMeters?.toFixed(0)}m</Text>
+        <View style={styles.listContainer}>
+          {suggestions.length > 0 && !isOffline && (
+            <View style={[styles.suggestionsOverlay, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+              <FlatList
+                  data={suggestions}
+                  keyExtractor={(item, index) => `${item.name || item.address}-${index}`}
+                  renderItem={({ item }) => (
+                  <TouchableOpacity style={[styles.item, { borderBottomColor: theme.colors.border }]} onPress={() => handleSelect(item)}>
+                      <MapPin size={16} color={theme.colors.textSecondary} style={{ marginRight: 12 }} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.itemText, { color: theme.colors.text }]} numberOfLines={1}>{item.name || item.address}</Text>
+                        <Text style={[styles.itemSubtext, { color: theme.colors.textSecondary }]}>{item.country || 'Unknown'}</Text>
+                      </View>
+                  </TouchableOpacity>
+                  )}
+                  keyboardShouldPersistTaps="handled"
+              />
             </View>
-            )}
-        />
-      )}
+          )}
 
-      {isOffline && searchResults.length === 0 && history.length > 0 && (
           <View style={styles.historyContainer}>
-              <Text style={styles.historyTitle}>Recent Searches</Text>
+              <View style={styles.sectionHeader}>
+                <History size={18} color={theme.colors.textSecondary} />
+                <Text style={[styles.historyTitle, { color: theme.colors.text }]}>Recent Searches</Text>
+              </View>
+              
               <FlatList
                   data={history}
                   keyExtractor={(item) => item.id}
                   renderItem={({ item }) => (
-                      <TouchableOpacity style={styles.historyItem} onPress={() => loadFromHistory(item)}>
-                          <Text style={styles.historyItemText}>{item.query}</Text>
-                          <Text style={styles.historyItemTime}>{new Date(item.timestamp).toLocaleString()}</Text>
+                      <TouchableOpacity 
+                        style={[styles.historyItem, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]} 
+                        onPress={() => loadFromHistory(item)}
+                      >
+                          <View style={styles.historyIcon}>
+                            <Clock size={16} color={theme.colors.primary} />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.historyItemText, { color: theme.colors.text }]} numberOfLines={1}>{item.query}</Text>
+                            <Text style={[styles.historyItemTime, { color: theme.colors.textSecondary }]}>
+                              {new Date(item.timestamp).toLocaleDateString()}
+                            </Text>
+                          </View>
+                          <ChevronRight size={18} color={theme.colors.border} />
                       </TouchableOpacity>
                   )}
+                  ListEmptyComponent={
+                    <View style={styles.emptyHistory}>
+                      <Text style={{ color: theme.colors.textSecondary }}>No recent searches</Text>
+                    </View>
+                  }
               />
           </View>
-      )}
+        </View>
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, backgroundColor: '#fff' },
-  offlineBanner: { backgroundColor: '#ffcccc', padding: 10, borderRadius: 8, marginBottom: 10, alignItems: 'center' },
-  offlineText: { color: '#cc0000', fontWeight: 'bold' },
-  formContainer: { marginBottom: 16 },
-  input: { height: 50, borderColor: '#ccc', borderWidth: 1, borderRadius: 8, paddingHorizontal: 16, marginBottom: 8 },
-  activeInput: { borderColor: '#007AFF', borderWidth: 2 },
-  searchButton: { backgroundColor: '#007AFF', padding: 16, borderRadius: 8, alignItems: 'center', marginTop: 8 },
+  container: { flex: 1 },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 20,
+    gap: 15,
+  },
+  backBtn: {
+    padding: 5,
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  content: {
+    flex: 1,
+    paddingHorizontal: 20,
+  },
+  offlineBanner: { 
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 10, 
+    borderRadius: 12, 
+    marginHorizontal: 20,
+    marginBottom: 15,
+    gap: 8
+  },
+  offlineText: { fontWeight: '600', fontSize: 13 },
+  searchBox: {
+    padding: 20,
+    borderRadius: 20,
+    borderWidth: 1,
+    marginBottom: 20,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 5,
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    height: 40,
+  },
+  input: { 
+    flex: 1, 
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  divider: {
+    height: 1,
+    marginVertical: 12,
+    marginLeft: 32,
+  },
+  searchButton: { 
+    padding: 15, 
+    borderRadius: 12, 
+    alignItems: 'center', 
+    marginTop: 20 
+  },
   searchButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
   loader: { marginVertical: 10 },
-  item: { padding: 16, borderBottomWidth: 1, borderBottomColor: '#eee' },
-  itemText: { fontSize: 16 },
-  resultContainer: { padding: 16, backgroundColor: '#f9f9f9', borderRadius: 8, marginBottom: 10, borderWidth: 1, borderColor: '#ddd' },
-  resultTitle: { fontSize: 16, fontWeight: 'bold', marginBottom: 4 },
-  resultText: { fontSize: 14, marginBottom: 2 },
-  historyContainer: { flex: 1, marginTop: 20 },
-  historyTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 10 },
-  historyItem: { padding: 16, backgroundColor: '#f0f0f0', borderRadius: 8, marginBottom: 8 },
-  historyItemText: { fontSize: 16, fontWeight: 'bold' },
-  historyItemTime: { fontSize: 12, color: '#666', marginTop: 4 }
+  listContainer: { flex: 1, position: 'relative' },
+  suggestionsOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
+    elevation: 5,
+    maxHeight: 300,
+    borderRadius: 15,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    overflow: 'hidden',
+  },
+  item: { 
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16, 
+    borderBottomWidth: 1, 
+  },
+  itemText: { fontSize: 15, fontWeight: '500' },
+  itemSubtext: { fontSize: 12, marginTop: 2 },
+  historyContainer: { flex: 1, marginTop: 10 },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 15,
+  },
+  historyTitle: { fontSize: 16, fontWeight: 'bold' },
+  historyItem: { 
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 15, 
+    borderRadius: 15, 
+    marginBottom: 10, 
+    borderWidth: 1,
+    gap: 15,
+  },
+  historyIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0,122,255,0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  historyItemText: { fontSize: 14, fontWeight: '600' },
+  historyItemTime: { fontSize: 11, marginTop: 2 },
+  emptyHistory: {
+    alignItems: 'center',
+    marginTop: 40,
+  }
 });

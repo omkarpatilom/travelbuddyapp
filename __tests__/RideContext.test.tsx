@@ -105,7 +105,7 @@ describe('RideContext', () => {
 
     let searchResults;
     await act(async () => {
-      searchResults = await result.current.searchRides('A', 'B', '2026-05-25');
+      searchResults = await result.current.searchRides({ from: 'A', to: 'B', date: '2026-05-25' });
     });
 
     expect(searchResults).toHaveLength(1);
