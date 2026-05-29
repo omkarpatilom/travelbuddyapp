@@ -442,12 +442,4 @@ const styles = StyleSheet.create({
   statLabel: {
     fontSize: 14,
   },
-}); {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 4,
-  },
-  statLabel: {
-    fontSize: 14,
-  },
 });
