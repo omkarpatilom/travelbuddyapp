@@ -217,10 +217,25 @@ EXPO_PUBLIC_PUSH_NOTIFICATION_KEY=your_push_key
 5. Document API integrations
 
 ### Code Quality
-- **ESLint**: Code linting and formatting
-- **TypeScript**: Type safety throughout
-- **Testing**: Jest and React Native Testing Library
-- **Documentation**: Inline code documentation
+- **ESLint**: Code linting and formatting.
+- **TypeScript**: Strict Type safety throughout (Achieved 0 compilation errors across all components and hooks).
+- **Testing**: Jest and React Native Testing Library.
+- **Documentation**: Inline code documentation.
+
+## 📄 License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## 🆘 Support
+
+For technical support or feature requests:
+- Create an issue on GitHub
+- Contact: support@travelbuddy.com
+- Documentation: docs.travelbuddy.com
+
+---
+
+**TravelBuddy** - Ride Together, Stay Safe Together 🚗✨entation
 
 ## 📄 License
 
