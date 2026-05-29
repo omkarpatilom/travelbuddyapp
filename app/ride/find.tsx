@@ -260,7 +260,7 @@ export default function FindRideScreen() {
 
         <View style={styles.inputsWrapper}>
           <View style={styles.routeContainer}>
-            <View style={styles.routeVisual}>
+            <View style={styles.inputRouteVisual}>
               <View style={[styles.dot, { backgroundColor: theme.colors.primary }]} />
               <View style={[styles.line, { backgroundColor: theme.colors.border }]} />
               <View style={[styles.square, { backgroundColor: theme.colors.secondary }]} />
