@@ -5,6 +5,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   Modal,
+  Platform,
 } from 'react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { MapPin, Navigation } from 'lucide-react-native';
@@ -37,6 +38,10 @@ export default function MapLocationSelector({
     onLocationsSelected(from, to);
     setShowMap(false);
   };
+
+  if (Platform.OS === 'web') {
+    return null;
+  }
 
   return (
     <>

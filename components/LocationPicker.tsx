@@ -194,22 +194,27 @@ export default function LocationPicker({
           <FlatList
             data={suggestions}
             keyExtractor={(item, index) => item.id || index.toString()}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={[styles.suggestionItem, { borderBottomColor: theme.colors.border }]}
-                onPress={() => handleSelect(item)}
-              >
-                <View style={[styles.iconBox, { backgroundColor: theme.colors.surface }]}>
-                  {getIconForSuggestionType(item.type)}
-                </View>
-                <View style={styles.suggestionTextWrapper}>
-                  {item.name && <Text style={[styles.suggestionName, { color: theme.colors.text }]} numberOfLines={1}>{item.name}</Text>}
-                  <Text style={[styles.suggestionAddr, { color: theme.colors.textSecondary }]} numberOfLines={2}>
-                    {item.address}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            )}
+            renderItem={({ item }) => {
+              const addressText = item.address || item.country || '';
+              return (
+                <TouchableOpacity
+                  style={[styles.suggestionItem, { borderBottomColor: theme.colors.border }]}
+                  onPress={() => handleSelect(item)}
+                >
+                  <View style={[styles.iconBox, { backgroundColor: theme.colors.surface }]}>
+                    {getIconForSuggestionType(item.type)}
+                  </View>
+                  <View style={styles.suggestionTextWrapper}>
+                    {item.name && <Text style={[styles.suggestionName, { color: theme.colors.text }]} numberOfLines={1}>{item.name}</Text>}
+                    {addressText ? (
+                      <Text style={[styles.suggestionAddr, { color: theme.colors.textSecondary }]} numberOfLines={2}>
+                        {addressText}
+                      </Text>
+                    ) : null}
+                  </View>
+                </TouchableOpacity>
+              );
+            }}
             ListHeaderComponent={
               <>
                 <TouchableOpacity

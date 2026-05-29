@@ -11,8 +11,21 @@ import {
   Platform,
   Animated,
 } from 'react-native';
-import MapView, { Marker, PROVIDER_GOOGLE, Region } from 'react-native-maps';
-import MapViewDirections from 'react-native-maps-directions';
+
+const isWeb = Platform.OS === 'web';
+
+// Import maps conditionally or just use a placeholder for web
+let MapView: any, Marker: any, PROVIDER_GOOGLE: any;
+let MapViewDirections: any;
+
+if (!isWeb) {
+  const Maps = require('react-native-maps');
+  MapView = Maps.default;
+  Marker = Maps.Marker;
+  PROVIDER_GOOGLE = Maps.PROVIDER_GOOGLE;
+  MapViewDirections = require('react-native-maps-directions').default;
+}
+
 import * as Location from 'expo-location';
 import { useTheme } from '@/contexts/ThemeContext';
 import { 
@@ -64,7 +77,20 @@ export default function InteractiveMap({
   onClose,
   style,
 }: InteractiveMapProps) {
-  const [region, setRegion] = useState<Region>({
+  const { theme, isDark } = useTheme();
+
+  if (isWeb) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.colors.background, justifyContent: 'center', alignItems: 'center' }]}>
+        <Text style={{ color: theme.colors.text }}>Interactive Maps are not supported on the web prototype.</Text>
+        <TouchableOpacity onPress={onClose} style={{ marginTop: 20, padding: 10, backgroundColor: theme.colors.primary, borderRadius: 8 }}>
+          <Text style={{ color: '#fff' }}>Close Map</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  const [region, setRegion] = useState<any>({
     latitude: 37.78825,
     longitude: -122.4324,
     latitudeDelta: LATITUDE_DELTA,
@@ -81,11 +107,9 @@ export default function InteractiveMap({
   const [searchSuggestions, setSearchSuggestions] = useState<any[]>([]);
   const [showDirections, setShowDirections] = useState(false);
 
-  const mapRef = useRef<MapView>(null);
+  const mapRef = useRef<any>(null);
   const searchTimeoutRef = useRef<any>(null);
   const slideAnim = useRef(new Animated.Value(0)).current;
-
-  const { theme, isDark } = useTheme();
 
   useEffect(() => {
     getCurrentLocation();

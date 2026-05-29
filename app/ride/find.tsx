@@ -429,7 +429,7 @@ const styles = StyleSheet.create({
     alignItems: 'stretch',
     position: 'relative',
   },
-  routeVisual: {
+  inputRouteVisual: {
     width: 24,
     alignItems: 'center',
     paddingVertical: 18,
