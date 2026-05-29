@@ -422,10 +422,36 @@ const styles = StyleSheet.create({
   },
   inputsWrapper: {
     marginTop: 10,
-    gap: 12,
+    gap: 16,
   },
-  locationInputs: {
+  routeContainer: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
     position: 'relative',
+  },
+  routeVisual: {
+    width: 24,
+    alignItems: 'center',
+    paddingVertical: 18,
+    marginRight: 12,
+  },
+  dot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+  },
+  line: {
+    width: 2,
+    flex: 1,
+    marginVertical: 4,
+  },
+  square: {
+    width: 10,
+    height: 10,
+    borderRadius: 2,
+  },
+  routeInputs: {
+    flex: 1,
   },
   picker: {
     height: 50,

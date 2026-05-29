@@ -114,19 +114,30 @@ export default function HomeScreen() {
           </View>
 
           <View style={[styles.searchCard, { backgroundColor: theme.colors.card }]}>
-            <LocationPicker
-              value={fromLocation}
-              onLocationChange={(loc) => setFromLocation(loc)}
-              placeholder="From (pickup location)"
-              style={styles.locationPicker}
-            />
-
-            <LocationPicker
-              value={toLocation}
-              onLocationChange={(loc) => setToLocation(loc)}
-              placeholder="To (destination)"
-              style={styles.locationPicker}
-            />
+            <View style={styles.routeContainer}>
+              <View style={styles.routeVisual}>
+                <View style={[styles.dot, { backgroundColor: theme.colors.primary }]} />
+                <View style={[styles.line, { backgroundColor: theme.colors.border }]} />
+                <View style={[styles.square, { backgroundColor: theme.colors.secondary }]} />
+              </View>
+              <View style={styles.routeInputs}>
+                <LocationPicker
+                  value={fromLocation}
+                  onLocationChange={(loc) => setFromLocation(loc)}
+                  placeholder="From (pickup location)"
+                  style={styles.locationPickerContainer}
+                  showIcon={false}
+                />
+                <View style={[styles.inputDivider, { backgroundColor: theme.colors.border }]} />
+                <LocationPicker
+                  value={toLocation}
+                  onLocationChange={(loc) => setToLocation(loc)}
+                  placeholder="To (destination)"
+                  style={styles.locationPickerContainer}
+                  showIcon={false}
+                />
+              </View>
+            </View>
 
             <TouchableOpacity 
               style={[styles.searchButton, { backgroundColor: theme.colors.primary }]}
