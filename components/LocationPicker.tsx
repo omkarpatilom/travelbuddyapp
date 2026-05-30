@@ -39,6 +39,7 @@ export default function LocationPicker({
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
   const [isLoadingLocation, setIsLoadingLocation] = useState(false);
+  const [currentUserLocation, setCurrentUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const inputRef = useRef<TextInput>(null);
 
   // Sync internal search text with prop value when modal opens
@@ -48,8 +49,27 @@ export default function LocationPicker({
       if (value.length < 3) {
         showRecents();
       }
+      // Get location for biasing search
+      loadLocationForBiasing();
     }
   }, [isModalVisible]);
+
+  const loadLocationForBiasing = async () => {
+    try {
+      const { status } = await Location.getForegroundPermissionsAsync();
+      if (status === 'granted') {
+        const location = await Location.getLastKnownPositionAsync({});
+        if (location) {
+          setCurrentUserLocation({
+            latitude: location.coords.latitude,
+            longitude: location.coords.longitude,
+          });
+        }
+      }
+    } catch (error) {
+      console.log('Error getting location for biasing:', error);
+    }
+  };
 
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
@@ -64,7 +84,11 @@ export default function LocationPicker({
   const fetchSuggestions = async (text: string) => {
     setIsLoadingSuggestions(true);
     try {
-      const data = await api.get<any[]>(`/places/autocomplete?q=${encodeURIComponent(text)}`);
+      let url = `/places/autocomplete?q=${encodeURIComponent(text)}`;
+      if (currentUserLocation) {
+        url += `&lat=${currentUserLocation.latitude}&lon=${currentUserLocation.longitude}`;
+      }
+      const data = await api.get<any[]>(url);
       setSuggestions(data || []);
     } catch (error) {
       console.error('Failed to fetch suggestions', error);
@@ -77,9 +101,9 @@ export default function LocationPicker({
   const showRecents = () => {
     // Mock recent locations
     setSuggestions([
-      { id: 'r1', name: 'Home', address: '123 Main St, Springfield', type: 'recent' },
-      { id: 'r2', name: 'Work', address: '456 Business Ave, Metropolis', type: 'recent' },
-      { id: 'r3', name: 'Airport', address: 'International Terminal, Gateway City', type: 'recent' },
+      { id: 'r1', name: 'Home', description: '123 Main St, Springfield', type: 'recent' },
+      { id: 'r2', name: 'Work', description: '456 Business Ave, Metropolis', type: 'recent' },
+      { id: 'r3', name: 'Airport', description: 'International Terminal, Gateway City', type: 'recent' },
     ]);
   };
 
@@ -100,7 +124,7 @@ export default function LocationPicker({
       const address = data.address || `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
       
       handleSelect({
-        address,
+        description: address,
         lat: latitude,
         lon: longitude,
         name: 'Current Location'
@@ -113,8 +137,24 @@ export default function LocationPicker({
   };
 
   const handleSelect = (item: any) => {
-    const displayValue = item.name && item.name !== item.address ? item.name : item.address;
-    onLocationChange(displayValue, { latitude: item.lat, longitude: item.lon });
+    // Combine name and description for a complete location string
+    let finalValue = '';
+    
+    if (item.name && item.name !== 'Current Location') {
+      // If description already starts with name, don't duplicate it
+      if (item.description && item.description.startsWith(item.name)) {
+        finalValue = item.description;
+      } else {
+        finalValue = `${item.name}${item.description ? ', ' + item.description : ''}`;
+      }
+    } else {
+      finalValue = item.description || item.address || item.name;
+    }
+    
+    // Final cleanup
+    finalValue = finalValue.replace(/,\s*$/, '').trim();
+    
+    onLocationChange(finalValue, { latitude: item.lat, longitude: item.lon });
     setIsModalVisible(false);
   };
 
@@ -195,7 +235,7 @@ export default function LocationPicker({
             data={suggestions}
             keyExtractor={(item, index) => item.id || index.toString()}
             renderItem={({ item }) => {
-              const addressText = item.address || item.country || '';
+              const addressText = item.description || item.address || item.country || '';
               return (
                 <TouchableOpacity
                   style={[styles.suggestionItem, { borderBottomColor: theme.colors.border }]}
@@ -252,7 +292,7 @@ export default function LocationPicker({
           />
           
           {isLoadingSuggestions && (
-            <View style={styles.loaderContainer}>
+            <View style={[styles.loaderContainer, { backgroundColor: theme.colors.background + '80' }]}>
               <ActivityIndicator size="large" color={theme.colors.primary} />
             </View>
           )}
@@ -368,7 +408,6 @@ const styles = StyleSheet.create({
   },
   loaderContainer: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255,255,255,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 10,

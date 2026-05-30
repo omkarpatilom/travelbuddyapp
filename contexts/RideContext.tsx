@@ -3,6 +3,7 @@ import { rideService } from '@/services/ride.service';
 import { bookingService } from '@/services/booking.service';
 import { reviewService } from '@/services/review.service';
 import { userService } from '@/services/user.service';
+import { vehicleService } from '@/services/vehicle.service';
 import { useAuth } from './AuthContext';
 import { RideDto, BookingResponseDto, RideStatus, ConversationLevel, RideSearchDto } from '@/utils/types';
 
@@ -27,6 +28,7 @@ export interface Ride {
   totalSeats: number;
   carModel: string;
   carColor: string;
+  carPlate?: string;
   status: 'active' | 'completed' | 'cancelled' | 'started' | 'scheduled';
   distance: string;
   duration: string;
@@ -95,6 +97,7 @@ interface RideContextType {
 const RideContext = createContext<RideContextType | undefined>(undefined);
 
 const driverCache: Record<string, any> = {};
+const vehicleCache: Record<string, any> = {};
 
 export function RideProvider({ children }: { children: React.ReactNode }) {
   const [rides, setRides] = useState<Ride[]>([]);
@@ -149,6 +152,24 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
       console.warn(`Could not fetch driver profile for ${ride.driverId}`);
     }
 
+    let carModel = 'Vehicle';
+    let carColor = 'Silver';
+    let carPlate = undefined;
+
+    try {
+      if (ride.vehicleId) {
+        if (!vehicleCache[ride.vehicleId]) {
+          vehicleCache[ride.vehicleId] = await vehicleService.getById(ride.vehicleId);
+        }
+        const vehicle = vehicleCache[ride.vehicleId];
+        carModel = `${vehicle.brand} ${vehicle.model}`;
+        carColor = vehicle.color;
+        carPlate = vehicle.registrationNumber;
+      }
+    } catch (e) {
+      console.warn(`Could not fetch vehicle details for ${ride.vehicleId}`);
+    }
+
     const statusMap: Record<RideStatus, any> = {
       [RideStatus.Scheduled]: 'scheduled',
       [RideStatus.Active]: 'active',
@@ -165,6 +186,85 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
 
     // Extract search specific fields if available
     const searchData = ride as RideSearchDto;
+
+    // Fetch distance and duration from OSRM public API or estimate via math/geospatial fallbacks
+    let distanceStr = 'Unknown';
+    let durationStr = 'Unknown';
+
+    try {
+      const startLat = ride.from.latitude;
+      const startLon = ride.from.longitude;
+      const endLat = ride.to.latitude;
+      const endLon = ride.to.longitude;
+
+      if (startLat && startLon && endLat && endLon) {
+        // Try calling OSRM router
+        const response = await fetch(
+          `http://router.project-osrm.org/route/v1/driving/${startLon},${startLat};${endLon},${endLat}?overview=false`
+        );
+        if (response && response.ok) {
+          const data = await response.json();
+          if (data.routes && data.routes.length > 0) {
+            const route = data.routes[0];
+            const distanceKm = route.distance / 1000;
+            const durationSec = route.duration;
+
+            distanceStr = `${distanceKm.toFixed(1)} km`;
+            
+            const hours = Math.floor(durationSec / 3600);
+            const minutes = Math.floor((durationSec % 3600) / 60);
+            if (hours > 0) {
+              durationStr = `${hours}h ${minutes}m`;
+            } else {
+              durationStr = `${minutes} mins`;
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to fetch OSRM route details, falling back to estimation:', error);
+    }
+
+    // Fallback logic if still Unknown
+    if (distanceStr === 'Unknown' || durationStr === 'Unknown') {
+      try {
+        const startLat = ride.from.latitude;
+        const startLon = ride.from.longitude;
+        const endLat = ride.to.latitude;
+        const endLon = ride.to.longitude;
+
+        if (startLat && startLon && endLat && endLon) {
+          // Haversine formula
+          const R = 6371; // km
+          const dLat = (endLat - startLat) * Math.PI / 180;
+          const dLon = (endLon - startLon) * Math.PI / 180;
+          const a = 
+            Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(startLat * Math.PI / 180) * Math.cos(endLat * Math.PI / 180) * 
+            Math.sin(dLon/2) * Math.sin(dLon/2);
+          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+          const straightDistance = R * c;
+          
+          // Apply routing correction factor (approx 1.3x for city driving)
+          const estimatedDistance = straightDistance * 1.3;
+          distanceStr = `${estimatedDistance.toFixed(1)} km`;
+
+          // Estimate duration assuming average speed of 45 km/h (including traffic/stops)
+          const estimatedHours = estimatedDistance / 45;
+          const totalMinutes = Math.round(estimatedHours * 60);
+          const hours = Math.floor(totalMinutes / 60);
+          const minutes = totalMinutes % 60;
+
+          if (hours > 0) {
+            durationStr = `${hours}h ${minutes}m`;
+          } else {
+            durationStr = `${minutes} mins`;
+          }
+        }
+      } catch (err) {
+        console.error('Fallback estimation failed:', err);
+      }
+    }
 
     return {
       id: ride.id,
@@ -185,22 +285,21 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
       price: ride.pricePerSeat,
       availableSeats: ride.availableSeats,
       totalSeats: ride.totalSeats,
-      carModel: 'Vehicle', 
-      carColor: 'Silver',
+      carModel, 
+      carColor,
+      carPlate,
       status: statusMap[ride.status] || 'active',
-      distance: searchData.pickupDistanceMeters 
-        ? `${(searchData.pickupDistanceMeters / 1000).toFixed(1)}km away`
-        : 'Unknown',
-      duration: 'Unknown',
+      distance: distanceStr,
+      duration: durationStr,
       pickupDistanceMeters: searchData.pickupDistanceMeters,
       dropoffDistanceMeters: searchData.dropoffDistanceMeters,
       polyline: searchData.polyline,
       preferences: {
-        nonSmoking: !ride.preference.allowSmoking,
-        musicAllowed: ride.preference.allowMusic,
-        petsAllowed: ride.preference.allowPets,
+        nonSmoking: ride.preference ? !ride.preference.allowSmoking : true,
+        musicAllowed: ride.preference ? ride.preference.allowMusic : true,
+        petsAllowed: ride.preference ? ride.preference.allowPets : false,
         airConditioning: true,
-        conversationLevel: convMap[ride.preference.conversationLevel] || 'moderate',
+        conversationLevel: (ride.preference && convMap[ride.preference.conversationLevel]) || 'moderate',
       },
     };
   };

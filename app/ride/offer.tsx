@@ -123,6 +123,14 @@ export default function OfferRideScreen() {
       Alert.alert('Missing Information', 'Please select date and time');
       return false;
     }
+
+    const maxDate = new Date();
+    maxDate.setDate(maxDate.getDate() + 30);
+    maxDate.setHours(23, 59, 59, 999);
+    if (selectedDate > maxDate) {
+      Alert.alert('Invalid Date', 'You can only schedule rides up to 30 days in advance.');
+      return false;
+    }
     
     if (!formData.seats || !formData.price) {
       Alert.alert('Missing Information', 'Please enter seats and price');
@@ -243,6 +251,7 @@ export default function OfferRideScreen() {
               onDateChange={setSelectedDate}
               placeholder="Select Date"
               minimumDate={new Date()}
+              maximumDate={new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)}
               style={styles.halfWidth}
             />
 
