@@ -39,6 +39,7 @@ import {
   ArrowUpDown
 } from 'lucide-react-native';
 import { requestLocationPermission } from '@/utils/permissions';
+import { darkMapStyle } from '@/utils/mapStyles';
 
 const { width, height } = Dimensions.get('window');
 const ASPECT_RATIO = width / height;
@@ -575,22 +576,7 @@ export default function InteractiveMap({
   );
 }
 
-// Dark mode map style
-const darkMapStyle = [
-  {
-    elementType: 'geometry',
-    stylers: [{ color: '#242f3e' }],
-  },
-  {
-    elementType: 'labels.text.stroke',
-    stylers: [{ color: '#242f3e' }],
-  },
-  {
-    elementType: 'labels.text.fill',
-    stylers: [{ color: '#746855' }],
-  },
-  // Add more dark mode styling as needed
-];
+
 
 const styles = StyleSheet.create({
   container: {
