@@ -14,7 +14,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRides, Ride } from '@/contexts/RideContext';
-import { MapPin, Calendar, Clock, Star, Phone, MessageCircle, Users, Car, ArrowLeft, Play, CheckCircle, XCircle } from 'lucide-react-native';
+import { MapPin, Calendar, Clock, Star, Phone, MessageCircle, Users, Car, ArrowLeft, Play, CheckCircle, XCircle, ShieldCheck, Cigarette, Heart, Wind, Music } from 'lucide-react-native';
 
 const { width } = Dimensions.get('window');
 
@@ -243,6 +243,84 @@ export default function RideDetailsScreen() {
           <View style={styles.priceSection}>
             <Text style={[styles.priceLabel, { color: theme.colors.textSecondary }]}>Price per seat</Text>
             <Text style={[styles.price, { color: theme.colors.primary }]}>${ride.price}</Text>
+          </View>
+        </View>
+
+        {/* Vehicle Details Card */}
+        <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Vehicle Details</Text>
+            <View style={[styles.verifiedBadge, { backgroundColor: theme.colors.primary + '15' }]}>
+              <ShieldCheck size={16} color={theme.colors.primary} style={{ marginRight: 4 }} />
+              <Text style={[styles.verifiedText, { color: theme.colors.primary }]}>Verified Vehicle</Text>
+            </View>
+          </View>
+          
+          <View style={styles.vehicleDetailContainer}>
+            <View style={styles.vehicleInfoRow}>
+              <View style={styles.vehicleDetailItem}>
+                <Text style={[styles.vehicleDetailLabel, { color: theme.colors.textSecondary }]}>Brand & Model</Text>
+                <Text style={[styles.vehicleDetailValue, { color: theme.colors.text }]}>{ride.carModel || 'Unknown'}</Text>
+              </View>
+              <View style={styles.vehicleDetailItem}>
+                <Text style={[styles.vehicleDetailLabel, { color: theme.colors.textSecondary }]}>Color</Text>
+                <Text style={[styles.vehicleDetailValue, { color: theme.colors.text }]}>{ride.carColor || 'Unknown'}</Text>
+              </View>
+            </View>
+
+            <View style={[styles.vehiclePlateCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+              <Text style={[styles.plateLabel, { color: theme.colors.textSecondary }]}>LICENSE PLATE</Text>
+              <Text style={[styles.plateValue, { color: theme.colors.text }]}>
+                {ride.carPlate ? ride.carPlate.toUpperCase() : 'NOT VERIFIED'}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Driver Preferences Card */}
+        <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Driver Preferences</Text>
+          
+          <View style={styles.preferencesGridContainer}>
+            <View style={[styles.preferenceTag, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }, ride.preferences.nonSmoking && { borderColor: theme.colors.primary, backgroundColor: theme.colors.primary + '10' }]}>
+              <Cigarette size={18} color={ride.preferences.nonSmoking ? theme.colors.primary : theme.colors.textSecondary} />
+              <Text style={[styles.preferenceTagText, { color: ride.preferences.nonSmoking ? theme.colors.primary : theme.colors.text }]}>
+                {ride.preferences.nonSmoking ? 'Non-Smoking' : 'Smoking Allowed'}
+              </Text>
+            </View>
+
+            <View style={[styles.preferenceTag, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }, ride.preferences.musicAllowed && { borderColor: theme.colors.primary, backgroundColor: theme.colors.primary + '10' }]}>
+              <Music size={18} color={ride.preferences.musicAllowed ? theme.colors.primary : theme.colors.textSecondary} />
+              <Text style={[styles.preferenceTagText, { color: ride.preferences.musicAllowed ? theme.colors.primary : theme.colors.text }]}>
+                {ride.preferences.musicAllowed ? 'Music Allowed' : 'No Music'}
+              </Text>
+            </View>
+
+            <View style={[styles.preferenceTag, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }, ride.preferences.petsAllowed && { borderColor: theme.colors.primary, backgroundColor: theme.colors.primary + '10' }]}>
+              <Heart size={18} color={ride.preferences.petsAllowed ? theme.colors.primary : theme.colors.textSecondary} />
+              <Text style={[styles.preferenceTagText, { color: ride.preferences.petsAllowed ? theme.colors.primary : theme.colors.text }]}>
+                {ride.preferences.petsAllowed ? 'Pets Allowed' : 'No Pets'}
+              </Text>
+            </View>
+
+            <View style={[styles.preferenceTag, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }, ride.preferences.airConditioning && { borderColor: theme.colors.primary, backgroundColor: theme.colors.primary + '10' }]}>
+              <Wind size={18} color={ride.preferences.airConditioning ? theme.colors.primary : theme.colors.textSecondary} />
+              <Text style={[styles.preferenceTagText, { color: ride.preferences.airConditioning ? theme.colors.primary : theme.colors.text }]}>
+                {ride.preferences.airConditioning ? 'A/C Available' : 'No A/C'}
+              </Text>
+            </View>
+          </View>
+
+          <View style={[styles.conversationCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+            <Text style={styles.conversationEmoji}>
+              {ride.preferences.conversationLevel === 'quiet' ? '🤫' : ride.preferences.conversationLevel === 'moderate' ? '😊' : '😄'}
+            </Text>
+            <View style={styles.conversationInfo}>
+              <Text style={[styles.conversationLabel, { color: theme.colors.textSecondary }]}>Conversation Level</Text>
+              <Text style={[styles.conversationValue, { color: theme.colors.text }]}>
+                {ride.preferences.conversationLevel.charAt(0).toUpperCase() + ride.preferences.conversationLevel.slice(1)}
+              </Text>
+            </View>
           </View>
         </View>
 
@@ -547,5 +625,101 @@ const styles = StyleSheet.create({
     fontSize: 18,
     textAlign: 'center',
     marginTop: 100,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  verifiedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+  },
+  verifiedText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  vehicleDetailContainer: {
+    gap: 16,
+  },
+  vehicleInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  vehicleDetailItem: {
+    flex: 1,
+  },
+  vehicleDetailLabel: {
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  vehicleDetailValue: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  vehiclePlateCard: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  plateLabel: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    letterSpacing: 1,
+  },
+  plateValue: {
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: 2,
+  },
+  preferencesGridContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  preferenceTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    gap: 8,
+    minWidth: '47%',
+    flexGrow: 1,
+  },
+  preferenceTagText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  conversationCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    gap: 12,
+    marginTop: 6,
+  },
+  conversationEmoji: {
+    fontSize: 24,
+  },
+  conversationInfo: {
+    flex: 1,
+  },
+  conversationLabel: {
+    fontSize: 11,
+    marginBottom: 2,
+  },
+  conversationValue: {
+    fontSize: 15,
+    fontWeight: '600',
   },
 });

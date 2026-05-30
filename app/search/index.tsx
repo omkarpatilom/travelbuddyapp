@@ -77,8 +77,39 @@ export default function SearchScreen() {
 
   const handleSelect = async (place: any) => {
     const selectedName = place.name || place.address || place.label;
+    
+    // Combine name and description for a complete detailed location string
+    let finalAddress = '';
+    if (place.name) {
+      if (place.description && place.description.startsWith(place.name)) {
+        finalAddress = place.description;
+      } else {
+        finalAddress = `${place.name}${place.description ? ', ' + place.description : ''}`;
+      }
+    } else {
+      finalAddress = place.description || place.address || place.name || selectedName;
+    }
+    finalAddress = finalAddress.replace(/,\s*$/, '').trim();
+
     setQuery('');
     setSuggestions([]);
+
+    // Check if suggestion already contains coordinates (bypasses geocoding API)
+    if (place.lat !== undefined && place.lon !== undefined) {
+      const locationData = {
+        name: place.name || selectedName,
+        address: finalAddress,
+        lat: place.lat,
+        lon: place.lon,
+      };
+      if (focusedInput === 'pickup') {
+          setPickupPlace(locationData);
+      } else {
+          setDropoffPlace(locationData);
+      }
+      return;
+    }
+
     setLoading(true);
     try {
       const data = await api.get<any>(`/places/geocode?q=${encodeURIComponent(selectedName)}`);
@@ -112,6 +143,10 @@ export default function SearchScreen() {
         params: {
           from: pickupPlace.name || pickupPlace.address,
           to: dropoffPlace.name || dropoffPlace.address,
+          fromLat: pickupPlace.lat.toString(),
+          fromLon: pickupPlace.lon.toString(),
+          toLat: dropoffPlace.lat.toString(),
+          toLon: dropoffPlace.lon.toString(),
           date: new Date().toISOString()
         }
       });
@@ -198,15 +233,24 @@ export default function SearchScreen() {
               <FlatList
                   data={suggestions}
                   keyExtractor={(item, index) => `${item.name || item.address}-${index}`}
-                  renderItem={({ item }) => (
-                  <TouchableOpacity style={[styles.item, { borderBottomColor: theme.colors.border }]} onPress={() => handleSelect(item)}>
-                      <MapPin size={16} color={theme.colors.textSecondary} style={{ marginRight: 12 }} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.itemText, { color: theme.colors.text }]} numberOfLines={1}>{item.name || item.address}</Text>
-                        <Text style={[styles.itemSubtext, { color: theme.colors.textSecondary }]}>{item.country || 'Unknown'}</Text>
-                      </View>
-                  </TouchableOpacity>
-                  )}
+                  renderItem={({ item }) => {
+                    const addressText = item.description || item.address || item.country || '';
+                    return (
+                      <TouchableOpacity style={[styles.item, { borderBottomColor: theme.colors.border }]} onPress={() => handleSelect(item)}>
+                          <View style={[styles.iconBox, { backgroundColor: theme.colors.surface }]}>
+                            <MapPin size={18} color={theme.colors.primary} />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.itemText, { color: theme.colors.text }]} numberOfLines={1}>{item.name || item.address}</Text>
+                            {addressText ? (
+                              <Text style={[styles.itemSubtext, { color: theme.colors.textSecondary }]} numberOfLines={2}>
+                                {addressText}
+                              </Text>
+                            ) : null}
+                          </View>
+                      </TouchableOpacity>
+                    );
+                  }}
                   keyboardShouldPersistTaps="handled"
               />
             </View>
@@ -337,10 +381,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: 16, 
-    borderBottomWidth: 1, 
+    borderBottomWidth: 0.5, 
+    gap: 16,
   },
-  itemText: { fontSize: 15, fontWeight: '500' },
-  itemSubtext: { fontSize: 12, marginTop: 2 },
+  iconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  itemText: { fontSize: 16, fontWeight: '600', marginBottom: 2 },
+  itemSubtext: { fontSize: 14, lineHeight: 20 },
   historyContainer: { flex: 1, marginTop: 10 },
   sectionHeader: {
     flexDirection: 'row',

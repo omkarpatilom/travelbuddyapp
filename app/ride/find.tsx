@@ -46,7 +46,7 @@ export default function FindRideScreen() {
   const { theme, isDark } = useTheme();
   const { searchRides } = useRides();
   const router = useRouter();
-  const { from, to, date } = useLocalSearchParams();
+  const { from, to, date, fromLat, fromLon, toLat, toLon } = useLocalSearchParams();
 
   const [fromLocation, setFromLocation] = useState('');
   const [toLocation, setToLocation] = useState('');
@@ -75,15 +75,34 @@ export default function FindRideScreen() {
       if (from) {
         const decodedFrom = decodeURIComponent(from as string);
         setFromLocation(decodedFrom);
+      }
+      if (to) {
+        const decodedTo = decodeURIComponent(to as string);
+        setToLocation(decodedTo);
+      }
+
+      let hasFromCoords = false;
+      let hasToCoords = false;
+
+      if (fromLat && fromLon) {
+        setFromCoords({ latitude: parseFloat(fromLat as string), longitude: parseFloat(fromLon as string) });
+        hasFromCoords = true;
+      }
+      if (toLat && toLon) {
+        setToCoords({ latitude: parseFloat(toLat as string), longitude: parseFloat(toLon as string) });
+        hasToCoords = true;
+      }
+
+      if (from && !hasFromCoords) {
+        const decodedFrom = decodeURIComponent(from as string);
         try {
           const data = await api.get<any>(`/places/geocode?q=${encodeURIComponent(decodedFrom)}`);
           if (data && data.lat) setFromCoords({ latitude: data.lat, longitude: data.lon });
         } catch (e) { console.warn('Failed to geocode from location'); }
       }
       
-      if (to) {
+      if (to && !hasToCoords) {
         const decodedTo = decodeURIComponent(to as string);
-        setToLocation(decodedTo);
         try {
           const data = await api.get<any>(`/places/geocode?q=${encodeURIComponent(decodedTo)}`);
           if (data && data.lat) setToCoords({ latitude: data.lat, longitude: data.lon });
@@ -94,7 +113,7 @@ export default function FindRideScreen() {
     };
 
     init();
-  }, [from, to, date]);
+  }, [from, to, date, fromLat, fromLon, toLat, toLon]);
 
   useEffect(() => {
     if (fromLocation && toLocation && fromCoords && toCoords) {

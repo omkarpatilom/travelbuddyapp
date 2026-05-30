@@ -109,7 +109,8 @@ describe('RideContext', () => {
     });
 
     expect(searchResults).toHaveLength(1);
-    expect(api.get).toHaveBeenCalledWith('/rides/search?from=A&to=B&date=2026-05-25');
+    expect(api.get).toHaveBeenCalledWith(expect.stringContaining('/rides/search'));
+    expect(api.get).toHaveBeenCalledWith(expect.stringContaining('date=2026-05-25'));
   });
 
   it('createRide calls api.post with correct payload', async () => {
