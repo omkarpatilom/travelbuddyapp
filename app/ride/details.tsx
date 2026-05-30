@@ -15,13 +15,17 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRides, Ride } from '@/contexts/RideContext';
 import { MapPin, Calendar, Clock, Star, Phone, MessageCircle, Users, Car, ArrowLeft, Play, CheckCircle, XCircle, ShieldCheck, Cigarette, Heart, Wind, Music } from 'lucide-react-native';
+import RouteMap from '@/components/RouteMap';
+import * as Location from 'expo-location';
+import { requestLocationPermission, checkLocationPermission } from '@/utils/permissions';
+
 
 const { width } = Dimensions.get('window');
 
 export default function RideDetailsScreen() {
   const { theme } = useTheme();
   const { user } = useAuth();
-  const { getRideById, startRide, completeRide, cancelRide } = useRides();
+  const { getRideById, startRide, completeRide, cancelRide, updateTracking, getTracking } = useRides();
   const router = useRouter();
   const params = useLocalSearchParams();
   const rideId = params.id as string;
@@ -29,6 +33,79 @@ export default function RideDetailsScreen() {
   const [ride, setRide] = useState<Ride | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isActionLoading, setIsActionLoading] = useState(false);
+  const [driverLocation, setDriverLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+
+  const isDriver = user?.id === ride?.driverId;
+
+  // Live tracking watcher/polling synchronization hook
+  useEffect(() => {
+    let locationSubscription: any = null;
+    let pollingIntervalId: any = null;
+
+    const startLiveTracking = async () => {
+      if (!ride || ride.status !== 'started') {
+        setDriverLocation(null);
+        return;
+      }
+
+      if (isDriver) {
+        try {
+          const hasPermission = await checkLocationPermission();
+          if (!hasPermission) {
+            const result = await requestLocationPermission();
+            if (!result.granted) {
+              Alert.alert('Permission Denied', 'Location permission is required to share ride coordinates.');
+              return;
+            }
+          }
+
+          locationSubscription = await Location.watchPositionAsync(
+            {
+              accuracy: Location.Accuracy.High,
+              timeInterval: 10000,
+              distanceInterval: 10,
+            },
+            (location) => {
+              const { latitude, longitude } = location.coords;
+              updateTracking(ride.id, latitude, longitude);
+              setDriverLocation({ latitude, longitude });
+            }
+          );
+        } catch (error) {
+          console.error('Error starting watchPositionAsync:', error);
+        }
+      } else {
+        // Poll driver location from backend
+        const fetchDriverLocation = async () => {
+          try {
+            const tracking = await getTracking(ride.id);
+            if (tracking && tracking.latitude && tracking.longitude) {
+              setDriverLocation({
+                latitude: tracking.latitude,
+                longitude: tracking.longitude,
+              });
+            }
+          } catch (error) {
+            console.warn('Error polling tracking details:', error);
+          }
+        };
+
+        fetchDriverLocation();
+        pollingIntervalId = setInterval(fetchDriverLocation, 10000);
+      }
+    };
+
+    startLiveTracking();
+
+    return () => {
+      if (locationSubscription) {
+        locationSubscription.remove();
+      }
+      if (pollingIntervalId) {
+        clearInterval(pollingIntervalId);
+      }
+    };
+  }, [ride?.status, isDriver, ride?.id]);
 
   useEffect(() => {
     if (rideId) {
@@ -64,7 +141,7 @@ export default function RideDetailsScreen() {
     );
   }
 
-  const isDriver = user?.id === ride.driverId;
+  // isDriver is already declared at hook-level
 
   const handleBookRide = () => {
     router.push(`/ride/book?id=${ride.id}`);
@@ -147,22 +224,15 @@ export default function RideDetailsScreen() {
         <View style={styles.placeholder} />
       </View>
 
-      {/* Map Placeholder */}
-      <View style={[styles.mapContainer, { backgroundColor: theme.colors.surface }]}>
-        <View style={styles.mapPlaceholder}>
-          <MapPin size={40} color={theme.colors.primary} />
-          <Text style={[styles.mapText, { color: theme.colors.textSecondary }]}>
-            Interactive Map View
-          </Text>
-          <Text style={[styles.mapSubtext, { color: theme.colors.textSecondary }]}>
-            {ride.from.address} → {ride.to.address}
-          </Text>
-          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(ride.status) + '20', marginTop: 8 }]}>
-            <Text style={[styles.statusText, { color: getStatusColor(ride.status) }]}>
-              {ride.status.toUpperCase()}
-            </Text>
-          </View>
-        </View>
+      {/* RouteMap Section */}
+      <View style={styles.mapContainer}>
+        <RouteMap
+          from={ride.from}
+          to={ride.to}
+          distance={ride.distance}
+          duration={ride.duration}
+          driverLocation={driverLocation}
+        />
       </View>
 
       <View style={styles.content}>
@@ -433,9 +503,9 @@ const styles = StyleSheet.create({
     width: 40,
   },
   mapContainer: {
-    height: 220,
-    justifyContent: 'center',
-    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 8,
   },
   mapPlaceholder: {
     alignItems: 'center',
