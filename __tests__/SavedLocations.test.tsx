@@ -10,6 +10,16 @@ jest.mock('../utils/api');
 jest.mock('expo-router', () => ({
   useRouter: jest.fn(),
 }));
+jest.mock('../components/LocationPicker', () => {
+  const { TextInput } = require('react-native');
+  return jest.fn(({ value, onLocationChange, placeholder }) => (
+    <TextInput
+      value={value}
+      onChangeText={(text) => onLocationChange(text, { latitude: 37.7749, longitude: -122.4194 })}
+      placeholder={placeholder}
+    />
+  ));
+});
 
 describe('SavedLocationsScreen', () => {
   const mockLocations = [
@@ -56,7 +66,7 @@ describe('SavedLocationsScreen', () => {
     fireEvent.press(addButton);
     
     fireEvent.changeText(getByPlaceholderText(/e.g., Home/), 'Gym');
-    fireEvent.changeText(getByPlaceholderText(/Enter full address/), '789 Fitness Ave');
+    fireEvent.changeText(getByPlaceholderText(/Search and select address.../), '789 Fitness Ave');
     
     fireEvent.press(getByText('Save Location'));
     

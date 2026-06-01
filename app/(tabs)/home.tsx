@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -32,8 +32,12 @@ import {
   ChevronRight,
   Bell,
   Navigation,
+  Home as HomeIcon,
+  Briefcase,
+  Heart,
 } from 'lucide-react-native';
 import LocationPicker from '@/components/LocationPicker';
+import { api } from '@/utils/api';
 
 const { width } = Dimensions.get('window');
 
@@ -55,6 +59,77 @@ export default function HomeScreen() {
   const { user } = useAuth();
   const { rides } = useRides();
   const router = useRouter();
+
+  interface SavedLocation {
+    id: string;
+    name: string;
+    address: string;
+    latitude: number;
+    longitude: number;
+    type: 'Home' | 'Work' | 'Favorite' | 'Other';
+  }
+
+  const [savedLocations, setSavedLocations] = useState<SavedLocation[]>([]);
+
+  useEffect(() => {
+    fetchSavedLocations();
+  }, []);
+
+  const fetchSavedLocations = async () => {
+    try {
+      const data = await api.get<any[]>('/saved-locations');
+      if (data) {
+        setSavedLocations(data.map(item => {
+          let derivedType: SavedLocation['type'] = 'Favorite';
+          const lowerName = item.name.toLowerCase();
+          if (lowerName === 'home') {
+            derivedType = 'Home';
+          } else if (lowerName === 'work') {
+            derivedType = 'Work';
+          } else if (lowerName === 'favorite') {
+            derivedType = 'Favorite';
+          } else {
+            derivedType = 'Other';
+          }
+          return {
+            id: item.id,
+            name: item.name,
+            address: item.address,
+            latitude: item.latitude,
+            longitude: item.longitude,
+            type: derivedType,
+          };
+        }));
+      }
+    } catch (error) {
+      console.warn('Failed to fetch saved locations in HomeScreen:', error);
+    }
+  };
+
+  const handleFrequentlyTraveledSelect = (location: SavedLocation) => {
+    setToLocation(location.address);
+    
+    // Navigate to find ride
+    router.push({
+      pathname: '/ride/find',
+      params: {
+        from: fromLocation || 'Current Location',
+        to: location.address,
+        toLat: location.latitude?.toString(),
+        toLon: location.longitude?.toString(),
+        date: selectedDate,
+      },
+    });
+  };
+
+  const getLocationIcon = (type: SavedLocation['type']) => {
+    switch (type) {
+      case 'Home': return <HomeIcon size={20} color={theme.colors.primary} />;
+      case 'Work': return <Briefcase size={20} color={theme.colors.secondary} />;
+      case 'Favorite': return <Heart size={20} color={theme.colors.accent} />;
+      default: return <MapPin size={20} color={theme.colors.textSecondary} />;
+    }
+  };
 
   const handleSearch = () => {
     if (!fromLocation || !toLocation) {
@@ -294,26 +369,59 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Quick Routes Shortcuts Carousel */}
+        {/* Frequently Traveled Section */}
         <View style={styles.sectionContainer}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Frequently Traveled</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.shortcutsContainer}
-          >
-            {QUICK_ROUTES.map((route) => (
-              <TouchableOpacity
-                key={route.id}
-                style={[styles.shortcutChip, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
-                onPress={() => handleQuickRouteSelect(route)}
-                activeOpacity={0.7}
-              >
-                <Navigation size={14} color={theme.colors.primary} style={{ marginRight: 6 }} />
-                <Text style={[styles.shortcutChipText, { color: theme.colors.text }]}>{route.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+          {savedLocations.length === 0 ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.shortcutsContainer}
+            >
+              {QUICK_ROUTES.map((route) => (
+                <TouchableOpacity
+                  key={route.id}
+                  style={[styles.shortcutChip, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
+                  onPress={() => handleQuickRouteSelect(route)}
+                  activeOpacity={0.7}
+                >
+                  <Navigation size={14} color={theme.colors.primary} style={{ marginRight: 6 }} />
+                  <Text style={[styles.shortcutChipText, { color: theme.colors.text }]}>{route.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          ) : (
+            <View style={styles.frequentList}>
+              {savedLocations.slice(0, 5).map((item) => (
+                <TouchableOpacity
+                  key={item.id}
+                  style={[styles.frequentCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
+                  onPress={() => handleFrequentlyTraveledSelect(item)}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.frequentIconContainer, { backgroundColor: theme.colors.surface }]}>
+                    {getLocationIcon(item.type)}
+                  </View>
+                  <View style={styles.frequentInfo}>
+                    <Text style={[styles.frequentName, { color: theme.colors.text }]} numberOfLines={1}>
+                      {item.name}
+                    </Text>
+                    <Text style={[styles.frequentAddress, { color: theme.colors.textSecondary }]} numberOfLines={1}>
+                      {item.address}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.rideButton, { backgroundColor: theme.colors.primary }]}
+                    onPress={() => handleFrequentlyTraveledSelect(item)}
+                    activeOpacity={0.7}
+                  >
+                    <Car size={16} color="#FFFFFF" style={{ marginRight: 4 }} />
+                    <Text style={styles.rideButtonText}>Ride</Text>
+                  </TouchableOpacity>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
         </View>
 
         {/* Recent Active Rides Section */}
@@ -809,5 +917,48 @@ const styles = StyleSheet.create({
   statLabel: {
     fontSize: 12,
     fontWeight: '500',
+  },
+  frequentList: {
+    gap: 12,
+    marginTop: 8,
+  },
+  frequentCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 12,
+  },
+  frequentIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  frequentInfo: {
+    flex: 1,
+  },
+  frequentName: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    marginBottom: 2,
+  },
+  frequentAddress: {
+    fontSize: 13,
+  },
+  rideButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+  },
+  rideButtonText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '600',
   },
 });

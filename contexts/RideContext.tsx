@@ -29,7 +29,7 @@ export interface Ride {
   carModel: string;
   carColor: string;
   carPlate?: string;
-  status: 'active' | 'completed' | 'cancelled' | 'started' | 'scheduled';
+  status: 'active' | 'completed' | 'cancelled' | 'started' | 'scheduled' | 'draft' | 'published' | 'seatsbooked' | 'confirmed' | 'driverarrived' | 'boarding' | 'enroute' | 'dropcompleted';
   distance: string;
   duration: string;
   pickupDistanceMeters?: number;
@@ -79,6 +79,10 @@ interface RideContextType {
   updateRide: (rideId: string, rideData: Partial<Ride>) => Promise<boolean>;
   cancelRide: (rideId: string, reason: string) => Promise<boolean>;
   startRide: (rideId: string) => Promise<boolean>;
+  arriveAtPickup: (rideId: string, lat?: number, lng?: number) => Promise<boolean>;
+  startBoarding: (rideId: string) => Promise<boolean>;
+  transitionEnRoute: (rideId: string) => Promise<boolean>;
+  completeDropoff: (rideId: string) => Promise<boolean>;
   completeRide: (rideId: string) => Promise<boolean>;
   bookRide: (rideId: string, seats: number, passengerData: any) => Promise<boolean>;
   confirmBooking: (bookingId: string) => Promise<boolean>;
@@ -170,18 +174,59 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
       console.warn(`Could not fetch vehicle details for ${ride.vehicleId}`);
     }
 
-    const statusMap: Record<RideStatus, any> = {
+    const statusMap: Record<RideStatus | string, any> = {
       [RideStatus.Scheduled]: 'scheduled',
       [RideStatus.Active]: 'active',
       [RideStatus.Started]: 'started',
       [RideStatus.Completed]: 'completed',
       [RideStatus.Cancelled]: 'cancelled',
+      [RideStatus.Draft]: 'draft',
+      [RideStatus.Published]: 'published',
+      [RideStatus.SeatsBooked]: 'seatsbooked',
+      [RideStatus.Confirmed]: 'confirmed',
+      [RideStatus.DriverArrived]: 'driverarrived',
+      [RideStatus.Boarding]: 'boarding',
+      [RideStatus.EnRoute]: 'enroute',
+      [RideStatus.DropCompleted]: 'dropcompleted',
+      // String serialization mapping
+      'Scheduled': 'scheduled',
+      'Active': 'active',
+      'Started': 'started',
+      'Completed': 'completed',
+      'Cancelled': 'cancelled',
+      'Draft': 'draft',
+      'Published': 'published',
+      'SeatsBooked': 'seatsbooked',
+      'Confirmed': 'confirmed',
+      'DriverArrived': 'driverarrived',
+      'Boarding': 'boarding',
+      'EnRoute': 'enroute',
+      'DropCompleted': 'dropcompleted',
+      'scheduled': 'scheduled',
+      'active': 'active',
+      'started': 'started',
+      'completed': 'completed',
+      'cancelled': 'cancelled',
+      'draft': 'draft',
+      'published': 'published',
+      'seatsbooked': 'seatsbooked',
+      'confirmed': 'confirmed',
+      'driverarrived': 'driverarrived',
+      'boarding': 'boarding',
+      'enroute': 'enroute',
+      'dropcompleted': 'dropcompleted',
     };
 
-    const convMap: Record<ConversationLevel, any> = {
+    const convMap: Record<ConversationLevel | string, any> = {
       [ConversationLevel.Quiet]: 'quiet',
       [ConversationLevel.Moderate]: 'moderate',
       [ConversationLevel.Chatty]: 'chatty',
+      'Quiet': 'quiet',
+      'Moderate': 'moderate',
+      'Chatty': 'chatty',
+      'quiet': 'quiet',
+      'moderate': 'moderate',
+      'chatty': 'chatty',
     };
 
     // Extract search specific fields if available
@@ -431,6 +476,46 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const arriveAtPickup = async (rideId: string, lat?: number, lng?: number): Promise<boolean> => {
+    try {
+      await rideService.arriveAtPickup(rideId, lat, lng);
+      await loadInitialData();
+      return true;
+    } catch (e) {
+      return false;
+    }
+  };
+
+  const startBoarding = async (rideId: string): Promise<boolean> => {
+    try {
+      await rideService.startBoarding(rideId);
+      await loadInitialData();
+      return true;
+    } catch (e) {
+      return false;
+    }
+  };
+
+  const transitionEnRoute = async (rideId: string): Promise<boolean> => {
+    try {
+      await rideService.transitionEnRoute(rideId);
+      await loadInitialData();
+      return true;
+    } catch (e) {
+      return false;
+    }
+  };
+
+  const completeDropoff = async (rideId: string): Promise<boolean> => {
+    try {
+      await rideService.completeDropoff(rideId);
+      await loadInitialData();
+      return true;
+    } catch (e) {
+      return false;
+    }
+  };
+
   const completeRide = async (rideId: string): Promise<boolean> => {
     try {
       await rideService.completeRide(rideId);
@@ -584,6 +669,10 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
         updateRide,
         cancelRide,
         startRide,
+        arriveAtPickup,
+        startBoarding,
+        transitionEnRoute,
+        completeDropoff,
         completeRide,
         bookRide, 
         confirmBooking,

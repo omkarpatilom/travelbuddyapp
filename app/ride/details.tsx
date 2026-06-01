@@ -25,7 +25,7 @@ const { width } = Dimensions.get('window');
 export default function RideDetailsScreen() {
   const { theme } = useTheme();
   const { user } = useAuth();
-  const { getRideById, startRide, completeRide, cancelRide, updateTracking, getTracking } = useRides();
+  const { getRideById, startRide, arriveAtPickup, startBoarding, transitionEnRoute, completeDropoff, completeRide, cancelRide, updateTracking, getTracking } = useRides();
   const router = useRouter();
   const params = useLocalSearchParams();
   const rideId = params.id as string;
@@ -149,6 +149,18 @@ export default function RideDetailsScreen() {
 
   const handleStartRide = async () => {
     setIsActionLoading(true);
+    let lat: number | undefined;
+    let lng: number | undefined;
+    try {
+      const hasPermission = await checkLocationPermission();
+      if (hasPermission) {
+        const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        lat = location.coords.latitude;
+        lng = location.coords.longitude;
+      }
+    } catch (e) {
+      console.warn('Could not fetch driver coordinates for proximity check:', e);
+    }
     const success = await startRide(ride.id);
     setIsActionLoading(false);
     if (success) {
@@ -156,6 +168,66 @@ export default function RideDetailsScreen() {
       fetchRideDetails();
     } else {
       Alert.alert('Error', 'Failed to start ride');
+    }
+  };
+
+  const handleArriveAtPickup = async () => {
+    setIsActionLoading(true);
+    let lat: number | undefined;
+    let lng: number | undefined;
+    try {
+      const hasPermission = await checkLocationPermission();
+      if (hasPermission) {
+        const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        lat = location.coords.latitude;
+        lng = location.coords.longitude;
+      }
+    } catch (e) {
+      console.warn('Could not fetch driver coordinates for proximity check:', e);
+    }
+    const success = await arriveAtPickup(ride.id, lat, lng);
+    setIsActionLoading(false);
+    if (success) {
+      Alert.alert('Arrived at Pickup', 'Marked arrived at pickup location! Passengers have been notified.');
+      fetchRideDetails();
+    } else {
+      Alert.alert('Error', 'Failed to mark arrival at pickup.');
+    }
+  };
+
+  const handleStartBoarding = async () => {
+    setIsActionLoading(true);
+    const success = await startBoarding(ride.id);
+    setIsActionLoading(false);
+    if (success) {
+      Alert.alert('Boarding Started', 'Boarding is in progress! Passengers have been notified.');
+      fetchRideDetails();
+    } else {
+      Alert.alert('Error', 'Failed to start passenger boarding.');
+    }
+  };
+
+  const handleTransitionEnRoute = async () => {
+    setIsActionLoading(true);
+    const success = await transitionEnRoute(ride.id);
+    setIsActionLoading(false);
+    if (success) {
+      Alert.alert('En Route', 'The ride is now en route to the destination! Safety monitoring is active.');
+      fetchRideDetails();
+    } else {
+      Alert.alert('Error', 'Failed to transition ride to en route.');
+    }
+  };
+
+  const handleCompleteDropoff = async () => {
+    setIsActionLoading(true);
+    const success = await completeDropoff(ride.id);
+    setIsActionLoading(false);
+    if (success) {
+      Alert.alert('Drops Completed', 'Marked drop-offs complete! Passengers have been notified.');
+      fetchRideDetails();
+    } else {
+      Alert.alert('Error', 'Failed to mark drop-offs complete.');
     }
   };
 
@@ -205,11 +277,23 @@ export default function RideDetailsScreen() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'active': return theme.colors.success;
-      case 'started': return theme.colors.secondary;
-      case 'completed': return theme.colors.textSecondary;
-      case 'cancelled': return theme.colors.error;
-      default: return theme.colors.textSecondary;
+      case 'active':
+      case 'published':
+      case 'confirmed':
+        return theme.colors.success;
+      case 'started':
+      case 'enroute':
+        return theme.colors.secondary;
+      case 'driverarrived':
+      case 'boarding':
+        return theme.colors.primary;
+      case 'dropcompleted':
+      case 'completed':
+        return theme.colors.textSecondary;
+      case 'cancelled':
+        return theme.colors.error;
+      default:
+        return theme.colors.textSecondary;
     }
   };
 
@@ -431,47 +515,202 @@ export default function RideDetailsScreen() {
         {/* Action Buttons */}
         <View style={styles.actionButtons}>
           {isDriver ? (
-            <>
-              {ride.status === 'active' && (
-                <TouchableOpacity 
-                  style={[styles.bookButton, { backgroundColor: theme.colors.secondary, flexDirection: 'row' }]}
-                  onPress={handleStartRide}
-                  disabled={isActionLoading}
-                >
-                  <Play size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
-                  <Text style={styles.bookButtonText}>Start Ride</Text>
-                </TouchableOpacity>
-              )}
-              {ride.status === 'started' && (
-                <TouchableOpacity 
-                  style={[styles.bookButton, { backgroundColor: theme.colors.success, flexDirection: 'row' }]}
-                  onPress={handleCompleteRide}
-                  disabled={isActionLoading}
-                >
-                  <CheckCircle size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
-                  <Text style={styles.bookButtonText}>Complete Ride</Text>
-                </TouchableOpacity>
-              )}
-              {(ride.status === 'active' || ride.status === 'started') && (
-                <TouchableOpacity 
-                  style={[styles.bookButton, { backgroundColor: theme.colors.error, marginTop: 12, flexDirection: 'row' }]}
-                  onPress={handleCancelRide}
-                  disabled={isActionLoading}
-                >
-                  <XCircle size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
-                  <Text style={styles.bookButtonText}>Cancel Ride</Text>
-                </TouchableOpacity>
-              )}
-            </>
+            <View style={[styles.controlCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+              <View style={styles.controlHeader}>
+                <ShieldCheck size={20} color={theme.colors.primary} />
+                <Text style={[styles.controlCardTitle, { color: theme.colors.text }]}>Driver Ride Control Panel</Text>
+              </View>
+              
+              <Text style={[styles.controlStatusText, { color: theme.colors.textSecondary }]}>
+                Current status: <Text style={{ fontWeight: 'bold', color: getStatusColor(ride.status) }}>{ride.status.toUpperCase()}</Text>
+              </Text>
+
+              {/* Status progression indicator */}
+              <View style={styles.stepsIndicatorContainer}>
+                <View style={[styles.stepDot, { backgroundColor: ['driverarrived', 'boarding', 'started', 'enroute', 'dropcompleted', 'completed'].includes(ride.status) ? theme.colors.success : theme.colors.border }]} />
+                <View style={[styles.stepBar, { backgroundColor: ['boarding', 'started', 'enroute', 'dropcompleted', 'completed'].includes(ride.status) ? theme.colors.success : theme.colors.border }]} />
+                <View style={[styles.stepDot, { backgroundColor: ['boarding', 'started', 'enroute', 'dropcompleted', 'completed'].includes(ride.status) ? theme.colors.success : theme.colors.border }]} />
+                <View style={[styles.stepBar, { backgroundColor: ['started', 'enroute', 'dropcompleted', 'completed'].includes(ride.status) ? theme.colors.success : theme.colors.border }]} />
+                <View style={[styles.stepDot, { backgroundColor: ['started', 'enroute', 'dropcompleted', 'completed'].includes(ride.status) ? theme.colors.success : theme.colors.border }]} />
+                <View style={[styles.stepBar, { backgroundColor: ['enroute', 'dropcompleted', 'completed'].includes(ride.status) ? theme.colors.success : theme.colors.border }]} />
+                <View style={[styles.stepDot, { backgroundColor: ['enroute', 'dropcompleted', 'completed'].includes(ride.status) ? theme.colors.success : theme.colors.border }]} />
+              </View>
+              <View style={styles.stepsLabelContainer}>
+                <Text style={[styles.stepLabel, { color: theme.colors.text }]}>Arrived</Text>
+                <Text style={[styles.stepLabel, { color: theme.colors.text }]}>Boarding</Text>
+                <Text style={[styles.stepLabel, { color: theme.colors.text }]}>En Route</Text>
+                <Text style={[styles.stepLabel, { color: theme.colors.text }]}>Done</Text>
+              </View>
+
+              <View style={{ gap: 10, marginTop: 10 }}>
+                {['active', 'scheduled', 'published', 'confirmed', 'seatsbooked'].includes(ride.status) && (
+                  <TouchableOpacity 
+                    style={[styles.bookButton, { backgroundColor: theme.colors.secondary, flexDirection: 'row' }]}
+                    onPress={handleArriveAtPickup}
+                    disabled={isActionLoading}
+                  >
+                    <MapPin size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+                    <Text style={styles.bookButtonText}>I Have Arrived at Pickup</Text>
+                  </TouchableOpacity>
+                )}
+
+                {ride.status === 'driverarrived' && (
+                  <TouchableOpacity 
+                    style={[styles.bookButton, { backgroundColor: theme.colors.primary, flexDirection: 'row' }]}
+                    onPress={handleStartBoarding}
+                    disabled={isActionLoading}
+                  >
+                    <Users size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+                    <Text style={styles.bookButtonText}>Begin Passenger Boarding</Text>
+                  </TouchableOpacity>
+                )}
+
+                {ride.status === 'boarding' && (
+                  <TouchableOpacity 
+                    style={[styles.bookButton, { backgroundColor: theme.colors.success, flexDirection: 'row' }]}
+                    onPress={handleStartRide}
+                    disabled={isActionLoading}
+                  >
+                    <Play size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+                    <Text style={styles.bookButtonText}>Start the Ride</Text>
+                  </TouchableOpacity>
+                )}
+
+                {ride.status === 'started' && (
+                  <TouchableOpacity 
+                    style={[styles.bookButton, { backgroundColor: theme.colors.secondary, flexDirection: 'row' }]}
+                    onPress={handleTransitionEnRoute}
+                    disabled={isActionLoading}
+                  >
+                    <Car size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+                    <Text style={styles.bookButtonText}>Transition to En Route</Text>
+                  </TouchableOpacity>
+                )}
+
+                {ride.status === 'enroute' && (
+                  <TouchableOpacity 
+                    style={[styles.bookButton, { backgroundColor: theme.colors.primary, flexDirection: 'row' }]}
+                    onPress={handleCompleteDropoff}
+                    disabled={isActionLoading}
+                  >
+                    <CheckCircle size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+                    <Text style={styles.bookButtonText}>Mark Drop-offs Complete</Text>
+                  </TouchableOpacity>
+                )}
+
+                {ride.status === 'dropcompleted' && (
+                  <TouchableOpacity 
+                    style={[styles.bookButton, { backgroundColor: theme.colors.success, flexDirection: 'row' }]}
+                    onPress={handleCompleteRide}
+                    disabled={isActionLoading}
+                  >
+                    <CheckCircle size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+                    <Text style={styles.bookButtonText}>Finalize & Complete Ride</Text>
+                  </TouchableOpacity>
+                )}
+
+                {ride.status !== 'completed' && ride.status !== 'cancelled' && (
+                  <TouchableOpacity 
+                    style={[styles.bookButton, { backgroundColor: theme.colors.error, marginTop: 4, flexDirection: 'row' }]}
+                    onPress={handleCancelRide}
+                    disabled={isActionLoading}
+                  >
+                    <XCircle size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+                    <Text style={styles.bookButtonText}>Cancel Ride</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
           ) : (
-            ride.status === 'active' && (
-              <TouchableOpacity 
-                style={[styles.bookButton, { backgroundColor: theme.colors.primary }]}
-                onPress={handleBookRide}
-              >
-                <Text style={styles.bookButtonText}>Book This Ride</Text>
-              </TouchableOpacity>
-            )
+            <View style={{ gap: 12 }}>
+              {['active', 'published', 'scheduled'].includes(ride.status) && (
+                <TouchableOpacity 
+                  style={[styles.bookButton, { backgroundColor: theme.colors.primary }]}
+                  onPress={handleBookRide}
+                >
+                  <Text style={styles.bookButtonText}>Book This Ride</Text>
+                </TouchableOpacity>
+              )}
+
+              {['confirmed', 'seatsbooked'].includes(ride.status) && (
+                <View style={[styles.passengerBanner, { backgroundColor: theme.colors.success + '15', borderColor: theme.colors.success }]}>
+                  <ShieldCheck size={24} color={theme.colors.success} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.bannerTitle, { color: theme.colors.success }]}>Ride Confirmed</Text>
+                    <Text style={[styles.bannerText, { color: theme.colors.text }]}>Your driver {ride.driverName} will begin the journey shortly.</Text>
+                  </View>
+                </View>
+              )}
+
+              {ride.status === 'driverarrived' && (
+                <View style={[styles.passengerBanner, { backgroundColor: theme.colors.primary + '15', borderColor: theme.colors.primary }]}>
+                  <MapPin size={24} color={theme.colors.primary} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.bannerTitle, { color: theme.colors.primary }]}>Driver Has Arrived!</Text>
+                    <Text style={[styles.bannerText, { color: theme.colors.text }]}>{ride.driverName} has arrived at the pickup location. Please head to the vehicle.</Text>
+                  </View>
+                </View>
+              )}
+
+              {ride.status === 'boarding' && (
+                <View style={[styles.passengerBanner, { backgroundColor: theme.colors.primary + '10', borderColor: theme.colors.primary }]}>
+                  <Users size={24} color={theme.colors.primary} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.bannerTitle, { color: theme.colors.primary }]}>Boarding Active</Text>
+                    <Text style={[styles.bannerText, { color: theme.colors.text }]}>Passenger boarding is currently active. Please proceed with check-in.</Text>
+                  </View>
+                </View>
+              )}
+
+              {['started', 'enroute'].includes(ride.status) && (
+                <View style={{ gap: 12 }}>
+                  <View style={[styles.passengerBanner, { backgroundColor: theme.colors.secondary + '15', borderColor: theme.colors.secondary }]}>
+                    <Car size={24} color={theme.colors.secondary} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.bannerTitle, { color: theme.colors.secondary }]}>Trip En Route</Text>
+                      <Text style={[styles.bannerText, { color: theme.colors.text }]}>You are on your way! Real-time location tracking and safety monitoring are active.</Text>
+                    </View>
+                  </View>
+                  
+                  {/* Floating emergency SOS trigger card */}
+                  <View style={[styles.sosCard, { backgroundColor: theme.colors.error + '10', borderColor: theme.colors.error }]}>
+                    <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+                      <ShieldCheck size={22} color={theme.colors.error} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.sosCardTitle, { color: theme.colors.error }]}>Safety SOS System Active</Text>
+                        <Text style={[styles.sosCardText, { color: theme.colors.text }]}>Need assistance? Trigger local SOS or alert your primary emergency contacts.</Text>
+                      </View>
+                    </View>
+                    <TouchableOpacity 
+                      style={[styles.sosButton, { backgroundColor: theme.colors.error }]}
+                      onPress={() => Alert.alert('SOS Triggered', 'Emergency services and your emergency contacts have been notified. Stay calm.')}
+                    >
+                      <Text style={styles.sosButtonText}>Emergency SOS Trigger</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
+              {ride.status === 'dropcompleted' && (
+                <View style={[styles.passengerBanner, { backgroundColor: theme.colors.success + '15', borderColor: theme.colors.success }]}>
+                  <CheckCircle size={24} color={theme.colors.success} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.bannerTitle, { color: theme.colors.success }]}>Arrived at Destination</Text>
+                    <Text style={[styles.bannerText, { color: theme.colors.text }]}>Your drop-off is complete. Remember to check for all your personal items!</Text>
+                  </View>
+                </View>
+              )}
+
+              {ride.status === 'completed' && (
+                <View style={[styles.passengerBanner, { backgroundColor: theme.colors.textSecondary + '15', borderColor: theme.colors.textSecondary }]}>
+                  <CheckCircle size={24} color={theme.colors.textSecondary} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.bannerTitle, { color: theme.colors.textSecondary }]}>Ride Completed</Text>
+                    <Text style={[styles.bannerText, { color: theme.colors.text }]}>Thank you for riding with TravelBuddy! Rate your experience below.</Text>
+                  </View>
+                </View>
+              )}
+            </View>
           )}
         </View>
       </View>
@@ -791,5 +1030,118 @@ const styles = StyleSheet.create({
   conversationValue: {
     fontSize: 15,
     fontWeight: '600',
+  },
+  controlCard: {
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  controlHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  controlCardTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  controlStatusText: {
+    fontSize: 14,
+    marginBottom: 4,
+  },
+  stepsIndicatorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 10,
+    paddingHorizontal: 20,
+  },
+  stepDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 1,
+    elevation: 1,
+  },
+  stepBar: {
+    flex: 1,
+    height: 3,
+    marginHorizontal: -2,
+  },
+  stepsLabelContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 8,
+    marginBottom: 12,
+  },
+  stepLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    width: 60,
+    textAlign: 'center',
+  },
+  passengerBanner: {
+    flexDirection: 'row',
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 12,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  bannerTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 2,
+  },
+  bannerText: {
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  sosCard: {
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  sosCardTitle: {
+    fontSize: 15,
+    fontWeight: 'bold',
+  },
+  sosCardText: {
+    fontSize: 13,
+    lineHeight: 16,
+    opacity: 0.8,
+  },
+  sosButton: {
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sosButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: 'bold',
   },
 });

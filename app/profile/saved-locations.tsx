@@ -14,6 +14,7 @@ import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { api } from '@/utils/api';
 import { MapPin, Plus, X, Home, Briefcase, Heart, ArrowLeft, Save } from 'lucide-react-native';
+import LocationPicker from '@/components/LocationPicker';
 
 interface SavedLocation {
   id: string;
@@ -37,6 +38,8 @@ export default function SavedLocationsScreen() {
     name: '',
     address: '',
     type: 'Favorite' as SavedLocation['type'],
+    latitude: 0,
+    longitude: 0,
   });
 
   useEffect(() => {
@@ -46,14 +49,27 @@ export default function SavedLocationsScreen() {
   const fetchLocations = async () => {
     try {
       const data = await api.get<any[]>('/saved-locations');
-      setLocations(data.map(item => ({
-        id: item.id,
-        name: item.name,
-        address: item.address,
-        latitude: item.latitude,
-        longitude: item.longitude,
-        type: item.type as SavedLocation['type'],
-      })));
+      setLocations(data.map(item => {
+        let derivedType: SavedLocation['type'] = 'Favorite';
+        const lowerName = item.name.toLowerCase();
+        if (lowerName === 'home') {
+          derivedType = 'Home';
+        } else if (lowerName === 'work') {
+          derivedType = 'Work';
+        } else if (lowerName === 'favorite') {
+          derivedType = 'Favorite';
+        } else {
+          derivedType = 'Other';
+        }
+        return {
+          id: item.id,
+          name: item.name,
+          address: item.address,
+          latitude: item.latitude,
+          longitude: item.longitude,
+          type: derivedType,
+        };
+      }));
     } catch (error) {
       console.error('Error fetching saved locations:', error);
     } finally {
@@ -74,12 +90,12 @@ export default function SavedLocationsScreen() {
       await api.post('/saved-locations', {
         name: newLocation.name,
         address: newLocation.address,
-        latitude: 0,
-        longitude: 0,
+        latitude: newLocation.latitude || 0,
+        longitude: newLocation.longitude || 0,
       });
 
       setShowAddModal(false);
-      setNewLocation({ name: '', address: '', type: 'Favorite' });
+      setNewLocation({ name: '', address: '', type: 'Favorite', latitude: 0, longitude: 0 });
       fetchLocations();
       Alert.alert('Success', 'Location saved successfully!');
     } catch (error: any) {
@@ -216,13 +232,18 @@ export default function SavedLocationsScreen() {
 
               <View style={styles.inputGroup}>
                 <Text style={[styles.inputLabel, { color: theme.colors.textSecondary }]}>Address</Text>
-                <TextInput
-                  style={[styles.input, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, color: theme.colors.text }]}
-                  placeholder="Enter full address"
-                  placeholderTextColor={theme.colors.textSecondary}
+                <LocationPicker
                   value={newLocation.address}
-                  onChangeText={(text) => setNewLocation(prev => ({ ...prev, address: text }))}
-                  multiline
+                  onLocationChange={(address, coords) => {
+                    setNewLocation(prev => ({
+                      ...prev,
+                      address,
+                      latitude: coords?.latitude || 0,
+                      longitude: coords?.longitude || 0,
+                    }));
+                  }}
+                  placeholder="Search and select address..."
+                  showIcon={true}
                 />
               </View>
 

@@ -100,4 +100,21 @@ export const rideService = {
   async getTracking(id: string) {
     return api.get<any>(`/rides/${id}/tracking`);
   },
+
+  async arriveAtPickup(id: string, lat?: number, lng?: number) {
+    const query = lat !== undefined && lng !== undefined ? `?lat=${lat}&lng=${lng}` : '';
+    return api.post<void>(`/rides/${id}/arrive${query}`, {});
+  },
+
+  async startBoarding(id: string) {
+    return api.post<void>(`/rides/${id}/boarding`, {});
+  },
+
+  async transitionEnRoute(id: string) {
+    return api.post<void>(`/rides/${id}/enroute`, {});
+  },
+
+  async completeDropoff(id: string) {
+    return api.post<void>(`/rides/${id}/drop-completed`, {});
+  },
 };

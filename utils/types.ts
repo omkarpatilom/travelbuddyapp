@@ -11,6 +11,14 @@ export enum RideStatus {
   Started = 2,
   Completed = 3,
   Cancelled = 4,
+  Draft = 5,
+  Published = 6,
+  SeatsBooked = 7,
+  Confirmed = 8,
+  DriverArrived = 9,
+  Boarding = 10,
+  EnRoute = 11,
+  DropCompleted = 12,
 }
 
 export enum ConversationLevel {

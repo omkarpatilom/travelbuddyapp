@@ -98,13 +98,44 @@ export default function LocationPicker({
     }
   };
 
-  const showRecents = () => {
-    // Mock recent locations
-    setSuggestions([
-      { id: 'r1', name: 'Home', description: '123 Main St, Springfield', type: 'recent' },
-      { id: 'r2', name: 'Work', description: '456 Business Ave, Metropolis', type: 'recent' },
-      { id: 'r3', name: 'Airport', description: 'International Terminal, Gateway City', type: 'recent' },
-    ]);
+  const showRecents = async () => {
+    try {
+      const data = await api.get<any[]>('/saved-locations');
+      if (data && data.length > 0) {
+        setSuggestions(data.map(item => {
+          let suggestionType = 'favorite';
+          const lowerName = item.name.toLowerCase();
+          if (lowerName === 'home') {
+            suggestionType = 'recent'; // standard home icon/marker style
+          } else if (lowerName === 'work') {
+            suggestionType = 'recent'; // standard work briefcase style
+          }
+          
+          return {
+            id: item.id,
+            name: item.name,
+            description: item.address,
+            lat: item.latitude,
+            lon: item.longitude,
+            type: suggestionType
+          };
+        }));
+      } else {
+        // Fallback to mock suggestions if no locations are saved yet
+        setSuggestions([
+          { id: 'r1', name: 'Home', description: '123 Main St, Springfield', type: 'recent' },
+          { id: 'r2', name: 'Work', description: '456 Business Ave, Metropolis', type: 'recent' },
+          { id: 'r3', name: 'Airport', description: 'International Terminal, Gateway City', type: 'recent' },
+        ]);
+      }
+    } catch (error) {
+      console.warn('Failed to fetch saved locations in LocationPicker, falling back to mock:', error);
+      setSuggestions([
+        { id: 'r1', name: 'Home', description: '123 Main St, Springfield', type: 'recent' },
+        { id: 'r2', name: 'Work', description: '456 Business Ave, Metropolis', type: 'recent' },
+        { id: 'r3', name: 'Airport', description: 'International Terminal, Gateway City', type: 'recent' },
+      ]);
+    }
   };
 
   const getCurrentLocation = async () => {
@@ -275,7 +306,7 @@ export default function LocationPicker({
                 </TouchableOpacity>
 
                 {suggestions.length > 0 && searchText.length < 3 && (
-                  <Text style={[styles.sectionTitle, { color: theme.colors.textSecondary }]}>Recent Locations</Text>
+                  <Text style={[styles.sectionTitle, { color: theme.colors.textSecondary }]}>Saved Locations</Text>
                 )}
               </>
             }

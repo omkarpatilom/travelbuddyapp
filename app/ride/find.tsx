@@ -33,11 +33,17 @@ import {
   ArrowUpDown,
   Circle,
   Map,
-  Info
+  Info,
+  Home as HomeIcon,
+  Briefcase,
+  Heart,
+  Navigation,
+  Car
 } from 'lucide-react-native';
 import DatePicker from '@/components/DatePicker';
 import PreferencesSelector from '@/components/PreferencesSelector';
 import LocationPicker from '@/components/LocationPicker';
+import * as Location from 'expo-location';
 import { api } from '@/utils/api';
 
 const { width } = Dimensions.get('window');
@@ -57,6 +63,100 @@ export default function FindRideScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
+  
+  interface SavedLocation {
+    id: string;
+    name: string;
+    address: string;
+    latitude: number;
+    longitude: number;
+    type: 'Home' | 'Work' | 'Favorite' | 'Other';
+  }
+
+  const [savedLocations, setSavedLocations] = useState<SavedLocation[]>([]);
+  const [isLoadingSaved, setIsLoadingSaved] = useState(false);
+
+  useEffect(() => {
+    fetchSavedLocations();
+    if (!from) {
+      prefillCurrentLocation();
+    }
+  }, []);
+
+  const fetchSavedLocations = async () => {
+    setIsLoadingSaved(true);
+    try {
+      const data = await api.get<any[]>('/saved-locations');
+      if (data) {
+        setSavedLocations(data.map(item => {
+          let derivedType: SavedLocation['type'] = 'Favorite';
+          const lowerName = item.name.toLowerCase();
+          if (lowerName === 'home') {
+            derivedType = 'Home';
+          } else if (lowerName === 'work') {
+            derivedType = 'Work';
+          } else if (lowerName === 'favorite') {
+            derivedType = 'Favorite';
+          } else {
+            derivedType = 'Other';
+          }
+          return {
+            id: item.id,
+            name: item.name,
+            address: item.address,
+            latitude: item.latitude,
+            longitude: item.longitude,
+            type: derivedType,
+          };
+        }));
+      }
+    } catch (error) {
+      console.warn('Failed to fetch saved locations in FindRideScreen:', error);
+    } finally {
+      setIsLoadingSaved(false);
+    }
+  };
+
+  const prefillCurrentLocation = async () => {
+    try {
+      const { status } = await Location.getForegroundPermissionsAsync();
+      if (status === 'granted') {
+        const location = await Location.getCurrentPositionAsync({});
+        if (location) {
+          const { latitude, longitude } = location.coords;
+          // Reverse geocode
+          const data = await api.get<any>(`/places/reverse?lat=${latitude}&lon=${longitude}`);
+          const address = data.address || `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+          setFromLocation('Current Location');
+          setFromCoords({ latitude, longitude });
+        }
+      }
+    } catch (e) {
+      console.log('Failed to prefill current location:', e);
+    }
+  };
+
+  const handleSelectSavedLocation = (location: SavedLocation) => {
+    setToLocation(location.address);
+    setToCoords({ latitude: location.latitude, longitude: location.longitude });
+
+    if (!fromLocation) {
+      setFromLocation('Current Location');
+      if (!fromCoords) {
+        // Springfield fallback coordinates
+        setFromCoords({ latitude: 37.7749, longitude: -122.4194 });
+      }
+    }
+  };
+
+  const getLocationIcon = (type: SavedLocation['type']) => {
+    switch (type) {
+      case 'Home': return <HomeIcon size={18} color={theme.colors.primary} />;
+      case 'Work': return <Briefcase size={18} color={theme.colors.secondary} />;
+      case 'Favorite': return <Heart size={18} color={theme.colors.accent} />;
+      default: return <MapPin size={18} color={theme.colors.textSecondary} />;
+    }
+  };
   
   const [filters, setFilters] = useState({
     priceRange: { min: 0, max: 500 },
@@ -352,11 +452,42 @@ export default function FindRideScreen() {
             }
           />
         ) : (
-          <View style={styles.preSearchBox}>
-            <Info size={40} color={theme.colors.primary} style={{ opacity: 0.5 }} />
-            <Text style={[styles.preSearchText, { color: theme.colors.textSecondary }]}>
-              Enter your trip details above to see available rides.
-            </Text>
+          <View style={styles.preSearchBoxContainer}>
+            {savedLocations.length > 0 ? (
+              <ScrollView contentContainerStyle={styles.savedLocationsListContainer} keyboardShouldPersistTaps="handled">
+                <Text style={[styles.savedSectionTitle, { color: theme.colors.text }]}>Your Saved Locations</Text>
+                <View style={styles.savedGrid}>
+                  {savedLocations.map((item) => (
+                    <TouchableOpacity
+                      key={item.id}
+                      style={[styles.savedCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
+                      onPress={() => handleSelectSavedLocation(item)}
+                      activeOpacity={0.8}
+                    >
+                      <View style={[styles.savedIconBox, { backgroundColor: theme.colors.surface }]}>
+                        {getLocationIcon(item.type)}
+                      </View>
+                      <View style={styles.savedCardInfo}>
+                        <Text style={[styles.savedCardName, { color: theme.colors.text }]} numberOfLines={1}>
+                          {item.name}
+                        </Text>
+                        <Text style={[styles.savedCardAddress, { color: theme.colors.textSecondary }]} numberOfLines={2}>
+                          {item.address}
+                        </Text>
+                      </View>
+                      <ChevronRight size={18} color={theme.colors.textSecondary} />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+            ) : (
+              <View style={styles.preSearchBox}>
+                <Info size={40} color={theme.colors.primary} style={{ opacity: 0.5 }} />
+                <Text style={[styles.preSearchText, { color: theme.colors.textSecondary }]}>
+                  Enter your trip details above to see available rides.
+                </Text>
+              </View>
+            )}
           </View>
         )}
       </View>
@@ -709,5 +840,48 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 18,
     fontWeight: '700',
+  },
+  preSearchBoxContainer: {
+    flex: 1,
+    padding: 20,
+  },
+  savedLocationsListContainer: {
+    paddingBottom: 20,
+  },
+  savedSectionTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    marginBottom: 16,
+    letterSpacing: -0.3,
+  },
+  savedGrid: {
+    gap: 12,
+  },
+  savedCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 12,
+  },
+  savedIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  savedCardInfo: {
+    flex: 1,
+  },
+  savedCardName: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    marginBottom: 2,
+  },
+  savedCardAddress: {
+    fontSize: 13,
+    lineHeight: 18,
   },
 });
