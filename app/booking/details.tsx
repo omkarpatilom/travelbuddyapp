@@ -13,6 +13,7 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useRides } from '@/contexts/RideContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { 
   ArrowLeft, 
   MapPin, 
@@ -25,7 +26,8 @@ import {
   Car,
   CreditCard,
   Navigation,
-  X
+  X,
+  CheckCircle
 } from 'lucide-react-native';
 import RatingModal from '@/components/RatingModal';
 
@@ -34,9 +36,11 @@ export default function BookingDetailsScreen() {
   const [booking, setBooking] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [qrLoadError, setQrLoadError] = useState(false);
   
   const { theme } = useTheme();
-  const { getBookingById, cancelBooking } = useRides();
+  const { user } = useAuth();
+  const { getBookingById, cancelBooking, confirmBooking } = useRides();
   const router = useRouter();
   const params = useLocalSearchParams();
   const bookingId = params.id as string;
@@ -91,6 +95,43 @@ export default function BookingDetailsScreen() {
             }
           }
         },
+      ]
+    );
+  };
+
+  const isDriver = user?.id === booking?.ride?.driverId;
+
+  const handleConfirmBooking = async () => {
+    if (!booking) return;
+
+    Alert.alert(
+      isDriver ? 'Confirm Booking Request' : 'Simulate Driver Approval',
+      isDriver 
+        ? `Are you sure you want to accept and confirm the booking request from ${booking.passengerName}?`
+        : `Simulate confirming this booking. The booking status will be updated to Confirmed.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Confirm',
+          onPress: async () => {
+            setIsLoading(true);
+            try {
+              const success = await confirmBooking(booking.id);
+              if (success) {
+                Alert.alert('Success', 'Booking has been successfully confirmed!', [
+                  { text: 'OK', onPress: () => fetchBookingDetails() }
+                ]);
+              } else {
+                Alert.alert('Error', 'Failed to confirm booking.');
+              }
+            } catch (e: any) {
+              console.error('Failed to confirm booking:', e);
+              Alert.alert('Error', e.message || 'Failed to confirm booking.');
+            } finally {
+              setIsLoading(false);
+            }
+          }
+        }
       ]
     );
   };
@@ -362,8 +403,112 @@ export default function BookingDetailsScreen() {
             </View>
           </View>
 
+          {/* Boarding Pass Refactor (Section 6) */}
+          {(booking.status === 'confirmed' || booking.status === 'pending') && (
+            <View style={[styles.boardingPassCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.primary }]}>
+              {/* Card Notch Elements */}
+              <View style={[styles.passNotchLeft, { backgroundColor: theme.colors.background }]} />
+              <View style={[styles.passNotchRight, { backgroundColor: theme.colors.background }]} />
+              
+              <View style={styles.passHeader}>
+                <Users size={16} color={theme.colors.primary} />
+                <Text style={[styles.passHeaderTitle, { color: theme.colors.primary }]}>TRAVELBUDDY BOARDING PASS</Text>
+              </View>
+
+              <View style={styles.passBody}>
+                 {/* Visual QR Code Mockup & Real Online Code */}
+                <View style={[styles.qrContainer, { borderColor: theme.colors.border, backgroundColor: '#FFFFFF' }]}>
+                  {/* concentric corners */}
+                  <View style={styles.qrCornerTopLeft} />
+                  <View style={styles.qrCornerTopRight} />
+                  <View style={styles.qrCornerBottomLeft} />
+                  <View style={styles.qrCornerBottomRight} />
+                  
+                  {!qrLoadError ? (
+                    <Image
+                      source={{ uri: `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${booking.id}` }}
+                      style={styles.realQrImage}
+                      resizeMode="contain"
+                      onError={() => setQrLoadError(true)}
+                    />
+                  ) : (
+                    /* Concentric patterns mockup fallback (Offline) */
+                    <View style={styles.qrCenterPattern}>
+                      <View style={styles.qrPatternRow}>
+                        <View style={[styles.qrPixel, { backgroundColor: '#09090B' }]} />
+                        <View style={styles.qrPixel} />
+                        <View style={[styles.qrPixel, { backgroundColor: '#09090B' }]} />
+                        <View style={[styles.qrPixel, { backgroundColor: '#09090B' }]} />
+                      </View>
+                      <View style={styles.qrPatternRow}>
+                        <View style={styles.qrPixel} />
+                        <View style={[styles.qrPixel, { backgroundColor: '#09090B' }]} />
+                        <View style={styles.qrPixel} />
+                        <View style={styles.qrPixel} />
+                      </View>
+                      <View style={styles.qrPatternRow}>
+                        <View style={[styles.qrPixel, { backgroundColor: '#09090B' }]} />
+                        <View style={styles.qrPixel} />
+                        <View style={[styles.qrPixel, { backgroundColor: '#09090B' }]} />
+                        <View style={[styles.qrPixel, { backgroundColor: '#09090B' }]} />
+                      </View>
+                    </View>
+                  )}
+                </View>
+
+                {/* OTP Passcode */}
+                <View style={styles.otpPassBlock}>
+                  <Text style={[styles.otpPassLabel, { color: theme.colors.textSecondary }]}>BOARDING OTP PASSCODE</Text>
+                  <Text style={[styles.otpPassValue, { color: theme.colors.text }]}>
+                    {(() => {
+                      const getBookingOtp = (id: string) => {
+                        let hash = 0;
+                        for (let i = 0; i < id.length; i++) {
+                          hash = id.charCodeAt(i) + ((hash << 5) - hash);
+                        }
+                        const code = Math.abs(hash % 9000) + 1000;
+                        return code.toString();
+                      };
+                      return getBookingOtp(booking.id).split('').join(' ');
+                    })()}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={[styles.dividerDashed, { borderBottomColor: theme.colors.border }]} />
+
+              <View style={styles.passFooter}>
+                <Text style={[styles.passInstructionsText, { color: theme.colors.textSecondary }]}>
+                  💡 Present this Boarding Pass screen to your driver at pickup. The driver will verify by scanning the QR code, entering the 4-digit OTP, or using offline ID manual verification.
+                </Text>
+              </View>
+            </View>
+          )}
+
           {/* Action Buttons */}
           <View style={styles.actionButtons}>
+            {booking.status === 'pending' && (
+              <View style={styles.pendingActionsContainer}>
+                <TouchableOpacity 
+                  style={[styles.confirmButton, { backgroundColor: theme.colors.success }]}
+                  onPress={handleConfirmBooking}
+                >
+                  <CheckCircle size={20} color="#FFFFFF" />
+                  <Text style={styles.confirmButtonText}>
+                    {isDriver ? 'Accept & Confirm Booking' : 'Confirm Booking (Demo)'}
+                  </Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={[styles.cancelButton, { backgroundColor: theme.colors.error }]}
+                  onPress={handleCancelBooking}
+                >
+                  <X size={20} color="#FFFFFF" />
+                  <Text style={styles.cancelButtonText}>Cancel Booking</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
             {booking.status === 'confirmed' && (
               <TouchableOpacity 
                 style={[styles.cancelButton, { backgroundColor: theme.colors.error }]}
@@ -647,5 +792,170 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+
+  // Boarding Pass Card Styles (Section 6)
+  boardingPassCard: {
+    padding: 20,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    position: 'relative',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 4,
+    marginBottom: 8,
+  },
+  passNotchLeft: {
+    position: 'absolute',
+    left: -12,
+    top: '62%',
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    zIndex: 3,
+  },
+  passNotchRight: {
+    position: 'absolute',
+    right: -12,
+    top: '62%',
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    zIndex: 3,
+  },
+  passHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  passHeaderTitle: {
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 1.5,
+  },
+  passBody: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 20,
+    marginBottom: 16,
+  },
+  qrContainer: {
+    width: 86,
+    height: 86,
+    borderRadius: 10,
+    borderWidth: 1,
+    padding: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  qrCornerTopLeft: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+    width: 14,
+    height: 14,
+    borderWidth: 3,
+    borderColor: '#09090B',
+  },
+  qrCornerTopRight: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 14,
+    height: 14,
+    borderWidth: 3,
+    borderColor: '#09090B',
+  },
+  qrCornerBottomLeft: {
+    position: 'absolute',
+    bottom: 6,
+    left: 6,
+    width: 14,
+    height: 14,
+    borderWidth: 3,
+    borderColor: '#09090B',
+  },
+  qrCornerBottomRight: {
+    position: 'absolute',
+    bottom: 6,
+    right: 6,
+    width: 14,
+    height: 14,
+    borderWidth: 3,
+    borderColor: '#09090B',
+  },
+  qrCenterPattern: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 2,
+  },
+  qrPatternRow: {
+    flexDirection: 'row',
+    gap: 2,
+  },
+  qrPixel: {
+    width: 6,
+    height: 6,
+    backgroundColor: 'transparent',
+  },
+  otpPassBlock: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  otpPassLabel: {
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.6,
+    marginBottom: 4,
+  },
+  otpPassValue: {
+    fontSize: 28,
+    fontWeight: '900',
+    letterSpacing: 4,
+  },
+  dividerDashed: {
+    borderBottomWidth: 1,
+    borderStyle: 'dashed',
+    marginVertical: 12,
+  },
+  passFooter: {
+    paddingHorizontal: 4,
+  },
+  passInstructionsText: {
+    fontSize: 10.5,
+    lineHeight: 14,
+    textAlign: 'center',
+    fontWeight: '500',
+  },
+  confirmButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    borderRadius: 12,
+    gap: 8,
+  },
+  confirmButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  pendingActionsContainer: {
+    gap: 12,
+    width: '100%',
+  },
+  realQrImage: {
+    width: '100%',
+    height: '100%',
   },
 });

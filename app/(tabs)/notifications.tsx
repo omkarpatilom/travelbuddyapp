@@ -8,9 +8,11 @@ import {
   Image,
   ActivityIndicator,
   RefreshControl,
+  Alert,
 } from 'react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useNotifications } from '@/contexts/NotificationContext';
+import { useRides } from '@/contexts/RideContext';
 import { Bell, Car, Calendar, Star, CircleCheck as CheckCircle, X } from 'lucide-react-native';
 
 export default function NotificationsScreen() {
@@ -26,6 +28,37 @@ export default function NotificationsScreen() {
   } = useNotifications();
 
   const [refreshing, setRefreshing] = useState(false);
+  const [isLoadingAction, setIsLoadingAction] = useState(false);
+  const { bookings, completeBooking } = useRides();
+
+  const handleConfirmDropoff = async (bookingId: string) => {
+    Alert.alert(
+      'Confirm Safe Drop-off',
+      'Are you sure you want to confirm you have arrived and been safely dropped off?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Yes, Confirm',
+          onPress: async () => {
+            setIsLoadingAction(true);
+            try {
+              const ok = await completeBooking(bookingId);
+              if (ok) {
+                Alert.alert('Success', 'Drop-off confirmed successfully! Thank you for traveling with TravelBuddy.');
+                await fetchNotifications();
+              } else {
+                Alert.alert('Error', 'Failed to confirm drop-off.');
+              }
+            } catch (err: any) {
+              Alert.alert('Error', err.message || 'Failed to confirm drop-off.');
+            } finally {
+              setIsLoadingAction(false);
+            }
+          }
+        }
+      ]
+    );
+  };
 
   useEffect(() => {
     fetchNotifications();
@@ -60,54 +93,73 @@ export default function NotificationsScreen() {
     return `${days}d ago`;
   };
 
-  const renderNotification = ({ item }: { item: any }) => (
-    <TouchableOpacity 
-      style={[
-        styles.notificationCard, 
-        { 
-          backgroundColor: item.isRead ? theme.colors.card : theme.colors.primary + '10',
-          borderColor: theme.colors.border 
-        }
-      ]}
-      onPress={() => !item.isRead && markAsRead(item.id)}
-    >
-      <View style={styles.notificationContent}>
-        <View style={styles.notificationHeader}>
-          <View style={styles.iconContainer}>
-            <View style={[styles.iconPlaceholder, { backgroundColor: theme.colors.surface }]}>
-              {getNotificationIcon(item.type)}
-            </View>
-          </View>
-          
-          <View style={styles.textContent}>
-            <View style={styles.titleRow}>
-              <Text style={[styles.title, { color: theme.colors.text }]} numberOfLines={1}>
-                {item.title}
-              </Text>
-              {!item.isRead && (
-                <View style={[styles.unreadDot, { backgroundColor: theme.colors.primary }]} />
-              )}
-            </View>
-            
-            <Text style={[styles.message, { color: theme.colors.textSecondary }]} numberOfLines={2}>
-              {item.message}
-            </Text>
-            
-            <Text style={[styles.timestamp, { color: theme.colors.textSecondary }]}>
-              {formatTimestamp(item.createdAt)}
-            </Text>
-          </View>
-        </View>
-      </View>
+  const renderNotification = ({ item }: { item: any }) => {
+    const titleLower = (item.title || '').toLowerCase();
+    const msgLower = (item.message || '').toLowerCase();
+    const isDropoffMsg = titleLower.includes('drop') || titleLower.includes('arrive') || titleLower.includes('enroute') || msgLower.includes('drop') || msgLower.includes('arrive') || msgLower.includes('enroute');
+    const matchingBooking = isDropoffMsg ? (bookings || []).find(b => b.status === 'confirmed') : null;
 
+    return (
       <TouchableOpacity 
-        style={styles.deleteButton}
-        onPress={() => deleteNotification(item.id)}
+        style={[
+          styles.notificationCard, 
+          { 
+            backgroundColor: item.isRead ? theme.colors.card : theme.colors.primary + '10',
+            borderColor: theme.colors.border 
+          }
+        ]}
+        onPress={() => !item.isRead && markAsRead(item.id)}
       >
-        <X size={16} color={theme.colors.textSecondary} />
+        <View style={styles.notificationContent}>
+          <View style={styles.notificationHeader}>
+            <View style={styles.iconContainer}>
+              <View style={[styles.iconPlaceholder, { backgroundColor: theme.colors.surface }]}>
+                {getNotificationIcon(item.type)}
+              </View>
+            </View>
+            
+            <View style={styles.textContent}>
+              <View style={styles.titleRow}>
+                <Text style={[styles.title, { color: theme.colors.text }]} numberOfLines={1}>
+                  {item.title}
+                </Text>
+                {!item.isRead && (
+                  <View style={[styles.unreadDot, { backgroundColor: theme.colors.primary }]} />
+                )}
+              </View>
+              
+              <Text style={[styles.message, { color: theme.colors.textSecondary }]} numberOfLines={2}>
+                {item.message}
+              </Text>
+              
+              <Text style={[styles.timestamp, { color: theme.colors.textSecondary }]}>
+                {formatTimestamp(item.createdAt)}
+              </Text>
+            </View>
+          </View>
+
+          {matchingBooking && (
+            <View style={[styles.actionButtons, { marginTop: 8, marginLeft: 52 }]}>
+              <TouchableOpacity 
+                style={[styles.actionButton, { backgroundColor: theme.colors.success }]}
+                onPress={() => handleConfirmDropoff(matchingBooking.id)}
+              >
+                <CheckCircle size={14} color="#FFFFFF" />
+                <Text style={styles.actionButtonText}>Confirm Safe Drop-off</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+
+        <TouchableOpacity 
+          style={styles.deleteButton}
+          onPress={() => deleteNotification(item.id)}
+        >
+          <X size={16} color={theme.colors.textSecondary} />
+        </TouchableOpacity>
       </TouchableOpacity>
-    </TouchableOpacity>
-  );
+    );
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>

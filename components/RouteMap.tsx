@@ -41,9 +41,10 @@ interface RouteMapProps {
   distance: string;
   duration: string;
   driverLocation?: { latitude: number; longitude: number } | null;
+  containerStyle?: any;
 }
 
-export default function RouteMap({ from, to, distance, duration, driverLocation }: RouteMapProps) {
+export default function RouteMap({ from, to, distance, duration, driverLocation, containerStyle }: RouteMapProps) {
   const { theme, isDark } = useTheme();
   const [routeCoords, setRouteCoords] = useState<{ latitude: number; longitude: number }[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -126,7 +127,7 @@ export default function RouteMap({ from, to, distance, duration, driverLocation 
   if (isWeb) {
     // Premium Web Interactive UI fallback representation
     return (
-      <View style={[styles.webContainer, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+      <View style={[styles.webContainer, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }, containerStyle]}>
         {/* Dynamic decorative backdrop replicating map lines */}
         <View style={styles.webMapArt}>
           <View style={[styles.webGridLine, { top: '30%', backgroundColor: theme.colors.border }]} />
@@ -195,7 +196,7 @@ export default function RouteMap({ from, to, distance, duration, driverLocation 
   }
 
   return (
-    <View style={[styles.container, { borderColor: theme.colors.border }]}>
+    <View style={[styles.container, { borderColor: theme.colors.border }, containerStyle]}>
       {isLoading ? (
         <View style={[styles.loadingOverlay, { backgroundColor: theme.colors.surface }]}>
           <ActivityIndicator size="large" color={theme.colors.primary} />

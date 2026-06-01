@@ -25,4 +25,8 @@ export const bookingService = {
   async getMyBookings() {
     return api.get<BookingResponseDto[]>('/bookings/my-bookings');
   },
+
+  async getRideBookings(rideId: string) {
+    return api.get<BookingResponseDto[]>(`/bookings/ride/${rideId}`);
+  },
 };

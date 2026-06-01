@@ -125,6 +125,13 @@ export default function RideDetailsScreen() {
     }
   };
 
+  useEffect(() => {
+    if (ride && isDriver) {
+      console.log('User is driver, redirecting to command center');
+      router.replace(`/ride/command-center?id=${ride.id}`);
+    }
+  }, [ride, isDriver]);
+
   if (isLoading) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: theme.colors.background }]}>
