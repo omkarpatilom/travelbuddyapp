@@ -9,15 +9,18 @@ import {
   Alert,
   Dimensions,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRides, Ride } from '@/contexts/RideContext';
-import { MapPin, Calendar, Clock, Star, Phone, MessageCircle, Users, Car, ArrowLeft, Play, CheckCircle, XCircle, ShieldCheck, Cigarette, Heart, Wind, Music } from 'lucide-react-native';
+import { MapPin, Calendar, Clock, Star, Phone, MessageCircle, Users, Car, ArrowLeft, Play, CheckCircle, XCircle, ShieldCheck, Cigarette, Heart, Wind, Music, Navigation } from 'lucide-react-native';
 import RouteMap from '@/components/RouteMap';
 import * as Location from 'expo-location';
 import { requestLocationPermission, checkLocationPermission } from '@/utils/permissions';
+import { bookingService } from '@/services/booking.service';
+
 
 
 const { width } = Dimensions.get('window');
@@ -25,7 +28,7 @@ const { width } = Dimensions.get('window');
 export default function RideDetailsScreen() {
   const { theme } = useTheme();
   const { user } = useAuth();
-  const { getRideById, startRide, arriveAtPickup, startBoarding, transitionEnRoute, completeDropoff, completeRide, cancelRide, updateTracking, getTracking } = useRides();
+  const { getRideById, startRide, arriveAtPickup, startBoarding, transitionEnRoute, completeDropoff, completeRide, cancelRide, updateTracking, getTracking, confirmBooking, cancelBooking, bookings: passengerBookings } = useRides();
   const router = useRouter();
   const params = useLocalSearchParams();
   const rideId = params.id as string;
@@ -34,8 +37,13 @@ export default function RideDetailsScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [driverLocation, setDriverLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [bookings, setBookings] = useState<any[]>([]);
+  const [isBookingsLoading, setIsBookingsLoading] = useState(false);
 
   const isDriver = user?.id === ride?.driverId;
+  const passengerConfirmedBooking = ride && passengerBookings?.find(
+    (b: any) => b.rideId === ride.id && (b.status === 'confirmed' || b.status === 'completed')
+  );
 
   // Live tracking watcher/polling synchronization hook
   useEffect(() => {
@@ -113,11 +121,31 @@ export default function RideDetailsScreen() {
     }
   }, [rideId]);
 
+  const fetchRideBookings = async (id: string) => {
+    setIsBookingsLoading(true);
+    try {
+      const bookingsList = await bookingService.getRideBookings(id);
+      const normalizedBookings = (bookingsList || []).map((b: any) => ({
+        ...b,
+        id: b.bookingId || b.id,
+        status: (b.status || '').toLowerCase()
+      }));
+      setBookings(normalizedBookings);
+    } catch (e) {
+      console.error('Error fetching ride bookings:', e);
+    } finally {
+      setIsBookingsLoading(false);
+    }
+  };
+
   const fetchRideDetails = async () => {
     setIsLoading(true);
     try {
       const data = await getRideById(rideId);
       setRide(data);
+      if (data && user?.id === data.driverId) {
+        await fetchRideBookings(rideId);
+      }
     } catch (error) {
       console.error('Error fetching ride details:', error);
     } finally {
@@ -125,12 +153,67 @@ export default function RideDetailsScreen() {
     }
   };
 
-  useEffect(() => {
-    if (ride && isDriver) {
-      console.log('User is driver, redirecting to command center');
-      router.replace(`/ride/command-center?id=${ride.id}`);
-    }
-  }, [ride, isDriver]);
+  const handleAcceptBooking = async (bookingId: string, passengerName: string) => {
+    Alert.alert(
+      'Confirm Booking Request',
+      `Are you sure you want to accept and confirm the booking request from ${passengerName}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Confirm',
+          onPress: async () => {
+            setIsActionLoading(true);
+            try {
+              const success = await confirmBooking(bookingId);
+              if (success) {
+                Alert.alert('Success', 'Booking has been successfully confirmed!');
+                await fetchRideBookings(rideId);
+              } else {
+                Alert.alert('Error', 'Failed to confirm booking.');
+              }
+            } catch (e: any) {
+              console.error('Failed to confirm booking:', e);
+              Alert.alert('Error', e.message || 'Failed to confirm booking.');
+            } finally {
+              setIsActionLoading(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleDeclineBooking = async (bookingId: string, passengerName: string) => {
+    Alert.alert(
+      'Decline Booking Request',
+      `Are you sure you want to decline / cancel the booking request from ${passengerName}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Decline / Cancel',
+          style: 'destructive',
+          onPress: async () => {
+            setIsActionLoading(true);
+            try {
+              const success = await cancelBooking(bookingId, 'Declined by driver');
+              if (success) {
+                Alert.alert('Success', 'Booking has been successfully declined / cancelled.');
+                await fetchRideBookings(rideId);
+              } else {
+                Alert.alert('Error', 'Failed to decline booking.');
+              }
+            } catch (e: any) {
+              console.error('Failed to decline booking:', e);
+              Alert.alert('Error', e.message || 'Failed to decline booking.');
+            } finally {
+              setIsActionLoading(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
 
   if (isLoading) {
     return (
@@ -299,6 +382,8 @@ export default function RideDetailsScreen() {
         return theme.colors.textSecondary;
       case 'cancelled':
         return theme.colors.error;
+      case 'pending':
+        return theme.colors.warning;
       default:
         return theme.colors.textSecondary;
     }
@@ -403,7 +488,7 @@ export default function RideDetailsScreen() {
 
           <View style={styles.priceSection}>
             <Text style={[styles.priceLabel, { color: theme.colors.textSecondary }]}>Price per seat</Text>
-            <Text style={[styles.price, { color: theme.colors.primary }]}>${ride.price}</Text>
+            <Text style={[styles.price, { color: theme.colors.primary }]}>₹{ride.price}</Text>
           </View>
         </View>
 
@@ -486,147 +571,208 @@ export default function RideDetailsScreen() {
         </View>
 
         {/* Driver Card */}
-        <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Driver</Text>
-          
-          <View style={styles.driverCard}>
-            <Image source={{ uri: ride.driverAvatar }} style={styles.driverAvatar} />
-            <View style={styles.driverInfo}>
-              <Text style={[styles.driverName, { color: theme.colors.text }]}>{ride.driverName}</Text>
-              <View style={styles.ratingContainer}>
-                <Star size={16} color={theme.colors.warning} fill={theme.colors.warning} />
-                <Text style={[styles.rating, { color: theme.colors.textSecondary }]}>{ride.driverRating}</Text>
-                <Text style={[styles.ratingCount, { color: theme.colors.textSecondary }]}>(25 reviews)</Text>
+        {!isDriver && (
+          <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Driver</Text>
+            
+            <View style={styles.driverCard}>
+              <Image source={{ uri: ride.driverAvatar }} style={styles.driverAvatar} />
+              <View style={styles.driverInfo}>
+                <Text style={[styles.driverName, { color: theme.colors.text }]}>{ride.driverName}</Text>
+                <View style={styles.ratingContainer}>
+                  <Star size={16} color={theme.colors.warning} fill={theme.colors.warning} />
+                  <Text style={[styles.rating, { color: theme.colors.textSecondary }]}>{ride.driverRating}</Text>
+                  <Text style={[styles.ratingCount, { color: theme.colors.textSecondary }]}>(25 reviews)</Text>
+                </View>
+                <Text style={[styles.phoneNumber, { color: theme.colors.textSecondary }]}>+1 (555) ***-**90</Text>
               </View>
-              <Text style={[styles.phoneNumber, { color: theme.colors.textSecondary }]}>+1 (555) ***-**90</Text>
+              {passengerConfirmedBooking && (
+                <View style={styles.contactButtons}>
+                  <TouchableOpacity 
+                    style={[styles.contactButton, { backgroundColor: theme.colors.secondary }]}
+                    onPress={handleCallDriver}
+                  >
+                    <Phone size={18} color="#FFFFFF" />
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={[styles.contactButton, { backgroundColor: theme.colors.primary }]}
+                    onPress={handleChatDriver}
+                  >
+                    <MessageCircle size={18} color="#FFFFFF" />
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
-            {!isDriver && (
-              <View style={styles.contactButtons}>
-                <TouchableOpacity 
-                  style={[styles.contactButton, { backgroundColor: theme.colors.secondary }]}
-                  onPress={handleCallDriver}
-                >
-                  <Phone size={18} color="#FFFFFF" />
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={[styles.contactButton, { backgroundColor: theme.colors.primary }]}
-                  onPress={handleChatDriver}
-                >
-                  <MessageCircle size={18} color="#FFFFFF" />
-                </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Passenger Bookings Section */}
+        {isDriver && (
+          <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Passenger Bookings</Text>
+            
+            {isBookingsLoading ? (
+              <ActivityIndicator size="small" color={theme.colors.primary} />
+            ) : bookings.length === 0 ? (
+              <Text style={[styles.emptyBookingsText, { color: theme.colors.textSecondary }]}>
+                No bookings for this ride yet.
+              </Text>
+            ) : (
+              <View style={styles.bookingsListContainer}>
+                {bookings.map((item) => {
+                  const initials = item.passengerName
+                    ? item.passengerName.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)
+                    : 'P';
+                  return (
+                    <View key={item.id} style={[styles.bookingItemCard, { borderColor: theme.colors.border, backgroundColor: theme.colors.surface }]}>
+                      {/* Booking Item Header */}
+                      <View style={styles.bookingItemHeader}>
+                        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) + '20' }]}>
+                          <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>
+                            {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
+                          </Text>
+                        </View>
+                        <Text style={[styles.bookingIdText, { color: theme.colors.textSecondary }]}>
+                          Booking #{item.id.slice(-6).toUpperCase()}
+                        </Text>
+                      </View>
+
+                      {/* Passenger Details Info */}
+                      <View style={styles.passengerDetailRow}>
+                        <View style={[styles.avatarCircle, { backgroundColor: theme.colors.primary + '15' }]}>
+                          <Text style={[styles.avatarText, { color: theme.colors.primary }]}>{initials}</Text>
+                        </View>
+                        
+                        <View style={styles.passengerInfoBlock}>
+                          <Text style={[styles.passengerName, { color: theme.colors.text }]}>
+                            {item.passengerName}
+                          </Text>
+                          <Text style={[styles.passengerSeats, { color: theme.colors.textSecondary }]}>
+                            {item.seats} Seat{item.seats > 1 ? 's' : ''} requested
+                          </Text>
+                          <Text style={[styles.bookingPayoutText, { color: theme.colors.textSecondary }]}>
+                            Payout: <Text style={{ fontWeight: 'bold', color: theme.colors.success }}>₹{item.totalPrice}</Text>
+                          </Text>
+                        </View>
+
+                        {/* Quick Contact shortcuts */}
+                        {(item.status === 'confirmed' || item.status === 'completed') && (
+                          <View style={styles.quickContactContainer}>
+                            <TouchableOpacity 
+                              style={[styles.contactIconBtn, { borderColor: theme.colors.border }]}
+                              onPress={() => Linking.openURL(`tel:${item.passengerPhone}`).catch(() => Alert.alert('Error', 'Cannot dial number.'))}
+                            >
+                              <Phone size={14} color={theme.colors.text} />
+                            </TouchableOpacity>
+                            <TouchableOpacity 
+                              style={[styles.contactIconBtn, { borderColor: theme.colors.border }]}
+                              onPress={() => Linking.openURL(`sms:${item.passengerPhone}`).catch(() => Alert.alert('Error', 'Cannot send SMS.'))}
+                            >
+                              <MessageCircle size={14} color={theme.colors.text} />
+                            </TouchableOpacity>
+                          </View>
+                        )}
+                      </View>
+
+                      {/* Requested Locations */}
+                      <View style={[styles.bookingLocationsSection, { borderTopColor: theme.colors.border }]}>
+                        <View style={styles.bookingLocationRow}>
+                          <MapPin size={14} color={theme.colors.secondary} style={{ marginRight: 6 }} />
+                          <Text style={[styles.bookingLocationText, { color: theme.colors.textSecondary }]} numberOfLines={1}>
+                            From: <Text style={{ color: theme.colors.text, fontWeight: '500' }}>{ride.from.address}</Text>
+                          </Text>
+                        </View>
+                        <View style={[styles.bookingLocationRow, { marginTop: 4 }]}>
+                          <MapPin size={14} color={theme.colors.error} style={{ marginRight: 6 }} />
+                          <Text style={[styles.bookingLocationText, { color: theme.colors.textSecondary }]} numberOfLines={1}>
+                            To: <Text style={{ color: theme.colors.text, fontWeight: '500' }}>{ride.to.address}</Text>
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* Actions for each booking */}
+                      {item.status === 'pending' && (
+                        <View style={styles.bookingCardActions}>
+                          <TouchableOpacity 
+                            style={[styles.actionBtnSuccess, { backgroundColor: theme.colors.success }]}
+                            onPress={() => handleAcceptBooking(item.id, item.passengerName)}
+                          >
+                            <CheckCircle size={16} color="#FFFFFF" />
+                            <Text style={styles.actionBtnText}>Accept Request</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity 
+                            style={[styles.actionBtnDanger, { backgroundColor: theme.colors.error }]}
+                            onPress={() => handleDeclineBooking(item.id, item.passengerName)}
+                          >
+                            <XCircle size={16} color="#FFFFFF" />
+                            <Text style={styles.actionBtnText}>Decline</Text>
+                          </TouchableOpacity>
+                        </View>
+                      )}
+
+                      {item.status === 'confirmed' && (
+                        <View style={styles.bookingCardActions}>
+                          <TouchableOpacity 
+                            style={[styles.actionBtnOutline, { borderColor: theme.colors.error }]}
+                            onPress={() => handleDeclineBooking(item.id, item.passengerName)}
+                          >
+                            <XCircle size={16} color={theme.colors.error} />
+                            <Text style={[styles.actionBtnOutlineText, { color: theme.colors.error }]}>Cancel Booking</Text>
+                          </TouchableOpacity>
+                        </View>
+                      )}
+                    </View>
+                  );
+                })}
               </View>
             )}
           </View>
-        </View>
+        )}
 
         {/* Action Buttons */}
         <View style={styles.actionButtons}>
           {isDriver ? (
-            <View style={[styles.controlCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
-              <View style={styles.controlHeader}>
-                <ShieldCheck size={20} color={theme.colors.primary} />
-                <Text style={[styles.controlCardTitle, { color: theme.colors.text }]}>Driver Ride Control Panel</Text>
-              </View>
-              
-              <Text style={[styles.controlStatusText, { color: theme.colors.textSecondary }]}>
-                Current status: <Text style={{ fontWeight: 'bold', color: getStatusColor(ride.status) }}>{ride.status.toUpperCase()}</Text>
-              </Text>
-
-              {/* Status progression indicator */}
-              <View style={styles.stepsIndicatorContainer}>
-                <View style={[styles.stepDot, { backgroundColor: ['driverarrived', 'boarding', 'started', 'enroute', 'dropcompleted', 'completed'].includes(ride.status) ? theme.colors.success : theme.colors.border }]} />
-                <View style={[styles.stepBar, { backgroundColor: ['boarding', 'started', 'enroute', 'dropcompleted', 'completed'].includes(ride.status) ? theme.colors.success : theme.colors.border }]} />
-                <View style={[styles.stepDot, { backgroundColor: ['boarding', 'started', 'enroute', 'dropcompleted', 'completed'].includes(ride.status) ? theme.colors.success : theme.colors.border }]} />
-                <View style={[styles.stepBar, { backgroundColor: ['started', 'enroute', 'dropcompleted', 'completed'].includes(ride.status) ? theme.colors.success : theme.colors.border }]} />
-                <View style={[styles.stepDot, { backgroundColor: ['started', 'enroute', 'dropcompleted', 'completed'].includes(ride.status) ? theme.colors.success : theme.colors.border }]} />
-                <View style={[styles.stepBar, { backgroundColor: ['enroute', 'dropcompleted', 'completed'].includes(ride.status) ? theme.colors.success : theme.colors.border }]} />
-                <View style={[styles.stepDot, { backgroundColor: ['enroute', 'dropcompleted', 'completed'].includes(ride.status) ? theme.colors.success : theme.colors.border }]} />
-              </View>
-              <View style={styles.stepsLabelContainer}>
-                <Text style={[styles.stepLabel, { color: theme.colors.text }]}>Arrived</Text>
-                <Text style={[styles.stepLabel, { color: theme.colors.text }]}>Boarding</Text>
-                <Text style={[styles.stepLabel, { color: theme.colors.text }]}>En Route</Text>
-                <Text style={[styles.stepLabel, { color: theme.colors.text }]}>Done</Text>
-              </View>
-
-              <View style={{ gap: 10, marginTop: 10 }}>
-                {['active', 'scheduled', 'published', 'confirmed', 'seatsbooked'].includes(ride.status) && (
-                  <TouchableOpacity 
-                    style={[styles.bookButton, { backgroundColor: theme.colors.secondary, flexDirection: 'row' }]}
-                    onPress={handleArriveAtPickup}
-                    disabled={isActionLoading}
-                  >
-                    <MapPin size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
-                    <Text style={styles.bookButtonText}>I Have Arrived at Pickup</Text>
-                  </TouchableOpacity>
-                )}
-
-                {ride.status === 'driverarrived' && (
+            <View style={{ gap: 12 }}>
+              {['started', 'enroute', 'driverarrived', 'boarding', 'dropcompleted'].includes(ride.status) ? (
+                <TouchableOpacity 
+                  style={[styles.bookButton, { backgroundColor: theme.colors.primary, flexDirection: 'row' }]}
+                  onPress={() => router.push(`/ride/command-center?id=${ride.id}`)}
+                >
+                  <Navigation size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+                  <Text style={styles.bookButtonText}>Resume Ride in Command Center</Text>
+                </TouchableOpacity>
+              ) : ['active', 'scheduled', 'published', 'confirmed', 'seatsbooked'].includes(ride.status) ? (
+                <View style={{ gap: 12 }}>
                   <TouchableOpacity 
                     style={[styles.bookButton, { backgroundColor: theme.colors.primary, flexDirection: 'row' }]}
-                    onPress={handleStartBoarding}
-                    disabled={isActionLoading}
-                  >
-                    <Users size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
-                    <Text style={styles.bookButtonText}>Begin Passenger Boarding</Text>
-                  </TouchableOpacity>
-                )}
-
-                {ride.status === 'boarding' && (
-                  <TouchableOpacity 
-                    style={[styles.bookButton, { backgroundColor: theme.colors.success, flexDirection: 'row' }]}
-                    onPress={handleStartRide}
-                    disabled={isActionLoading}
+                    onPress={() => router.push(`/ride/command-center?id=${ride.id}`)}
                   >
                     <Play size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
-                    <Text style={styles.bookButtonText}>Start the Ride</Text>
+                    <Text style={styles.bookButtonText}>Open Journey Command Center</Text>
                   </TouchableOpacity>
-                )}
 
-                {ride.status === 'started' && (
                   <TouchableOpacity 
-                    style={[styles.bookButton, { backgroundColor: theme.colors.secondary, flexDirection: 'row' }]}
-                    onPress={handleTransitionEnRoute}
-                    disabled={isActionLoading}
-                  >
-                    <Car size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
-                    <Text style={styles.bookButtonText}>Transition to En Route</Text>
-                  </TouchableOpacity>
-                )}
-
-                {ride.status === 'enroute' && (
-                  <TouchableOpacity 
-                    style={[styles.bookButton, { backgroundColor: theme.colors.primary, flexDirection: 'row' }]}
-                    onPress={handleCompleteDropoff}
-                    disabled={isActionLoading}
-                  >
-                    <CheckCircle size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
-                    <Text style={styles.bookButtonText}>Mark Drop-offs Complete</Text>
-                  </TouchableOpacity>
-                )}
-
-                {ride.status === 'dropcompleted' && (
-                  <TouchableOpacity 
-                    style={[styles.bookButton, { backgroundColor: theme.colors.success, flexDirection: 'row' }]}
-                    onPress={handleCompleteRide}
-                    disabled={isActionLoading}
-                  >
-                    <CheckCircle size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
-                    <Text style={styles.bookButtonText}>Finalize & Complete Ride</Text>
-                  </TouchableOpacity>
-                )}
-
-                {ride.status !== 'completed' && ride.status !== 'cancelled' && (
-                  <TouchableOpacity 
-                    style={[styles.bookButton, { backgroundColor: theme.colors.error, marginTop: 4, flexDirection: 'row' }]}
+                    style={[styles.bookButton, { backgroundColor: theme.colors.error, flexDirection: 'row' }]}
                     onPress={handleCancelRide}
                     disabled={isActionLoading}
                   >
                     <XCircle size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
                     <Text style={styles.bookButtonText}>Cancel Ride</Text>
                   </TouchableOpacity>
-                )}
-              </View>
+                </View>
+              ) : (
+                <View style={[styles.passengerBanner, { backgroundColor: theme.colors.textSecondary + '15', borderColor: theme.colors.textSecondary }]}>
+                  <CheckCircle size={24} color={theme.colors.textSecondary} style={{ marginRight: 8 }} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.bannerTitle, { color: theme.colors.textSecondary }]}>
+                      Ride {ride.status.charAt(0).toUpperCase() + ride.status.slice(1)}
+                    </Text>
+                    <Text style={[styles.bannerText, { color: theme.colors.text }]}>
+                      This offered ride is {ride.status}.
+                    </Text>
+                  </View>
+                </View>
+              )}
             </View>
           ) : (
             <View style={{ gap: 12 }}>
@@ -1150,5 +1296,130 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: 'bold',
+  },
+  emptyBookingsText: {
+    fontSize: 14,
+    textAlign: 'center',
+    paddingVertical: 20,
+  },
+  bookingsListContainer: {
+    gap: 12,
+  },
+  bookingItemCard: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 14,
+    gap: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  bookingItemHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  bookingIdText: {
+    fontSize: 12,
+  },
+  passengerDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  avatarCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  passengerInfoBlock: {
+    flex: 1,
+    gap: 2,
+  },
+  passengerName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  passengerSeats: {
+    fontSize: 13,
+  },
+  bookingPayoutText: {
+    fontSize: 13,
+  },
+  quickContactContainer: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  contactIconBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  bookingCardActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 4,
+  },
+  actionBtnSuccess: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 8,
+    gap: 6,
+  },
+  actionBtnDanger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    gap: 6,
+  },
+  actionBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  actionBtnOutline: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 6,
+  },
+  actionBtnOutlineText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  bookingLocationsSection: {
+    borderTopWidth: 1,
+    paddingTop: 10,
+    marginTop: 2,
+    gap: 6,
+  },
+  bookingLocationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  bookingLocationText: {
+    fontSize: 12,
+    flex: 1,
   },
 });

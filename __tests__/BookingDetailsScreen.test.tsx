@@ -3,10 +3,12 @@ import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
 import BookingDetailsScreen from '../app/booking/details';
 import { useTheme } from '../contexts/ThemeContext';
 import { useRides } from '../contexts/RideContext';
+import { useAuth } from '../contexts/AuthContext';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 
 jest.mock('../contexts/ThemeContext');
 jest.mock('../contexts/RideContext');
+jest.mock('../contexts/AuthContext');
 jest.mock('expo-router', () => ({
   useRouter: jest.fn(),
   useLocalSearchParams: jest.fn(),
@@ -93,6 +95,7 @@ describe('BookingDetailsScreen', () => {
     errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     jest.spyOn(console, 'warn').mockImplementation(() => {});
     (useTheme as jest.Mock).mockReturnValue({ theme: mockTheme });
+    (useAuth as jest.Mock).mockReturnValue({ user: { id: 'u1' } });
     (useLocalSearchParams as jest.Mock).mockReturnValue({ id: 'b1' });
     (useRouter as jest.Mock).mockReturnValue({ back: jest.fn() });
     
@@ -120,12 +123,12 @@ describe('BookingDetailsScreen', () => {
     const { getByText } = render(<BookingDetailsScreen />);
     
     await waitFor(() => {
-      expect(getByText('Booking #b1')).toBeTruthy();
+      expect(getByText('Booking #B1')).toBeTruthy();
       expect(getByText('Origin City')).toBeTruthy();
       expect(getByText('Destination City')).toBeTruthy();
       expect(getByText('John Doe')).toBeTruthy();
       expect(getByText('Toyota Innova')).toBeTruthy();
-      expect(getByText('$40')).toBeTruthy(); // Total price
+      expect(getByText('₹40')).toBeTruthy(); // Total price
       expect(getByText('2 seats')).toBeTruthy();
     });
   });
@@ -158,7 +161,7 @@ describe('BookingDetailsScreen', () => {
     
     // Now verify booking details are loaded
     await waitFor(() => {
-      expect(getByText('Booking #b1')).toBeTruthy();
+      expect(getByText('Booking #B1')).toBeTruthy();
     });
   });
 });

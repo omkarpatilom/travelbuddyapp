@@ -9,6 +9,7 @@ import {
   Alert,
   Linking,
   ActivityIndicator,
+  Modal,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -37,6 +38,7 @@ export default function BookingDetailsScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [qrLoadError, setQrLoadError] = useState(false);
+  const [isQrModalOpen, setIsQrModalOpen] = useState(false);
   
   const { theme } = useTheme();
   const { user } = useAuth();
@@ -234,7 +236,7 @@ export default function BookingDetailsScreen() {
                 </Text>
               </View>
               <Text style={[styles.bookingId, { color: theme.colors.textSecondary }]}>
-                Booking #{booking.id}
+                Booking #{booking.id.slice(-6).toUpperCase()}
               </Text>
             </View>
             
@@ -345,20 +347,22 @@ export default function BookingDetailsScreen() {
                   </Text>
                 </View>
               </View>
-              <View style={styles.contactButtons}>
-                <TouchableOpacity 
-                  style={[styles.contactButton, { backgroundColor: theme.colors.secondary }]}
-                  onPress={handleCallDriver}
-                >
-                  <Phone size={18} color="#FFFFFF" />
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={[styles.contactButton, { backgroundColor: theme.colors.primary }]}
-                  onPress={handleChatDriver}
-                >
-                  <MessageCircle size={18} color="#FFFFFF" />
-                </TouchableOpacity>
-              </View>
+              {(booking.status === 'confirmed' || booking.status === 'completed') && (
+                <View style={styles.contactButtons}>
+                  <TouchableOpacity 
+                    style={[styles.contactButton, { backgroundColor: theme.colors.secondary }]}
+                    onPress={handleCallDriver}
+                  >
+                    <Phone size={18} color="#FFFFFF" />
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={[styles.contactButton, { backgroundColor: theme.colors.primary }]}
+                    onPress={handleChatDriver}
+                  >
+                    <MessageCircle size={18} color="#FFFFFF" />
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
           </View>
 
@@ -372,7 +376,7 @@ export default function BookingDetailsScreen() {
                   Price per seat
                 </Text>
                 <Text style={[styles.paymentValue, { color: theme.colors.text }]}>
-                  ${booking.ride?.price || 0.0}
+                  ₹{booking.ride?.price || 0.0}
                 </Text>
               </View>
 
@@ -390,7 +394,7 @@ export default function BookingDetailsScreen() {
                   Total Amount
                 </Text>
                 <Text style={[styles.totalValue, { color: theme.colors.primary }]}>
-                  ${booking.totalPrice}
+                  ₹{booking.totalPrice}
                 </Text>
               </View>
             </View>
@@ -417,7 +421,11 @@ export default function BookingDetailsScreen() {
 
               <View style={styles.passBody}>
                  {/* Visual QR Code Mockup & Real Online Code */}
-                <View style={[styles.qrContainer, { borderColor: theme.colors.border, backgroundColor: '#FFFFFF' }]}>
+                <TouchableOpacity 
+                  activeOpacity={0.8}
+                  onPress={() => setIsQrModalOpen(true)}
+                  style={[styles.qrContainer, { borderColor: theme.colors.border, backgroundColor: '#FFFFFF' }]}
+                >
                   {/* concentric corners */}
                   <View style={styles.qrCornerTopLeft} />
                   <View style={styles.qrCornerTopRight} />
@@ -454,7 +462,7 @@ export default function BookingDetailsScreen() {
                       </View>
                     </View>
                   )}
-                </View>
+                </TouchableOpacity>
 
                 {/* OTP Passcode */}
                 <View style={styles.otpPassBlock}>
@@ -540,6 +548,42 @@ export default function BookingDetailsScreen() {
           driverName={booking.ride.driverName || 'Driver'}
         />
       )}
+
+      <Modal
+        visible={isQrModalOpen}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setIsQrModalOpen(false)}
+      >
+        <View style={styles.fullScreenModalBg}>
+          <TouchableOpacity 
+            style={styles.fullScreenModalCloseBtn}
+            onPress={() => setIsQrModalOpen(false)}
+          >
+            <X size={28} color="#FFFFFF" />
+          </TouchableOpacity>
+          
+          <View style={styles.fullScreenQrCard}>
+            <Text style={styles.fullScreenQrTitle}>SCAN TO BOARD</Text>
+            
+            <View style={styles.fullScreenQrWrapper}>
+              {!qrLoadError ? (
+                <Image
+                  source={{ uri: `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${booking.id}` }}
+                  style={styles.fullScreenQrImage}
+                  resizeMode="contain"
+                />
+              ) : (
+                <View style={styles.fullScreenQrFallback}>
+                  <Text style={{ color: theme.colors.textSecondary }}>Concentric pattern offline mockup</Text>
+                </View>
+              )}
+            </View>
+            
+            <Text style={styles.fullScreenQrSubtitle}>Booking ID: {booking.id.slice(-6).toUpperCase()}</Text>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -957,5 +1001,65 @@ const styles = StyleSheet.create({
   realQrImage: {
     width: '100%',
     height: '100%',
+  },
+  fullScreenModalBg: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullScreenModalCloseBtn: {
+    position: 'absolute',
+    top: 48,
+    right: 24,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  fullScreenQrCard: {
+    width: 340,
+    padding: 24,
+    borderRadius: 24,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    gap: 16,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  fullScreenQrTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#09090B',
+    letterSpacing: 1.5,
+  },
+  fullScreenQrWrapper: {
+    width: 260,
+    height: 260,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullScreenQrImage: {
+    width: '100%',
+    height: '100%',
+  },
+  fullScreenQrFallback: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#F4F4F5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullScreenQrSubtitle: {
+    fontSize: 11,
+    color: '#71717A',
+    fontWeight: '500',
   },
 });

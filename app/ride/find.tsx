@@ -28,7 +28,7 @@ import {
   Filter, 
   ArrowLeft, 
   X, 
-  DollarSign, 
+  IndianRupee, 
   ChevronRight,
   ArrowUpDown,
   Circle,
@@ -322,7 +322,7 @@ export default function FindRideScreen() {
           <Text style={[styles.routeText, { color: theme.colors.text, marginTop: 14 }]} numberOfLines={1}>{item.to.address}</Text>
         </View>
         <View style={styles.priceTag}>
-          <Text style={[styles.priceValue, { color: theme.colors.primary }]}>${item.price}</Text>
+          <Text style={[styles.priceValue, { color: theme.colors.primary }]}>₹{item.price}</Text>
         </View>
       </View>
 
@@ -507,7 +507,7 @@ export default function FindRideScreen() {
               <View style={styles.filterGroup}>
                 <Text style={[styles.filterLabel, { color: theme.colors.textSecondary }]}>Price limit per seat</Text>
                 <View style={[styles.priceInputWrapper, { backgroundColor: theme.colors.surface }]}>
-                  <DollarSign size={20} color={theme.colors.primary} />
+                  <IndianRupee size={20} color={theme.colors.primary} />
                   <TextInput
                     style={[styles.priceField, { color: theme.colors.text }]}
                     keyboardType="numeric"

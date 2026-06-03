@@ -118,7 +118,7 @@ describe('BookingsScreen', () => {
     expect(getByText('John Doe')).toBeTruthy();
     expect(getByText('Origin City')).toBeTruthy();
     expect(getByText('Destination City')).toBeTruthy();
-    expect(getByText('Booking #b1')).toBeTruthy();
+    expect(getByText('Booking #B1')).toBeTruthy();
     
     // Past booking John Doe should not be rendered on the upcoming tab
     expect(queryByText('Jane Smith')).toBeNull();
@@ -133,7 +133,7 @@ describe('BookingsScreen', () => {
     expect(getByText('Jane Smith')).toBeTruthy();
     expect(getByText('Downtown')).toBeTruthy();
     expect(getByText('Airport')).toBeTruthy();
-    expect(getByText('Booking #b2')).toBeTruthy();
+    expect(getByText('Booking #B2')).toBeTruthy();
     
     // Upcoming booking John Doe should not be visible on past tab
     expect(queryByText('John Doe')).toBeNull();

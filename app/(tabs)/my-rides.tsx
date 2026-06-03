@@ -140,7 +140,7 @@ export default function MyRidesScreen() {
           </Text>
         </View>
         <Text style={[styles.price, { color: theme.colors.primary }]}>
-          ${item.price}
+          ₹{item.price}
         </Text>
       </View>
     </TouchableOpacity>

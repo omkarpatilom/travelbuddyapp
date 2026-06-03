@@ -231,9 +231,9 @@ export default function ProfileScreen() {
             </Text>
           </View>
           <View style={[styles.statDivider, { backgroundColor: theme.colors.border }]} />
-          <View style={styles.statColumn} accessible={true} accessibilityLabel="Money Saved $0">
+          <View style={styles.statColumn} accessible={true} accessibilityLabel="Money Saved ₹0">
             <Text style={[styles.statNumber, { color: theme.colors.accent }]}>
-              $0
+              ₹0
             </Text>
             <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>
               Money Saved

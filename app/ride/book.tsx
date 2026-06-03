@@ -13,7 +13,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useRides, Ride } from '@/contexts/RideContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { User, Phone, Users, DollarSign, ArrowLeft, CreditCard } from 'lucide-react-native';
+import { User, Phone, Users, IndianRupee, ArrowLeft, CreditCard } from 'lucide-react-native';
 import { mockRides } from '@/data/mockData';
 import { useEffect } from 'react';
 
@@ -91,7 +91,7 @@ export default function BookRideScreen() {
       if (success) {
         Alert.alert(
           'Booking Confirmed!',
-          `Your ride has been booked successfully. Total cost: $${totalPrice}`,
+          `Your ride has been booked successfully. Total cost: ₹${totalPrice}`,
           [{ text: 'OK', onPress: () => router.push('/(tabs)/bookings') }]
         );
       } else {
@@ -203,7 +203,7 @@ export default function BookRideScreen() {
               Price per seat
             </Text>
             <Text style={[styles.paymentValue, { color: theme.colors.text }]}>
-              ${ride.price}
+              ₹{ride.price}
             </Text>
           </View>
 
@@ -221,7 +221,7 @@ export default function BookRideScreen() {
               Total Amount
             </Text>
             <Text style={[styles.totalValue, { color: theme.colors.primary }]}>
-              ${totalPrice}
+              ₹{totalPrice}
             </Text>
           </View>
         </View>
@@ -248,8 +248,8 @@ export default function BookRideScreen() {
             <ActivityIndicator color="#FFFFFF" />
           ) : (
             <>
-              <DollarSign size={20} color="#FFFFFF" />
-              <Text style={styles.bookButtonText}>Book Ride - ${totalPrice}</Text>
+              <IndianRupee size={20} color="#FFFFFF" />
+              <Text style={styles.bookButtonText}>Book Ride - ₹{totalPrice}</Text>
             </>
           )}
         </TouchableOpacity>

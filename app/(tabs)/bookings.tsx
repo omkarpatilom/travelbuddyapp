@@ -109,7 +109,7 @@ export default function BookingsScreen() {
         </View>
 
         <Text style={[styles.bookingId, { color: theme.colors.textSecondary }]}>
-          Booking #{item.id}
+          Booking #{item.id.slice(-6).toUpperCase()}
         </Text>
       </View>
 
@@ -165,7 +165,7 @@ export default function BookingsScreen() {
               {item.seats} seat{item.seats > 1 ? 's' : ''}
             </Text>
             <Text style={[styles.totalPrice, { color: theme.colors.primary }]}>
-              ${item.totalPrice}
+              ₹{item.totalPrice}
             </Text>
           </View>
         </View>

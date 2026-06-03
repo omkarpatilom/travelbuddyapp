@@ -468,7 +468,7 @@ export default function HomeScreen() {
                     </View>
                     <View style={[styles.priceBadge, { backgroundColor: theme.colors.primary + '15' }]}>
                       <Text style={[styles.priceBadgeText, { color: theme.colors.primary }]}>
-                        ${ride.price}
+                        ₹{ride.price}
                       </Text>
                     </View>
                   </View>
@@ -535,7 +535,7 @@ export default function HomeScreen() {
                 <Coins size={18} color={theme.colors.success} />
               </View>
               <Text style={[styles.statNumber, { color: theme.colors.text }]}>
-                $245
+                ₹245
               </Text>
               <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Saved</Text>
             </View>

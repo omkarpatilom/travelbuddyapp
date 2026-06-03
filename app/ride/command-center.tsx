@@ -105,6 +105,7 @@ export default function JourneyCommandCenterScreen() {
   const [incidentType, setIncidentType] = useState('Vehicle Issue');
   const [incidentDesc, setIncidentDesc] = useState('');
   const [auditLogs, setAuditLogs] = useState<string[]>([]);
+  const [boardedPassengerIds, setBoardedPassengerIds] = useState<string[]>([]);
 
   // Watch position reference
   const locationSubscriptionRef = useRef<any>(null);
@@ -373,8 +374,15 @@ export default function JourneyCommandCenterScreen() {
 
       let success = false;
       if (stops[currentStopIndex]?.type === 'pickup') {
-        success = await bookingService.confirmBooking(selectedPassenger.id);
-        if (success) addLog(`✓ Passenger boarded: ${selectedPassenger.passengerName}`);
+        if (selectedPassenger.status === 'confirmed') {
+          success = true;
+        } else {
+          success = await bookingService.confirmBooking(selectedPassenger.id);
+        }
+        if (success) {
+          setBoardedPassengerIds((prev) => [...prev, selectedPassenger.id]);
+          addLog(`✓ Passenger boarded: ${selectedPassenger.passengerName}`);
+        }
       } else {
         success = await bookingService.completeBooking(selectedPassenger.id);
         if (success) addLog(`✓ Passenger dropped: ${selectedPassenger.passengerName}`);
@@ -501,9 +509,15 @@ export default function JourneyCommandCenterScreen() {
           text: 'Quick Check-in (ID Bypass)',
           onPress: async () => {
             setIsActionLoading(true);
-            const ok = await bookingService.confirmBooking(booking.id);
+            let ok = false;
+            if (booking.status === 'confirmed') {
+              ok = true;
+            } else {
+              ok = await bookingService.confirmBooking(booking.id);
+            }
             setIsActionLoading(false);
             if (ok) {
+              setBoardedPassengerIds((prev) => [...prev, booking.id]);
               addLog(`✓ Instant manual boarded: ${booking.passengerName}`);
               await loadData();
             }
@@ -554,7 +568,7 @@ export default function JourneyCommandCenterScreen() {
   // Boarding Lock logic:
   // If active stop is pickup and status is boarding, check if there are unverified passengers.
   const pendingBoardingsCount = activeStop?.type === 'pickup' && ride?.status === 'boarding'
-    ? activeStop.bookings.filter(b => b.status === 'confirmed').length
+    ? activeStop.bookings.filter(b => b.status === 'confirmed' && !boardedPassengerIds.includes(b.id)).length
     : 0;
 
   // Drop-off Check logic:
@@ -853,7 +867,7 @@ export default function JourneyCommandCenterScreen() {
                     <View style={styles.stopPassengersContainer}>
                       {stop.bookings.map((booking) => {
                         const isPending = booking.status === 'pending';
-                        const boarded = booking.status === 'confirmed' && ride.status === 'started' || booking.status === 'completed';
+                        const boarded = (booking.status === 'confirmed' && (ride.status === 'started' || boardedPassengerIds.includes(booking.id))) || booking.status === 'completed';
                         const dropped = booking.status === 'completed';
                         const initials = booking.passengerName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
 
@@ -900,20 +914,22 @@ export default function JourneyCommandCenterScreen() {
                             </View>
 
                             {/* Actions */}
-                            <View style={styles.quickContactRow}>
-                              <TouchableOpacity 
-                                style={[styles.contactIconBtn, { borderColor: theme.colors.border, backgroundColor: theme.colors.card }]}
-                                onPress={() => Linking.openURL(`tel:${booking.passengerPhone}`).catch(() => Alert.alert('Error', 'Cannot dial number.'))}
-                              >
-                                <Phone size={12} color={theme.colors.textSecondary} />
-                              </TouchableOpacity>
-                              <TouchableOpacity 
-                                style={[styles.contactIconBtn, { borderColor: theme.colors.border, backgroundColor: theme.colors.card }]}
-                                onPress={() => Linking.openURL(`sms:${booking.passengerPhone}`).catch(() => Alert.alert('Error', 'Cannot send SMS.'))}
-                              >
-                                <MessageCircle size={12} color={theme.colors.textSecondary} />
-                              </TouchableOpacity>
-                            </View>
+                             {(booking.status === 'confirmed' || booking.status === 'completed') && (
+                               <View style={styles.quickContactRow}>
+                                 <TouchableOpacity 
+                                   style={[styles.contactIconBtn, { borderColor: theme.colors.border, backgroundColor: theme.colors.card }]}
+                                   onPress={() => Linking.openURL(`tel:${booking.passengerPhone}`).catch(() => Alert.alert('Error', 'Cannot dial number.'))}
+                                 >
+                                   <Phone size={12} color={theme.colors.textSecondary} />
+                                 </TouchableOpacity>
+                                 <TouchableOpacity 
+                                   style={[styles.contactIconBtn, { borderColor: theme.colors.border, backgroundColor: theme.colors.card }]}
+                                   onPress={() => Linking.openURL(`sms:${booking.passengerPhone}`).catch(() => Alert.alert('Error', 'Cannot send SMS.'))}
+                                 >
+                                   <MessageCircle size={12} color={theme.colors.textSecondary} />
+                                 </TouchableOpacity>
+                               </View>
+                             )}
 
                             {/* Action Button */}
                             <TouchableOpacity 
@@ -1000,7 +1016,7 @@ export default function JourneyCommandCenterScreen() {
           <View style={styles.footerPayoutSection}>
             <TrendingUp size={14} color="#10B981" style={{ marginRight: 6 }} />
             <Text style={[styles.footerPayoutText, { color: '#10B981' }]}>
-              Est. Ride Earnings: ${(bookings.filter(b => b.status !== 'cancelled').reduce((sum, b) => sum + b.totalPrice, 0)).toFixed(2)}
+              Est. Ride Earnings: ₹{(bookings.filter(b => b.status !== 'cancelled').reduce((sum, b) => sum + b.totalPrice, 0)).toFixed(2)}
             </Text>
           </View>
         </View>

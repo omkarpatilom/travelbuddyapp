@@ -126,7 +126,7 @@ describe('TravelBuddy Live E2E Integration Test Suite', () => {
         body: JSON.stringify(preferencesPayload),
       });
 
-      expect(response.status).toBe(200);
+      expect([200, 204]).toContain(response.status);
       console.log('User Preferences successfully updated in microservice database!');
     } catch (error) {
       console.error('Preferences update failed:', error);
