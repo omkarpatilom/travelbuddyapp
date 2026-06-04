@@ -20,7 +20,9 @@ import {
   Shield, 
   Plus,
   X,
-  Search
+  Search,
+  Briefcase,
+  Baby,
 } from 'lucide-react-native';
 
 export interface VehicleFeature {
@@ -39,16 +41,18 @@ interface VehicleFeatureTagsProps {
 
 export const AVAILABLE_FEATURES: VehicleFeature[] = [
   // Comfort
-  { id: 'ac', name: 'Air Conditioning', icon: <Wind size={16} />, category: 'comfort', popular: true },
+  { id: 'ac', name: 'AC (Air Conditioning)', icon: <Wind size={16} />, category: 'comfort', popular: true },
   { id: 'heating', name: 'Heating', icon: <Zap size={16} />, category: 'comfort', popular: false },
   { id: 'leather_seats', name: 'Leather Seats', icon: <Coffee size={16} />, category: 'comfort', popular: false },
   { id: 'sunroof', name: 'Sunroof', icon: <Shield size={16} />, category: 'comfort', popular: false },
   
   // Entertainment
-  { id: 'music_system', name: 'Music System', icon: <Music size={16} />, category: 'entertainment', popular: true },
+  { id: 'music', name: 'Music', icon: <Music size={16} />, category: 'entertainment', popular: true },
+  { id: 'music_system', name: 'Music System', icon: <Music size={16} />, category: 'entertainment', popular: false },
   { id: 'bluetooth', name: 'Bluetooth', icon: <Smartphone size={16} />, category: 'entertainment', popular: true },
-  { id: 'wifi', name: 'WiFi Hotspot', icon: <Wifi size={16} />, category: 'entertainment', popular: false },
-  { id: 'usb_charging', name: 'USB Charging', icon: <Zap size={16} />, category: 'entertainment', popular: true },
+  { id: 'wifi', name: 'WiFi', icon: <Wifi size={16} />, category: 'entertainment', popular: true },
+  { id: 'charging_port', name: 'Charging Port', icon: <Zap size={16} />, category: 'entertainment', popular: true },
+  { id: 'usb_charging', name: 'USB Charging', icon: <Zap size={16} />, category: 'entertainment', popular: false },
   
   // Safety
   { id: 'dashcam', name: 'Dash Camera', icon: <Shield size={16} />, category: 'safety', popular: false },
@@ -57,7 +61,9 @@ export const AVAILABLE_FEATURES: VehicleFeature[] = [
   
   // Convenience
   { id: 'pet_friendly', name: 'Pet Friendly', icon: <Heart size={16} />, category: 'convenience', popular: true },
-  { id: 'phone_charger', name: 'Phone Charger', icon: <Smartphone size={16} />, category: 'convenience', popular: true },
+  { id: 'luggage_space', name: 'Luggage Space', icon: <Briefcase size={16} />, category: 'convenience', popular: true },
+  { id: 'child_seat', name: 'Child Seat', icon: <Baby size={16} />, category: 'convenience', popular: true },
+  { id: 'phone_charger', name: 'Phone Charger', icon: <Smartphone size={16} />, category: 'convenience', popular: false },
   { id: 'water_bottles', name: 'Water Bottles', icon: <Coffee size={16} />, category: 'convenience', popular: false },
   { id: 'tissues', name: 'Tissues', icon: <Coffee size={16} />, category: 'convenience', popular: false },
 ];

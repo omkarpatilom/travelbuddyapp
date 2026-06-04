@@ -233,6 +233,119 @@ export default function RideDetailsScreen() {
 
   // isDriver is already declared at hook-level
 
+  const getCategoryEmoji = (category: string) => {
+    switch (category?.toLowerCase()) {
+      case 'car': return '🚗';
+      case 'bike': return '🏍';
+      case 'bus': return '🚌';
+      case 'van': return '🚐';
+      case 'ev': return '⚡';
+      default: return '🚗';
+    }
+  };
+
+  const getVehicleImageUrl = (category: string) => {
+    switch (category?.toLowerCase()) {
+      case 'car':
+        return 'https://images.pexels.com/photos/170811/pexels-photo-170811.jpeg?auto=compress&cs=tinysrgb&w=400';
+      case 'ev':
+        return 'https://images.pexels.com/photos/3764984/pexels-photo-3764984.jpeg?auto=compress&cs=tinysrgb&w=400';
+      case 'bike':
+        return 'https://images.pexels.com/photos/1413412/pexels-photo-1413412.jpeg?auto=compress&cs=tinysrgb&w=400';
+      case 'bus':
+        return 'https://images.pexels.com/photos/385997/pexels-photo-385997.jpeg?auto=compress&cs=tinysrgb&w=400';
+      case 'van':
+        return 'https://images.pexels.com/photos/1124465/pexels-photo-1124465.jpeg?auto=compress&cs=tinysrgb&w=400';
+      default:
+        return 'https://images.pexels.com/photos/170811/pexels-photo-170811.jpeg?auto=compress&cs=tinysrgb&w=400';
+    }
+  };
+
+  const FEATURE_LABELS: Record<string, string> = {
+    ac: 'AC (Air Conditioning)',
+    charging_port: 'Charging Port',
+    usb_charging: 'USB Charging',
+    wifi: 'WiFi',
+    music: 'Music System',
+    music_system: 'Music System',
+    bluetooth: 'Bluetooth Audio',
+    luggage_space: 'Luggage Space',
+    child_seat: 'Child Seat',
+    pet_friendly: 'Pet Friendly',
+    gps_tracking: 'GPS Tracking',
+  };
+
+  // Preference Match Calculation
+  const prefCategories = params.prefCategories ? (params.prefCategories as string).split(',') : [];
+  const prefComfort = params.prefComfort ? (params.prefComfort as string).split(',') : [];
+  const prefSafety = params.prefSafety ? (params.prefSafety as string).split(',') : [];
+  const prefExperience = params.prefExperience ? (params.prefExperience as string).split(',') : [];
+
+  const hasPrefs = prefCategories.length > 0 || prefComfort.length > 0 || prefSafety.length > 0 || prefExperience.length > 0;
+
+  const matchedItems: string[] = [];
+
+  // 1. Vehicle Category
+  if (hasPrefs) {
+    if (prefCategories.includes(ride.vehicleCategory)) {
+      matchedItems.push(ride.vehicleCategory);
+    }
+  } else {
+    matchedItems.push(ride.vehicleCategory);
+  }
+
+  // 2. Comfort features
+  const comfortFeaturesMap: Record<string, string> = {
+    ac: 'AC',
+    charging_port: 'Charging Port',
+    wifi: 'WiFi',
+    music: 'Music',
+    luggage_space: 'Luggage Space',
+  };
+
+  if (hasPrefs) {
+    prefComfort.forEach(pref => {
+      if (ride.features?.includes(pref) && comfortFeaturesMap[pref]) {
+        matchedItems.push(comfortFeaturesMap[pref]);
+      }
+    });
+  } else {
+    ride.features?.forEach(feat => {
+      if (comfortFeaturesMap[feat]) {
+        matchedItems.push(comfortFeaturesMap[feat]);
+      }
+    });
+  }
+
+  // 3. Safety preferences
+  if (hasPrefs) {
+    if (prefSafety.includes('Verified Driver') && ride.isDriverVerified) {
+      matchedItems.push('Verified Driver');
+    }
+    if (prefSafety.includes('Verified Vehicle') && ride.isVehicleVerified) {
+      matchedItems.push('Verified Vehicle');
+    }
+  } else {
+    if (ride.isDriverVerified) matchedItems.push('Verified Driver');
+    if (ride.isVehicleVerified) matchedItems.push('Verified Vehicle');
+  }
+
+  // 4. Experience preferences
+  if (hasPrefs) {
+    if (prefExperience.includes('Quiet Ride') && ride.preferences.conversationLevel === 'quiet') {
+      matchedItems.push('Quiet Ride');
+    }
+    if (prefExperience.includes('Chat Friendly') && ride.preferences.conversationLevel === 'chatty') {
+      matchedItems.push('Chat Friendly');
+    }
+    if (prefExperience.includes('Pet Friendly') && ride.preferences.petsAllowed) {
+      matchedItems.push('Pet Friendly');
+    }
+  } else {
+    if (ride.preferences.conversationLevel === 'quiet') matchedItems.push('Quiet Ride');
+    if (ride.preferences.petsAllowed) matchedItems.push('Pet Friendly');
+  }
+
   const handleBookRide = () => {
     router.push(`/ride/book?id=${ride.id}`);
   };
@@ -495,22 +608,43 @@ export default function RideDetailsScreen() {
         {/* Vehicle Details Card */}
         <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Vehicle Details</Text>
-            <View style={[styles.verifiedBadge, { backgroundColor: theme.colors.primary + '15' }]}>
-              <ShieldCheck size={16} color={theme.colors.primary} style={{ marginRight: 4 }} />
-              <Text style={[styles.verifiedText, { color: theme.colors.primary }]}>Verified Vehicle</Text>
-            </View>
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Vehicle Information</Text>
+            {ride.isVehicleVerified && (
+              <View style={[styles.verifiedBadge, { backgroundColor: theme.colors.success + '15' }]}>
+                <ShieldCheck size={16} color={theme.colors.success} style={{ marginRight: 4 }} />
+                <Text style={[styles.verifiedText, { color: theme.colors.success }]}>Verified Vehicle</Text>
+              </View>
+            )}
           </View>
           
           <View style={styles.vehicleDetailContainer}>
+            <Image 
+              source={{ uri: getVehicleImageUrl(ride.vehicleCategory) }} 
+              style={styles.vehicleImage} 
+              resizeMode="cover"
+            />
+            
             <View style={styles.vehicleInfoRow}>
               <View style={styles.vehicleDetailItem}>
-                <Text style={[styles.vehicleDetailLabel, { color: theme.colors.textSecondary }]}>Brand & Model</Text>
+                <Text style={[styles.vehicleDetailLabel, { color: theme.colors.textSecondary }]}>Category</Text>
+                <Text style={[styles.vehicleDetailValue, { color: theme.colors.text }]}>
+                  {getCategoryEmoji(ride.vehicleCategory)} {ride.vehicleCategory}
+                </Text>
+              </View>
+              <View style={styles.vehicleDetailItem}>
+                <Text style={[styles.vehicleDetailLabel, { color: theme.colors.textSecondary }]}>Model</Text>
                 <Text style={[styles.vehicleDetailValue, { color: theme.colors.text }]}>{ride.carModel || 'Unknown'}</Text>
               </View>
+            </View>
+
+            <View style={styles.vehicleInfoRow}>
               <View style={styles.vehicleDetailItem}>
                 <Text style={[styles.vehicleDetailLabel, { color: theme.colors.textSecondary }]}>Color</Text>
                 <Text style={[styles.vehicleDetailValue, { color: theme.colors.text }]}>{ride.carColor || 'Unknown'}</Text>
+              </View>
+              <View style={styles.vehicleDetailItem}>
+                <Text style={[styles.vehicleDetailLabel, { color: theme.colors.textSecondary }]}>Total Seats</Text>
+                <Text style={[styles.vehicleDetailValue, { color: theme.colors.text }]}>{ride.totalSeats} Seats</Text>
               </View>
             </View>
 
@@ -523,52 +657,93 @@ export default function RideDetailsScreen() {
           </View>
         </View>
 
-        {/* Driver Preferences Card */}
+        {/* Vehicle Features (Layer 2) */}
         <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Driver Preferences</Text>
-          
-          <View style={styles.preferencesGridContainer}>
-            <View style={[styles.preferenceTag, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }, ride.preferences.nonSmoking && { borderColor: theme.colors.primary, backgroundColor: theme.colors.primary + '10' }]}>
-              <Cigarette size={18} color={ride.preferences.nonSmoking ? theme.colors.primary : theme.colors.textSecondary} />
-              <Text style={[styles.preferenceTagText, { color: ride.preferences.nonSmoking ? theme.colors.primary : theme.colors.text }]}>
-                {ride.preferences.nonSmoking ? 'Non-Smoking' : 'Smoking Allowed'}
-              </Text>
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Vehicle Features</Text>
+          {ride.features && ride.features.length > 0 ? (
+            <View style={styles.featuresListTagsRow}>
+              {ride.features.map((featureId) => {
+                const label = FEATURE_LABELS[featureId] || featureId;
+                return (
+                  <View key={featureId} style={[styles.featureBulletTag, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+                    <Text style={[styles.checkMark, { color: theme.colors.success }]}>✓</Text>
+                    <Text style={[styles.featureBulletTagText, { color: theme.colors.text }]}>{label}</Text>
+                  </View>
+                );
+              })}
             </View>
-
-            <View style={[styles.preferenceTag, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }, ride.preferences.musicAllowed && { borderColor: theme.colors.primary, backgroundColor: theme.colors.primary + '10' }]}>
-              <Music size={18} color={ride.preferences.musicAllowed ? theme.colors.primary : theme.colors.textSecondary} />
-              <Text style={[styles.preferenceTagText, { color: ride.preferences.musicAllowed ? theme.colors.primary : theme.colors.text }]}>
-                {ride.preferences.musicAllowed ? 'Music Allowed' : 'No Music'}
-              </Text>
-            </View>
-
-            <View style={[styles.preferenceTag, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }, ride.preferences.petsAllowed && { borderColor: theme.colors.primary, backgroundColor: theme.colors.primary + '10' }]}>
-              <Heart size={18} color={ride.preferences.petsAllowed ? theme.colors.primary : theme.colors.textSecondary} />
-              <Text style={[styles.preferenceTagText, { color: ride.preferences.petsAllowed ? theme.colors.primary : theme.colors.text }]}>
-                {ride.preferences.petsAllowed ? 'Pets Allowed' : 'No Pets'}
-              </Text>
-            </View>
-
-            <View style={[styles.preferenceTag, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }, ride.preferences.airConditioning && { borderColor: theme.colors.primary, backgroundColor: theme.colors.primary + '10' }]}>
-              <Wind size={18} color={ride.preferences.airConditioning ? theme.colors.primary : theme.colors.textSecondary} />
-              <Text style={[styles.preferenceTagText, { color: ride.preferences.airConditioning ? theme.colors.primary : theme.colors.text }]}>
-                {ride.preferences.airConditioning ? 'A/C Available' : 'No A/C'}
-              </Text>
-            </View>
-          </View>
-
-          <View style={[styles.conversationCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-            <Text style={styles.conversationEmoji}>
-              {ride.preferences.conversationLevel === 'quiet' ? '🤫' : ride.preferences.conversationLevel === 'moderate' ? '😊' : '😄'}
+          ) : (
+            <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>
+              Standard vehicle setup with no additional features listed.
             </Text>
-            <View style={styles.conversationInfo}>
-              <Text style={[styles.conversationLabel, { color: theme.colors.textSecondary }]}>Conversation Level</Text>
-              <Text style={[styles.conversationValue, { color: theme.colors.text }]}>
-                {ride.preferences.conversationLevel.charAt(0).toUpperCase() + ride.preferences.conversationLevel.slice(1)}
+          )}
+        </View>
+
+        {/* Safety Section */}
+        <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Safety & Trust Checklist</Text>
+          
+          <View style={styles.safetyCheckList}>
+            <View style={styles.safetyCheckRow}>
+              <View style={[styles.safetyCheckIconCircle, { backgroundColor: ride.isDriverVerified ? theme.colors.success + '20' : theme.colors.warning + '20' }]}>
+                {ride.isDriverVerified ? (
+                  <ShieldCheck size={16} color={theme.colors.success} />
+                ) : (
+                  <XCircle size={16} color={theme.colors.warning} />
+                )}
+              </View>
+              <Text style={[styles.safetyCheckText, { color: theme.colors.text }]}>
+                {ride.isDriverVerified ? 'Verified Driver' : 'Driver Verification Pending'}
+              </Text>
+            </View>
+
+            <View style={styles.safetyCheckRow}>
+              <View style={[styles.safetyCheckIconCircle, { backgroundColor: ride.isVehicleVerified ? theme.colors.success + '20' : theme.colors.warning + '20' }]}>
+                {ride.isVehicleVerified ? (
+                  <ShieldCheck size={16} color={theme.colors.success} />
+                ) : (
+                  <XCircle size={16} color={theme.colors.warning} />
+                )}
+              </View>
+              <Text style={[styles.safetyCheckText, { color: theme.colors.text }]}>
+                {ride.isVehicleVerified ? 'Verified Vehicle' : 'Vehicle Verification Pending'}
+              </Text>
+            </View>
+
+            <View style={styles.safetyCheckRow}>
+              <View style={[styles.safetyCheckIconCircle, { backgroundColor: theme.colors.success + '20' }]}>
+                <ShieldCheck size={16} color={theme.colors.success} />
+              </View>
+              <Text style={[styles.safetyCheckText, { color: theme.colors.text }]}>
+                SOS Button & Safety Alerts Enabled
+              </Text>
+            </View>
+
+            <View style={styles.safetyCheckRow}>
+              <View style={[styles.safetyCheckIconCircle, { backgroundColor: theme.colors.success + '20' }]}>
+                <ShieldCheck size={16} color={theme.colors.success} />
+              </View>
+              <Text style={[styles.safetyCheckText, { color: theme.colors.text }]}>
+                Real-Time Journey Share Available
               </Text>
             </View>
           </View>
         </View>
+
+        {/* Preference Match Section */}
+        {matchedItems.length > 0 && (
+          <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Matches Your Preferences</Text>
+            <View style={styles.preferenceMatchesContainer}>
+              {matchedItems.map((item, idx) => (
+                <View key={idx} style={styles.preferenceMatchRow}>
+                  <Text style={[styles.preferenceMatchCheck, { color: theme.colors.success }]}>✓</Text>
+                  <Text style={[styles.preferenceMatchText, { color: theme.colors.text }]}>{item}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
 
         {/* Driver Card */}
         {!isDriver && (
@@ -578,11 +753,21 @@ export default function RideDetailsScreen() {
             <View style={styles.driverCard}>
               <Image source={{ uri: ride.driverAvatar }} style={styles.driverAvatar} />
               <View style={styles.driverInfo}>
-                <Text style={[styles.driverName, { color: theme.colors.text }]}>{ride.driverName}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <Text style={[styles.driverName, { color: theme.colors.text }]}>{ride.driverName}</Text>
+                  {ride.isDriverVerified && (
+                    <View style={[styles.verifiedBadgeMini, { backgroundColor: theme.colors.primary + '15', borderColor: theme.colors.primary + '30' }]}>
+                      <ShieldCheck size={12} color={theme.colors.primary} />
+                      <Text style={[styles.verifiedTextMini, { color: theme.colors.primary }]}>Verified</Text>
+                    </View>
+                  )}
+                </View>
                 <View style={styles.ratingContainer}>
-                  <Star size={16} color={theme.colors.warning} fill={theme.colors.warning} />
+                  <Star size={14} color={theme.colors.warning} fill={theme.colors.warning} />
                   <Text style={[styles.rating, { color: theme.colors.textSecondary }]}>{ride.driverRating}</Text>
                   <Text style={[styles.ratingCount, { color: theme.colors.textSecondary }]}>(25 reviews)</Text>
+                  <Text style={[styles.bulletDivider, { color: theme.colors.textSecondary }]}>•</Text>
+                  <Text style={[styles.tripsCount, { color: theme.colors.textSecondary }]}>48 trips</Text>
                 </View>
                 <Text style={[styles.phoneNumber, { color: theme.colors.textSecondary }]}>+1 (555) ***-**90</Text>
               </View>
@@ -1421,5 +1606,92 @@ const styles = StyleSheet.create({
   bookingLocationText: {
     fontSize: 12,
     flex: 1,
+  },
+  verifiedBadgeMini: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    gap: 3,
+  },
+  verifiedTextMini: {
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  bulletDivider: {
+    fontSize: 14,
+    marginHorizontal: 4,
+  },
+  tripsCount: {
+    fontSize: 14,
+  },
+  vehicleImage: {
+    width: '100%',
+    height: 160,
+    borderRadius: 12,
+    marginBottom: 8,
+  },
+  featuresListTagsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  featureBulletTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    gap: 6,
+  },
+  featureBulletTagText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  checkMark: {
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  emptyText: {
+    fontSize: 14,
+    fontStyle: 'italic',
+  },
+  safetyCheckList: {
+    gap: 12,
+  },
+  safetyCheckRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  safetyCheckIconCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  safetyCheckText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  preferenceMatchesContainer: {
+    gap: 10,
+  },
+  preferenceMatchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  preferenceMatchCheck: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  preferenceMatchText: {
+    fontSize: 15,
+    fontWeight: '500',
   },
 });

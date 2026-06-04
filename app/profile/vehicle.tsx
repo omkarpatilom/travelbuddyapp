@@ -20,6 +20,7 @@ import RidePreferences, { UniversalRidePreferences } from '@/components/RidePref
 
 interface Vehicle {
   id: string;
+  category: string;
   make: string;
   model: string;
   year: string;
@@ -43,6 +44,7 @@ export default function VehicleDetailsScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const [formData, setFormData] = useState({
+    category: 'Car',
     make: '',
     model: '',
     year: '',
@@ -103,9 +105,18 @@ export default function VehicleDetailsScreen() {
           };
         } catch (e) { console.error('Error fetching preferences', e); }
 
+        let makeVal = v.brand || '';
+        let categoryVal = 'Car';
+        if (makeVal.includes(':')) {
+          const parts = makeVal.split(':');
+          categoryVal = parts[0];
+          makeVal = parts[1];
+        }
+
         return {
           id: v.id,
-          make: v.brand || '',
+          category: categoryVal,
+          make: makeVal,
           model: v.model || '',
           year: v.createdAt ? new Date(v.createdAt).getFullYear().toString() : '',
           color: v.color || '',
@@ -157,6 +168,7 @@ export default function VehicleDetailsScreen() {
 
   const handleAddVehicle = () => {
     setFormData({
+      category: 'Car',
       make: '',
       model: '',
       year: '',
@@ -183,6 +195,7 @@ export default function VehicleDetailsScreen() {
 
   const handleEditVehicle = (vehicle: Vehicle) => {
     setFormData({
+      category: vehicle.category || 'Car',
       make: vehicle.make,
       model: vehicle.model,
       year: vehicle.year,
@@ -217,11 +230,13 @@ export default function VehicleDetailsScreen() {
     try {
       let vehicleId = editingVehicle?.id;
 
+      const serializedBrand = `${formData.category}:${formData.make}`;
+
       if (editingVehicle) {
         // Update existing vehicle
         await api.put(`/vehicles/${editingVehicle.id}`, {
           vehicleId: editingVehicle.id,
-          brand: formData.make,
+          brand: serializedBrand,
           model: formData.model,
           color: formData.color,
           totalSeats: parseInt(formData.seats),
@@ -240,7 +255,7 @@ export default function VehicleDetailsScreen() {
       } else {
         // Add new vehicle
         vehicleId = await api.post<string>('/vehicles', {
-          brand: formData.make,
+          brand: serializedBrand,
           model: formData.model,
           color: formData.color,
           registrationNumber: formData.licensePlate,
@@ -348,15 +363,26 @@ export default function VehicleDetailsScreen() {
     }
   };
 
+  const getCategoryEmoji = (category: string) => {
+    switch (category?.toLowerCase()) {
+      case 'car': return '🚗';
+      case 'bike': return '🏍';
+      case 'bus': return '🚌';
+      case 'van': return '🚐';
+      case 'ev': return '⚡';
+      default: return '🚗';
+    }
+  };
+
   const renderVehicle = (vehicle: Vehicle) => (
     <View key={vehicle.id} style={[styles.vehicleCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
       <View style={styles.vehicleHeader}>
         <View style={styles.vehicleInfo}>
           <Text style={[styles.vehicleName, { color: theme.colors.text }]}>
-            {vehicle.year} {vehicle.make} {vehicle.model}
+            {getCategoryEmoji(vehicle.category)} {vehicle.year} {vehicle.make} {vehicle.model}
           </Text>
           <Text style={[styles.vehicleDetails, { color: theme.colors.textSecondary }]}>
-            {vehicle.color} • {vehicle.licensePlate} • {vehicle.seats} seats
+            {vehicle.category} • {vehicle.color} • {vehicle.licensePlate} • {vehicle.seats} seats
           </Text>
           <Text style={[styles.vehicleFeatures, { color: theme.colors.textSecondary }]}>
             {vehicle.features.length} features • {vehicle.preferences?.nonSmoking ? 'Non-smoking' : 'Smoking OK'}
@@ -423,6 +449,28 @@ export default function VehicleDetailsScreen() {
         <View style={styles.content}>
           <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
             <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Vehicle Information</Text>
+
+            <Text style={[styles.inputLabel, { color: theme.colors.textSecondary, marginBottom: 8, fontSize: 13, fontWeight: '600' }]}>Vehicle Category</Text>
+            <View style={styles.categoryTabRow}>
+              {['Car', 'Bike', 'Bus', 'Van', 'EV'].map((cat) => (
+                <TouchableOpacity
+                  key={cat}
+                  style={[
+                    styles.categoryTab,
+                    { borderColor: theme.colors.border, backgroundColor: theme.colors.surface },
+                    formData.category === cat && { borderColor: theme.colors.primary, backgroundColor: theme.colors.primary + '15' }
+                  ]}
+                  onPress={() => updateFormData('category', cat)}
+                >
+                  <Text style={styles.categoryTabEmoji}>
+                    {cat === 'Car' ? '🚗' : cat === 'Bike' ? '🏍' : cat === 'Bus' ? '🚌' : cat === 'Van' ? '🚐' : '⚡'}
+                  </Text>
+                  <Text style={[styles.categoryTabText, { color: formData.category === cat ? theme.colors.primary : theme.colors.text, fontWeight: formData.category === cat ? '700' : '500' }]}>
+                    {cat}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
             
             <View style={styles.row}>
               <View style={[styles.inputContainer, styles.halfWidth, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
@@ -760,6 +808,30 @@ const styles = StyleSheet.create({
   addButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
+    fontWeight: '600',
+  },
+  categoryTabRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 6,
+    marginBottom: 16,
+  },
+  categoryTab: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
+    gap: 4,
+  },
+  categoryTabEmoji: {
+    fontSize: 16,
+  },
+  categoryTabText: {
+    fontSize: 11,
+  },
+  inputLabel: {
+    fontSize: 14,
     fontWeight: '600',
   },
 });

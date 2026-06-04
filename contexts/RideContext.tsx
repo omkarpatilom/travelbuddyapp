@@ -29,6 +29,10 @@ export interface Ride {
   carModel: string;
   carColor: string;
   carPlate?: string;
+  vehicleCategory: string;
+  isDriverVerified: boolean;
+  isVehicleVerified: boolean;
+  features: string[];
   status: 'active' | 'completed' | 'cancelled' | 'started' | 'scheduled' | 'draft' | 'published' | 'seatsbooked' | 'confirmed' | 'driverarrived' | 'boarding' | 'enroute' | 'dropcompleted';
   distance: string;
   duration: string;
@@ -102,6 +106,7 @@ const RideContext = createContext<RideContextType | undefined>(undefined);
 
 const driverCache: Record<string, any> = {};
 const vehicleCache: Record<string, any> = {};
+const featureCache: Record<string, any> = {};
 
 export function RideProvider({ children }: { children: React.ReactNode }) {
   const [rides, setRides] = useState<Ride[]>([]);
@@ -143,6 +148,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
     let driverName = 'Driver';
     let driverRating = 4.5;
     let driverAvatar = undefined;
+    let isDriverVerified = false;
 
     try {
       if (!driverCache[ride.driverId]) {
@@ -152,6 +158,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
       driverName = driverProfile.fullName;
       driverRating = driverProfile.rating;
       driverAvatar = driverProfile.profilePictureUrl || undefined;
+      isDriverVerified = driverProfile.isVerified || false;
     } catch (e) {
       console.warn(`Could not fetch driver profile for ${ride.driverId}`);
     }
@@ -159,6 +166,9 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
     let carModel = 'Vehicle';
     let carColor = 'Silver';
     let carPlate = undefined;
+    let vehicleCategory = 'Car';
+    let isVehicleVerified = false;
+    let features: string[] = [];
 
     try {
       if (ride.vehicleId) {
@@ -166,12 +176,24 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
           vehicleCache[ride.vehicleId] = await vehicleService.getById(ride.vehicleId);
         }
         const vehicle = vehicleCache[ride.vehicleId];
-        carModel = `${vehicle.brand} ${vehicle.model}`;
+        let brand = vehicle.brand || '';
+        if (brand.includes(':')) {
+          const parts = brand.split(':');
+          vehicleCategory = parts[0];
+          brand = parts[1];
+        }
+        carModel = `${brand} ${vehicle.model}`;
         carColor = vehicle.color;
         carPlate = vehicle.registrationNumber;
+        isVehicleVerified = vehicle.status?.toLowerCase() === 'active';
+
+        if (!featureCache[ride.vehicleId]) {
+          featureCache[ride.vehicleId] = await vehicleService.getFeatures(ride.vehicleId);
+        }
+        features = featureCache[ride.vehicleId].map((f: any) => f.featureCode);
       }
     } catch (e) {
-      console.warn(`Could not fetch vehicle details for ${ride.vehicleId}`);
+      console.warn(`Could not fetch vehicle details/features for ${ride.vehicleId}`);
     }
 
     const statusMap: Record<RideStatus | string, any> = {
@@ -333,6 +355,10 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
       carModel, 
       carColor,
       carPlate,
+      vehicleCategory,
+      isDriverVerified,
+      isVehicleVerified,
+      features,
       status: statusMap[ride.status] || 'active',
       distance: distanceStr,
       duration: durationStr,
@@ -343,7 +369,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
         nonSmoking: ride.preference ? !ride.preference.allowSmoking : true,
         musicAllowed: ride.preference ? ride.preference.allowMusic : true,
         petsAllowed: ride.preference ? ride.preference.allowPets : false,
-        airConditioning: true,
+        airConditioning: features.includes('ac'),
         conversationLevel: (ride.preference && convMap[ride.preference.conversationLevel]) || 'moderate',
       },
     };

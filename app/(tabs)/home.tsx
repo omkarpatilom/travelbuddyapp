@@ -35,6 +35,7 @@ import {
   Home as HomeIcon,
   Briefcase,
   Heart,
+  Users,
 } from 'lucide-react-native';
 import LocationPicker from '@/components/LocationPicker';
 import { api } from '@/utils/api';
@@ -54,7 +55,7 @@ export default function HomeScreen() {
   const [selectedDate, setSelectedDate] = useState('');
   const [displayDate, setDisplayDate] = useState('');
   const [isDatePickerVisible, setDatePickerVisible] = useState(false);
-
+  const [selectedCategory, setSelectedCategory] = useState('Car');
   const { theme, isDark, toggleTheme } = useTheme();
   const { user } = useAuth();
   const { rides } = useRides();
@@ -143,6 +144,7 @@ export default function HomeScreen() {
         from: fromLocation,
         to: toLocation,
         date: selectedDate,
+        vehicleCategory: selectedCategory,
       },
     });
   };
@@ -260,6 +262,28 @@ export default function HomeScreen() {
         {/* Search Card Section */}
         <View style={[styles.searchCard, { backgroundColor: theme.colors.card, shadowColor: theme.colors.shadow }]}>
           <Text style={[styles.searchCardTitle, { color: theme.colors.text }]}>Book a Ride</Text>
+
+          {/* Vehicle Category Tabs */}
+          <View style={styles.categoryTabsWrapper}>
+            {['Car', 'Bike', 'Bus', 'Van', 'EV'].map((cat) => (
+              <TouchableOpacity
+                key={cat}
+                style={[
+                  styles.categoryTabButton,
+                  { borderColor: theme.colors.border },
+                  selectedCategory === cat && { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary }
+                ]}
+                onPress={() => setSelectedCategory(cat)}
+              >
+                <Text style={styles.categoryTabIcon}>
+                  {cat === 'Car' ? '🚗' : cat === 'Bike' ? '🏍' : cat === 'Bus' ? '🚌' : cat === 'Van' ? '🚐' : '⚡'}
+                </Text>
+                <Text style={[styles.categoryTabBtnText, { color: selectedCategory === cat ? '#FFFFFF' : theme.colors.text, fontWeight: selectedCategory === cat ? '700' : '500' }]}>
+                  {cat}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
           
           <View style={styles.inputsWrapper}>
             {/* Start location */}
@@ -960,5 +984,70 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '600',
+  },
+  categoryTabsWrapper: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 6,
+    marginBottom: 8,
+  },
+  categoryTabButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 10,
+    gap: 4,
+  },
+  categoryTabIcon: {
+    fontSize: 14,
+  },
+  categoryTabBtnText: {
+    fontSize: 12,
+  },
+  passengerFieldRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    height: 52,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    marginTop: 16,
+  },
+  passengerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  passengerLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  stepperContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  stepBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 6,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  stepBtnText: {
+    fontSize: 16,
+    fontWeight: '600',
+    lineHeight: 18,
+  },
+  stepCountText: {
+    fontSize: 14,
+    fontWeight: '700',
+    width: 12,
+    textAlign: 'center',
   },
 });
