@@ -27,4 +27,19 @@ export const authService = {
   async logout(refreshToken: string) {
     return api.post<void>('/security/logout', { refreshToken });
   },
+
+  async loginWithGoogle(idToken: string) {
+    return api.post<{ accessToken: string; refreshToken: string; userId: string; email: string; role: string }>(
+      '/auth/google',
+      { idToken }
+    );
+  },
+
+  async linkGoogle(idToken: string) {
+    return api.post<void>('/security/link-google', { idToken });
+  },
+
+  async unlinkGoogle() {
+    return api.post<void>('/security/unlink-google', {});
+  },
 };

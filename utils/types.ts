@@ -84,6 +84,7 @@ export interface UserProfileDto {
   isVerified: boolean;
   profilePictureUrl: string | null;
   createdAt: string;
+  isGoogleLinked?: boolean;
 }
 
 export interface RidePreferenceDto {

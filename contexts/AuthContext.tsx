@@ -17,6 +17,7 @@ export interface User {
   isVerified: boolean;
   avatar?: string;
   createdAt: string;
+  isGoogleLinked?: boolean;
 }
 
 interface AuthContextType {
@@ -27,6 +28,9 @@ interface AuthContextType {
   logout: () => Promise<void>;
   updateUser: (userData: Partial<User>) => Promise<void>;
   refreshProfile: () => Promise<void>;
+  loginWithGoogle: (idToken: string) => Promise<boolean>;
+  linkGoogle: (idToken: string) => Promise<boolean>;
+  unlinkGoogle: () => Promise<boolean>;
 }
 
 interface RegisterData {
@@ -90,6 +94,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isVerified: profile.isVerified,
     avatar: profile.profilePictureUrl || undefined,
     createdAt: profile.createdAt,
+    isGoogleLinked: profile.isGoogleLinked,
   });
 
   const login = async (email: string, password: string): Promise<boolean> => {
@@ -184,6 +189,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (error) {
       console.error('Update user error:', error);
+      throw error;
     }
   };
 
@@ -198,8 +204,56 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const loginWithGoogle = async (idToken: string): Promise<boolean> => {
+    setIsLoading(true);
+    try {
+      const response = await authService.loginWithGoogle(idToken);
+      if (response.accessToken) {
+        await storage.setItem(StorageKeys.AUTH_TOKEN, response.accessToken);
+        if (response.refreshToken) {
+          await storage.setItem(StorageKeys.REFRESH_TOKEN, response.refreshToken);
+        }
+        
+        const profile = await userService.getMe();
+        const mappedUser = mapUserProfile(profile);
+        
+        await storage.setItem(StorageKeys.USER_DATA, mappedUser);
+        setUser(mappedUser);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Google Login error:', error);
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const linkGoogle = async (idToken: string): Promise<boolean> => {
+    try {
+      await authService.linkGoogle(idToken);
+      await refreshProfile();
+      return true;
+    } catch (error) {
+      console.error('Link Google error:', error);
+      return false;
+    }
+  };
+
+  const unlinkGoogle = async (): Promise<boolean> => {
+    try {
+      await authService.unlinkGoogle();
+      await refreshProfile();
+      return true;
+    } catch (error) {
+      console.error('Unlink Google error:', error);
+      return false;
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, register, logout, updateUser, refreshProfile }}>
+    <AuthContext.Provider value={{ user, isLoading, login, register, logout, updateUser, refreshProfile, loginWithGoogle, linkGoogle, unlinkGoogle }}>
       {children}
     </AuthContext.Provider>
   );

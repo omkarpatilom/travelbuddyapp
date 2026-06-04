@@ -11,7 +11,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { api } from '@/utils/api';
@@ -21,6 +21,7 @@ export default function EditProfileScreen() {
   const { theme } = useTheme();
   const { user, updateUser, refreshProfile } = useAuth();
   const router = useRouter();
+  const { onboarding } = useLocalSearchParams<{ onboarding?: string }>();
 
   const [formData, setFormData] = useState({
     fullName: user?.fullName || '',
@@ -44,7 +45,16 @@ export default function EditProfileScreen() {
     try {
       await updateUser(formData);
       Alert.alert('Success', 'Profile updated successfully!', [
-        { text: 'OK', onPress: () => router.back() }
+        { 
+          text: 'OK', 
+          onPress: () => {
+            if (onboarding === 'true' || !router.canGoBack()) {
+              router.replace('/(tabs)/home');
+            } else {
+              router.back();
+            }
+          }
+        }
       ]);
     } catch (error) {
       Alert.alert('Error', 'Failed to update profile. Please try again.');

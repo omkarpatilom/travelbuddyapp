@@ -43,6 +43,13 @@
       "expo-font",
       "expo-web-browser",
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow TravelBuddy to access your photo library to upload identity and registration documents.",
+          "cameraPermission": "Allow TravelBuddy to access your camera to capture photos of identity and registration documents."
+        }
+      ],
+      [
         "expo-location",
         {
           "locationAlwaysAndWhenInUsePermission": "Allow TravelBuddy to access your location for map features and ride matching."

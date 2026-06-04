@@ -15,7 +15,7 @@ jest.mock('../components/LocationPicker', () => {
   return jest.fn(({ value, onLocationChange, placeholder }) => (
     <TextInput
       value={value}
-      onChangeText={(text) => onLocationChange(text, { latitude: 37.7749, longitude: -122.4194 })}
+      onChangeText={(text: string) => onLocationChange(text, { latitude: 37.7749, longitude: -122.4194 })}
       placeholder={placeholder}
     />
   ));

@@ -9,14 +9,14 @@ import {
   TextInput,
   ScrollView,
   ActivityIndicator,
-  Linking,
 } from 'react-native';
 import * as Location from 'expo-location';
 import * as SMS from 'expo-sms';
+import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useNotifications } from '@/contexts/NotificationContext';
 import { api } from '@/utils/api';
-import { Shield, Phone, MapPin, Users, Plus, X, TriangleAlert as AlertTriangle, Camera, FileText, CircleCheck as CheckCircle } from 'lucide-react-native';
+import { Shield, MapPin, Users, Plus, X, TriangleAlert as AlertTriangle, Camera, FileText, CircleCheck as CheckCircle } from 'lucide-react-native';
 import { requestLocationPermission } from '@/utils/permissions';
 
 interface EmergencyContact {
@@ -39,10 +39,10 @@ interface VerificationDocument {
 }
 
 export default function SafetyFeatures({ style }: SafetyFeaturesProps) {
+  const router = useRouter();
   const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([]);
   const [showAddContact, setShowAddContact] = useState(false);
   const [showSOSModal, setShowSOSModal] = useState(false);
-  const [showVerificationModal, setShowVerificationModal] = useState(false);
   const [isTrackingEnabled, setIsTrackingEnabled] = useState(false);
   const [isSendingSOS, setIsSendingSOS] = useState(false);
   const [sosCountdown, setSOSCountdown] = useState(0);
@@ -76,11 +76,48 @@ export default function SafetyFeatures({ style }: SafetyFeaturesProps) {
     }
   };
 
+  const mapApiStatusToLocal = (status: string): 'pending' | 'verified' | 'rejected' => {
+    if (status === 'Approved') return 'verified';
+    if (status === 'Rejected') return 'rejected';
+    return 'pending';
+  };
+
   const fetchVerificationStatus = async () => {
     try {
-      const status = await api.get<any>('/verification/status');
-      // Map verification status to docs if needed
-      // This might require a different endpoint or logic depending on backend implementation
+      const data = await api.get<any>('/Verification/status');
+      const docs: VerificationDocument[] = [];
+      
+      if (data.license && data.license.status !== 'NotStarted') {
+        docs.push({
+          id: 'license',
+          type: 'driving_license',
+          status: mapApiStatusToLocal(data.license.status),
+          uploadDate: 'Uploaded',
+          documentNumber: data.license.originalFileName || undefined,
+        });
+      }
+      
+      if (data.aadhar && data.aadhar.status !== 'NotStarted') {
+        docs.push({
+          id: 'aadhar',
+          type: 'aadhar',
+          status: mapApiStatusToLocal(data.aadhar.status),
+          uploadDate: 'Uploaded',
+          documentNumber: data.aadhar.originalFileName || undefined,
+        });
+      }
+      
+      if (data.vehicleRc && data.vehicleRc.status !== 'NotStarted') {
+        docs.push({
+          id: 'vehicle-rc',
+          type: 'passport',
+          status: mapApiStatusToLocal(data.vehicleRc.status),
+          uploadDate: 'Uploaded',
+          documentNumber: data.vehicleRc.originalFileName || undefined,
+        });
+      }
+      
+      setVerificationDocs(docs);
     } catch (error) {
       console.error('Error fetching verification status:', error);
     }
@@ -240,29 +277,7 @@ export default function SafetyFeatures({ style }: SafetyFeaturesProps) {
     }
   };
 
-  const handleDocumentVerification = (docType: 'aadhar' | 'driving_license' | 'passport') => {
-    Alert.alert(
-      'Document Verification',
-      `Upload your ${docType.replace('_', ' ')} for identity verification. This helps build trust in the community.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Upload Document',
-          onPress: () => {
-            // In a real app, this would open document scanner/camera
-            const newDoc: VerificationDocument = {
-              id: Date.now().toString(),
-              type: docType,
-              status: 'pending',
-              uploadDate: new Date().toISOString().split('T')[0],
-            };
-            setVerificationDocs([...verificationDocs, newDoc]);
-            Alert.alert('Success', 'Document uploaded successfully. Verification typically takes 24-48 hours.');
-          },
-        },
-      ]
-    );
-  };
+
 
   const getDocumentIcon = (type: string) => {
     switch (type) {
@@ -446,7 +461,11 @@ export default function SafetyFeatures({ style }: SafetyFeaturesProps) {
 
         {/* Existing Documents */}
         {verificationDocs.map(doc => (
-          <View key={doc.id} style={[styles.documentItem, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+          <TouchableOpacity 
+            key={doc.id} 
+            style={[styles.documentItem, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
+            onPress={() => router.push('/profile/verification')}
+          >
             <View style={styles.documentInfo}>
               {getDocumentIcon(doc.type)}
               <View style={styles.documentDetails}>
@@ -454,10 +473,10 @@ export default function SafetyFeatures({ style }: SafetyFeaturesProps) {
                   {doc.type.replace('_', ' ').toUpperCase()}
                 </Text>
                 <Text style={[styles.documentDate, { color: theme.colors.textSecondary }]}>
-                  Uploaded: {doc.uploadDate}
+                  Uploaded
                 </Text>
                 {doc.documentNumber && (
-                  <Text style={[styles.documentNumber, { color: theme.colors.textSecondary }]}>
+                  <Text style={[styles.documentNumber, { color: theme.colors.textSecondary }]} numberOfLines={1}>
                     {doc.documentNumber}
                   </Text>
                 )}
@@ -468,17 +487,17 @@ export default function SafetyFeatures({ style }: SafetyFeaturesProps) {
                 {getStatusText(doc.status)}
               </Text>
             </View>
-          </View>
+          </TouchableOpacity>
         ))}
 
         {/* Add New Document */}
         <TouchableOpacity
           style={[styles.addDocumentButton, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
-          onPress={() => setShowVerificationModal(true)}
+          onPress={() => router.push('/profile/verification')}
         >
           <Plus size={20} color={theme.colors.primary} />
           <Text style={[styles.addDocumentText, { color: theme.colors.primary }]}>
-            Add Verification Document
+            Go to Verification Center
           </Text>
         </TouchableOpacity>
       </View>
@@ -569,80 +588,7 @@ export default function SafetyFeatures({ style }: SafetyFeaturesProps) {
         </View>
       </Modal>
 
-      {/* Verification Modal */}
-      <Modal
-        visible={showVerificationModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowVerificationModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.verificationModal, { backgroundColor: theme.colors.card }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: theme.colors.text }]}>
-                Identity Verification
-              </Text>
-              <TouchableOpacity onPress={() => setShowVerificationModal(false)}>
-                <X size={24} color={theme.colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
 
-            <Text style={[styles.verificationDescription, { color: theme.colors.textSecondary }]}>
-              Choose a document type to verify your identity. All documents are processed securely with OCR technology and manual review.
-            </Text>
-
-            <View style={styles.documentOptions}>
-              <TouchableOpacity
-                style={[styles.documentOption, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
-                onPress={() => {
-                  setShowVerificationModal(false);
-                  handleDocumentVerification('aadhar');
-                }}
-              >
-                <FileText size={24} color={theme.colors.primary} />
-                <Text style={[styles.documentOptionText, { color: theme.colors.text }]}>
-                  Aadhar Card
-                </Text>
-                <Text style={[styles.documentOptionDescription, { color: theme.colors.textSecondary }]}>
-                  Government issued ID
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.documentOption, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
-                onPress={() => {
-                  setShowVerificationModal(false);
-                  handleDocumentVerification('driving_license');
-                }}
-              >
-                <Camera size={24} color={theme.colors.secondary} />
-                <Text style={[styles.documentOptionText, { color: theme.colors.text }]}>
-                  Driving License
-                </Text>
-                <Text style={[styles.documentOptionDescription, { color: theme.colors.textSecondary }]}>
-                  Valid driving license
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.documentOption, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
-                onPress={() => {
-                  setShowVerificationModal(false);
-                  handleDocumentVerification('passport');
-                }}
-              >
-                <FileText size={24} color={theme.colors.accent} />
-                <Text style={[styles.documentOptionText, { color: theme.colors.text }]}>
-                  Passport
-                </Text>
-                <Text style={[styles.documentOptionDescription, { color: theme.colors.textSecondary }]}>
-                  International passport
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </ScrollView>
   );
 }

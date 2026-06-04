@@ -13,6 +13,7 @@ jest.mock('../contexts/ThemeContext');
 jest.mock('../utils/api');
 jest.mock('expo-router', () => ({
   useRouter: jest.fn(),
+  useLocalSearchParams: jest.fn(() => ({})),
 }));
 
 describe('EditProfileScreen', () => {
