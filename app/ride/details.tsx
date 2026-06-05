@@ -45,6 +45,24 @@ export default function RideDetailsScreen() {
     (b: any) => b.rideId === ride.id && (b.status === 'confirmed' || b.status === 'completed')
   );
 
+  const parsePassengerLocations = (bookingItem: any) => {
+    let pickup = ride?.from?.address || 'Pickup location';
+    let dropoff = ride?.to?.address || 'Destination';
+    let notes = '';
+
+    if (bookingItem?.specialRequest) {
+      try {
+        const parsed = JSON.parse(bookingItem.specialRequest);
+        if (parsed.requestedPickup) pickup = parsed.requestedPickup;
+        if (parsed.requestedDropoff) dropoff = parsed.requestedDropoff;
+        if (parsed.notes) notes = parsed.notes;
+      } catch (e) {
+        notes = bookingItem.specialRequest;
+      }
+    }
+    return { pickup, dropoff, notes };
+  };
+
   // Live tracking watcher/polling synchronization hook
   useEffect(() => {
     let locationSubscription: any = null;
@@ -860,20 +878,32 @@ export default function RideDetailsScreen() {
                       </View>
 
                       {/* Requested Locations */}
-                      <View style={[styles.bookingLocationsSection, { borderTopColor: theme.colors.border }]}>
-                        <View style={styles.bookingLocationRow}>
-                          <MapPin size={14} color={theme.colors.secondary} style={{ marginRight: 6 }} />
-                          <Text style={[styles.bookingLocationText, { color: theme.colors.textSecondary }]} numberOfLines={1}>
-                            From: <Text style={{ color: theme.colors.text, fontWeight: '500' }}>{ride.from.address}</Text>
-                          </Text>
-                        </View>
-                        <View style={[styles.bookingLocationRow, { marginTop: 4 }]}>
-                          <MapPin size={14} color={theme.colors.error} style={{ marginRight: 6 }} />
-                          <Text style={[styles.bookingLocationText, { color: theme.colors.textSecondary }]} numberOfLines={1}>
-                            To: <Text style={{ color: theme.colors.text, fontWeight: '500' }}>{ride.to.address}</Text>
-                          </Text>
-                        </View>
-                      </View>
+                      {(() => {
+                        const { pickup, dropoff, notes } = parsePassengerLocations(item);
+                        return (
+                          <View style={[styles.bookingLocationsSection, { borderTopColor: theme.colors.border }]}>
+                            <View style={styles.bookingLocationRow}>
+                              <MapPin size={14} color={theme.colors.secondary} style={{ marginRight: 6 }} />
+                              <Text style={[styles.bookingLocationText, { color: theme.colors.textSecondary }]} numberOfLines={1}>
+                                From: <Text style={{ color: theme.colors.text, fontWeight: '500' }}>{pickup}</Text>
+                              </Text>
+                            </View>
+                            <View style={[styles.bookingLocationRow, { marginTop: 4 }]}>
+                              <MapPin size={14} color={theme.colors.error} style={{ marginRight: 6 }} />
+                              <Text style={[styles.bookingLocationText, { color: theme.colors.textSecondary }]} numberOfLines={1}>
+                                To: <Text style={{ color: theme.colors.text, fontWeight: '500' }}>{dropoff}</Text>
+                              </Text>
+                            </View>
+                            {notes ? (
+                              <View style={[styles.bookingNotesRow, { marginTop: 6, backgroundColor: theme.colors.background + '40', borderRadius: 8, padding: 8 }]}>
+                                <Text style={[styles.bookingNotesText, { color: theme.colors.textSecondary, fontSize: 12 }]} numberOfLines={2}>
+                                  Note: <Text style={{ fontStyle: 'italic', color: theme.colors.text }}>"{notes}"</Text>
+                                </Text>
+                              </View>
+                            ) : null}
+                          </View>
+                        );
+                      })()}
 
                       {/* Actions for each booking */}
                       {item.status === 'pending' && (
@@ -1606,6 +1636,14 @@ const styles = StyleSheet.create({
   bookingLocationText: {
     fontSize: 12,
     flex: 1,
+  },
+  bookingNotesRow: {
+    marginTop: 6,
+    borderRadius: 8,
+    padding: 8,
+  },
+  bookingNotesText: {
+    fontSize: 12,
   },
   verifiedBadgeMini: {
     flexDirection: 'row',

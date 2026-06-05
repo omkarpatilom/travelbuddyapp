@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -13,14 +13,16 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useRides, Ride } from '@/contexts/RideContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { User, Phone, Users, IndianRupee, ArrowLeft, CreditCard } from 'lucide-react-native';
+import { User, Phone, Users, IndianRupee, ArrowLeft, CreditCard, MapPin } from 'lucide-react-native';
 import { mockRides } from '@/data/mockData';
-import { useEffect } from 'react';
 
 export default function BookRideScreen() {
   const [selectedSeats, setSelectedSeats] = useState(1);
   const [passengerName, setPassengerName] = useState('');
   const [passengerPhone, setPassengerPhone] = useState('');
+  const [requestedPickup, setRequestedPickup] = useState('');
+  const [requestedDropoff, setRequestedDropoff] = useState('');
+  const [specialNotes, setSpecialNotes] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [ride, setRide] = useState<Ride | null>(null);
   
@@ -52,6 +54,14 @@ export default function BookRideScreen() {
     }
   }, [user]);
 
+  // Pre-fill requested pickup and dropoff with driver offered locations
+  useEffect(() => {
+    if (ride) {
+      setRequestedPickup(ride.from.address);
+      setRequestedDropoff(ride.to.address);
+    }
+  }, [ride]);
+
   if (isLoading && !ride) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: theme.colors.background }]}>
@@ -76,6 +86,11 @@ export default function BookRideScreen() {
       return;
     }
 
+    if (!requestedPickup.trim() || !requestedDropoff.trim()) {
+      Alert.alert('Missing Location', 'Please specify requested pickup and dropoff addresses');
+      return;
+    }
+
     if (selectedSeats > ride.availableSeats) {
       Alert.alert('Not Available', 'Not enough seats available');
       return;
@@ -83,9 +98,16 @@ export default function BookRideScreen() {
 
     setIsLoading(true);
     try {
+      const specialRequestPayload = JSON.stringify({
+        requestedPickup: requestedPickup.trim(),
+        requestedDropoff: requestedDropoff.trim(),
+        notes: specialNotes.trim()
+      });
+
       const success = await bookRide(rideId, selectedSeats, {
         name: passengerName,
         phone: passengerPhone,
+        specialRequest: specialRequestPayload
       });
 
       if (success) {
@@ -194,6 +216,53 @@ export default function BookRideScreen() {
           </View>
         </View>
 
+        {/* Requested Journey Details */}
+        <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Requested Pickup & Dropoff</Text>
+          <Text style={[styles.subtitleText, { color: theme.colors.textSecondary }]}>
+            Specify your requested locations if they differ from the offered ride route.
+          </Text>
+
+          <View style={[styles.inputContainer, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+            <MapPin size={20} color={theme.colors.secondary} />
+            <TextInput
+              style={[styles.input, { color: theme.colors.text }]}
+              placeholder="Requested Pickup Address"
+              placeholderTextColor={theme.colors.textSecondary}
+              value={requestedPickup}
+              onChangeText={setRequestedPickup}
+            />
+          </View>
+
+          <View style={[styles.inputContainer, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+            <MapPin size={20} color={theme.colors.error} />
+            <TextInput
+              style={[styles.input, { color: theme.colors.text }]}
+              placeholder="Requested Destination Address"
+              placeholderTextColor={theme.colors.textSecondary}
+              value={requestedDropoff}
+              onChangeText={setRequestedDropoff}
+            />
+          </View>
+        </View>
+
+        {/* Special Requests / Notes */}
+        <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Special Notes (Optional)</Text>
+          
+          <View style={[styles.inputContainer, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, alignItems: 'flex-start', minHeight: 80, paddingTop: 10 }]}>
+            <TextInput
+              style={[styles.input, { color: theme.colors.text, height: '100%', textAlignVertical: 'top' }]}
+              placeholder="Add any instructions, preferences, or pickup notes for the driver..."
+              placeholderTextColor={theme.colors.textSecondary}
+              value={specialNotes}
+              onChangeText={setSpecialNotes}
+              multiline={true}
+              numberOfLines={3}
+            />
+          </View>
+        </View>
+
         {/* Payment Summary */}
         <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Payment Summary</Text>
@@ -294,6 +363,12 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
+  },
+  subtitleText: {
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: -8,
+    marginBottom: 4,
   },
   rideInfo: {
     gap: 8,

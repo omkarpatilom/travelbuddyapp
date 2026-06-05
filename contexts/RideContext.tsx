@@ -560,6 +560,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
         seats,
         passengerName: passengerData.name,
         passengerPhone: passengerData.phone,
+        specialRequest: passengerData.specialRequest,
         acceptTerms: true
       });
       await loadInitialData();

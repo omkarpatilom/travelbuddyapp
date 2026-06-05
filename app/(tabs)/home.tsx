@@ -264,21 +264,22 @@ export default function HomeScreen() {
           <Text style={[styles.searchCardTitle, { color: theme.colors.text }]}>Book a Ride</Text>
 
           {/* Vehicle Category Tabs */}
-          <View style={styles.categoryTabsWrapper}>
-            {['Car', 'Bike', 'Bus', 'Van', 'EV'].map((cat) => (
+          <View style={[styles.categoryTabsWrapper, { backgroundColor: theme.colors.surface, borderRadius: 16, padding: 4 }]}>
+            {['Car', 'Bike'].map((cat) => (
               <TouchableOpacity
                 key={cat}
                 style={[
                   styles.categoryTabButton,
-                  { borderColor: theme.colors.border },
-                  selectedCategory === cat && { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary }
+                  selectedCategory === cat
+                    ? { backgroundColor: theme.colors.primary, borderRadius: 12, shadowColor: theme.colors.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 6, elevation: 3 }
+                    : { backgroundColor: 'transparent' }
                 ]}
                 onPress={() => setSelectedCategory(cat)}
               >
                 <Text style={styles.categoryTabIcon}>
-                  {cat === 'Car' ? '🚗' : cat === 'Bike' ? '🏍' : cat === 'Bus' ? '🚌' : cat === 'Van' ? '🚐' : '⚡'}
+                  {cat === 'Car' ? '🚗' : '🏍'}
                 </Text>
-                <Text style={[styles.categoryTabBtnText, { color: selectedCategory === cat ? '#FFFFFF' : theme.colors.text, fontWeight: selectedCategory === cat ? '700' : '500' }]}>
+                <Text style={[styles.categoryTabBtnText, { color: selectedCategory === cat ? '#FFFFFF' : theme.colors.textSecondary, fontWeight: selectedCategory === cat ? '700' : '600' }]}>
                   {cat}
                 </Text>
               </TouchableOpacity>
@@ -996,58 +997,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderRadius: 12,
     paddingVertical: 10,
-    gap: 4,
+    gap: 6,
   },
   categoryTabIcon: {
-    fontSize: 14,
+    fontSize: 16,
   },
   categoryTabBtnText: {
-    fontSize: 12,
-  },
-  passengerFieldRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    height: 52,
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingHorizontal: 16,
-    marginTop: 16,
-  },
-  passengerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  passengerLabel: {
     fontSize: 14,
-    fontWeight: '500',
-  },
-  stepperContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  stepBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 6,
-    borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  stepBtnText: {
-    fontSize: 16,
-    fontWeight: '600',
-    lineHeight: 18,
-  },
-  stepCountText: {
-    fontSize: 14,
-    fontWeight: '700',
-    width: 12,
-    textAlign: 'center',
   },
 });
