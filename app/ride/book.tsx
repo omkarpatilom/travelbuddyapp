@@ -13,11 +13,13 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useRides, Ride } from '@/contexts/RideContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { User, Phone, Users, IndianRupee, ArrowLeft, CreditCard, MapPin } from 'lucide-react-native';
+import { User, Phone, Users, IndianRupee, ArrowLeft, CreditCard, MapPin, ChevronDown } from 'lucide-react-native';
 import { mockRides } from '@/data/mockData';
+import { formatPrice } from '@/utils/validation';
 
 export default function BookRideScreen() {
   const [selectedSeats, setSelectedSeats] = useState(1);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
   const [passengerName, setPassengerName] = useState('');
   const [passengerPhone, setPassengerPhone] = useState('');
   const [requestedPickup, setRequestedPickup] = useState('');
@@ -113,7 +115,7 @@ export default function BookRideScreen() {
       if (success) {
         Alert.alert(
           'Booking Confirmed!',
-          `Your ride has been booked successfully. Total cost: ₹${totalPrice}`,
+          `Your ride has been booked successfully. Total cost: ${formatPrice(totalPrice)}`,
           [{ text: 'OK', onPress: () => router.push('/(tabs)/bookings') }]
         );
       } else {
@@ -160,31 +162,51 @@ export default function BookRideScreen() {
           
           <View style={styles.seatSelector}>
             <Text style={[styles.seatLabel, { color: theme.colors.textSecondary }]}>
-              Number of seats (Available: {ride.availableSeats})
+              Number of passengers (Available seats: {ride.availableSeats})
             </Text>
             
-            <View style={styles.seatControls}>
-              <TouchableOpacity 
-                style={[styles.seatButton, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
-                onPress={() => setSelectedSeats(Math.max(1, selectedSeats - 1))}
-                disabled={selectedSeats <= 1}
-              >
-                <Text style={[styles.seatButtonText, { color: theme.colors.text }]}>-</Text>
-              </TouchableOpacity>
-              
-              <View style={[styles.seatDisplay, { backgroundColor: theme.colors.primary }]}>
-                <Users size={20} color="#FFFFFF" />
-                <Text style={styles.seatCount}>{selectedSeats}</Text>
+            <TouchableOpacity 
+              style={[styles.dropdownButton, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
+              onPress={() => setDropdownOpen(!dropdownOpen)}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <Users size={20} color={theme.colors.primary} />
+                <Text style={[styles.dropdownButtonText, { color: theme.colors.text }]}>
+                  {selectedSeats} Passenger{selectedSeats > 1 ? 's' : ''}
+                </Text>
               </View>
-              
-              <TouchableOpacity 
-                style={[styles.seatButton, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
-                onPress={() => setSelectedSeats(Math.min(ride.availableSeats, selectedSeats + 1))}
-                disabled={selectedSeats >= ride.availableSeats}
-              >
-                <Text style={[styles.seatButtonText, { color: theme.colors.text }]}>+</Text>
-              </TouchableOpacity>
-            </View>
+              <ChevronDown size={20} color={theme.colors.textSecondary} />
+            </TouchableOpacity>
+
+            {dropdownOpen && (
+              <View style={[styles.dropdownList, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+                {Array.from({ length: ride.availableSeats }, (_, i) => i + 1).map((seats) => (
+                  <TouchableOpacity
+                    key={seats}
+                    style={[
+                      styles.dropdownOption,
+                      { borderBottomColor: theme.colors.border },
+                      selectedSeats === seats && { backgroundColor: theme.colors.primary + '10' }
+                    ]}
+                    onPress={() => {
+                      setSelectedSeats(seats);
+                      setDropdownOpen(false);
+                    }}
+                  >
+                    <Text style={[
+                      styles.dropdownOptionText, 
+                      { color: theme.colors.text },
+                      selectedSeats === seats && { color: theme.colors.primary, fontWeight: 'bold' }
+                    ]}>
+                      {seats} Passenger{seats > 1 ? 's' : ''}
+                    </Text>
+                    {selectedSeats === seats && (
+                      <Text style={{ color: theme.colors.primary, fontWeight: 'bold' }}>✓</Text>
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
           </View>
         </View>
 
@@ -272,7 +294,7 @@ export default function BookRideScreen() {
               Price per seat
             </Text>
             <Text style={[styles.paymentValue, { color: theme.colors.text }]}>
-              ₹{ride.price}
+              {formatPrice(ride.price)}
             </Text>
           </View>
 
@@ -290,7 +312,7 @@ export default function BookRideScreen() {
               Total Amount
             </Text>
             <Text style={[styles.totalValue, { color: theme.colors.primary }]}>
-              ₹{totalPrice}
+              {formatPrice(totalPrice)}
             </Text>
           </View>
         </View>
@@ -318,7 +340,7 @@ export default function BookRideScreen() {
           ) : (
             <>
               <IndianRupee size={20} color="#FFFFFF" />
-              <Text style={styles.bookButtonText}>Book Ride - ₹{totalPrice}</Text>
+              <Text style={styles.bookButtonText}>Book Ride - {formatPrice(totalPrice)}</Text>
             </>
           )}
         </TouchableOpacity>
@@ -428,6 +450,42 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     gap: 12,
+  },
+  dropdownButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginTop: 8,
+  },
+  dropdownButtonText: {
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  dropdownList: {
+    borderWidth: 1,
+    borderRadius: 12,
+    marginTop: 4,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  dropdownOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+  },
+  dropdownOptionText: {
+    fontSize: 16,
   },
   input: {
     flex: 1,

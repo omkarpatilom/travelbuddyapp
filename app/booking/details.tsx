@@ -31,6 +31,7 @@ import {
   CheckCircle
 } from 'lucide-react-native';
 import RatingModal from '@/components/RatingModal';
+import { formatPrice } from '@/utils/validation';
 
 export default function BookingDetailsScreen() {
   const [showRatingModal, setShowRatingModal] = useState(false);
@@ -289,94 +290,15 @@ export default function BookingDetailsScreen() {
             </Text>
           </View>
 
-          {/* Route Information */}
-          <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
-            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Trip Details</Text>
-            
-            <View style={styles.routeContainer}>
-              <View style={styles.locationRow}>
-                <View style={[styles.locationDot, { backgroundColor: theme.colors.secondary }]} />
-                <View style={styles.locationInfo}>
-                  <Text style={[styles.locationLabel, { color: theme.colors.textSecondary }]}>Pickup</Text>
-                  <Text style={[styles.locationText, { color: theme.colors.text }]}>
-                    {pickup}
-                  </Text>
-                </View>
-                {booking.ride?.from?.coordinates && (
-                  <TouchableOpacity 
-                    style={[styles.directionsButton, { backgroundColor: theme.colors.primary }]}
-                    onPress={handleGetDirections}
-                  >
-                    <Navigation size={16} color="#FFFFFF" />
-                  </TouchableOpacity>
-                )}
-              </View>
+          {/* Journey & Route Details */}
+          {isDriver ? (
+            // DRIVER VIEW
+            <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+              <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Passenger & Journey Details</Text>
               
-              <View style={[styles.routeLine, { backgroundColor: theme.colors.border }]} />
-              
-              <View style={styles.locationRow}>
-                <View style={[styles.locationDot, { backgroundColor: theme.colors.error }]} />
-                <View style={styles.locationInfo}>
-                  <Text style={[styles.locationLabel, { color: theme.colors.textSecondary }]}>Destination</Text>
-                  <Text style={[styles.locationText, { color: theme.colors.text }]}>
-                    {dropoff}
-                  </Text>
-                </View>
-              </View>
-            </View>
-
-            <View style={styles.tripDetails}>
-              <View style={styles.tripDetailItem}>
-                <Calendar size={20} color={theme.colors.primary} />
-                <View>
-                  <Text style={[styles.tripDetailLabel, { color: theme.colors.textSecondary }]}>Date</Text>
-                  <Text style={[styles.tripDetailValue, { color: theme.colors.text }]}>
-                    {booking.ride?.date || 'N/A'}
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.tripDetailItem}>
-                <Clock size={20} color={theme.colors.primary} />
-                <View>
-                  <Text style={[styles.tripDetailLabel, { color: theme.colors.textSecondary }]}>Time</Text>
-                  <Text style={[styles.tripDetailValue, { color: theme.colors.text }]}>
-                    {booking.ride?.time || 'N/A'}
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.tripDetailItem}>
-                <Users size={20} color={theme.colors.primary} />
-                <View>
-                  <Text style={[styles.tripDetailLabel, { color: theme.colors.textSecondary }]}>Seats</Text>
-                  <Text style={[styles.tripDetailValue, { color: theme.colors.text }]}>
-                    {booking.seats} seat{booking.seats > 1 ? 's' : ''}
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.tripDetailItem}>
-                <Car size={20} color={theme.colors.primary} />
-                <View>
-                  <Text style={[styles.tripDetailLabel, { color: theme.colors.textSecondary }]}>Vehicle</Text>
-                  <Text style={[styles.tripDetailValue, { color: theme.colors.text }]}>
-                    {booking.ride?.carModel || 'Vehicle'}
-                  </Text>
-                </View>
-              </View>
-            </View>
-          </View>
-
-          {/* Driver or Passenger Information */}
-          <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
-            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-              {isDriver ? 'Passenger Details' : 'Driver'}
-            </Text>
-            
-            {isDriver ? (
+              {/* Passenger Card */}
               <View style={styles.driverCard}>
-                <View style={[styles.driverAvatar, { backgroundColor: theme.colors.primary + '15', justifyContent: 'center', alignItems: 'center' }]}>
+                <View style={[styles.avatarCircle, { backgroundColor: theme.colors.primary + '15', justifyContent: 'center', alignItems: 'center' }]}>
                   <Text style={{ fontSize: 20, fontWeight: 'bold', color: theme.colors.primary }}>
                     {booking.passengerName ? booking.passengerName.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2) : 'P'}
                   </Text>
@@ -385,17 +307,11 @@ export default function BookingDetailsScreen() {
                   <Text style={[styles.driverName, { color: theme.colors.text }]}>
                     {booking.passengerName}
                   </Text>
-                  <Text style={{ fontSize: 13, color: theme.colors.textSecondary, marginBottom: 2 }}>
-                    Phone: {booking.passengerPhone}
+                  <Text style={{ fontSize: 14, color: theme.colors.textSecondary, marginTop: 2 }}>
+                    Contact: {booking.passengerPhone}
                   </Text>
-                  <View style={styles.ratingContainer}>
-                    <Star size={14} color={theme.colors.warning} fill={theme.colors.warning} />
-                    <Text style={[styles.rating, { color: theme.colors.textSecondary }]}>
-                      4.8
-                    </Text>
-                    <Text style={{ fontSize: 12, color: theme.colors.textSecondary }}> (Passenger Rating)</Text>
-                  </View>
                 </View>
+                
                 {(booking.status === 'confirmed' || booking.status === 'completed') && (
                   <View style={styles.contactButtons}>
                     <TouchableOpacity 
@@ -413,45 +329,231 @@ export default function BookingDetailsScreen() {
                   </View>
                 )}
               </View>
-            ) : (
-              <View style={styles.driverCard}>
-                {booking.ride?.driverAvatar ? (
-                  <Image source={{ uri: booking.ride.driverAvatar }} style={styles.driverAvatar} />
-                ) : (
-                  <View style={[styles.driverAvatar, { backgroundColor: theme.colors.border, justifyContent: 'center', alignItems: 'center' }]}>
-                    <Star size={30} color={theme.colors.textSecondary} />
+
+              <View style={[styles.dividerLine, { backgroundColor: theme.colors.border }]} />
+
+              {/* Journey details */}
+              <View style={styles.routeContainer}>
+                <View style={styles.locationRow}>
+                  <View style={[styles.locationDot, { backgroundColor: theme.colors.secondary }]} />
+                  <View style={styles.locationInfo}>
+                    <Text style={[styles.locationLabel, { color: theme.colors.textSecondary }]}>Passenger Pickup Location</Text>
+                    <Text style={[styles.locationText, { color: theme.colors.text }]}>
+                      {pickup}
+                    </Text>
                   </View>
-                )}
-                <View style={styles.driverInfo}>
-                  <Text style={[styles.driverName, { color: theme.colors.text }]}>
-                    {booking.ride?.driverName || 'Driver'}
-                  </Text>
-                  <View style={styles.ratingContainer}>
-                    <Star size={16} color={theme.colors.warning} fill={theme.colors.warning} />
-                    <Text style={[styles.rating, { color: theme.colors.textSecondary }]}>
-                      {booking.ride?.driverRating || 5.0}
+                  {booking.ride?.from?.coordinates && (
+                    <TouchableOpacity 
+                      style={[styles.directionsButton, { backgroundColor: theme.colors.primary }]}
+                      onPress={handleGetDirections}
+                    >
+                      <Navigation size={16} color="#FFFFFF" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+                
+                <View style={[styles.routeLine, { backgroundColor: theme.colors.border }]} />
+                
+                <View style={styles.locationRow}>
+                  <View style={[styles.locationDot, { backgroundColor: theme.colors.error }]} />
+                  <View style={styles.locationInfo}>
+                    <Text style={[styles.locationLabel, { color: theme.colors.textSecondary }]}>Passenger Drop Location</Text>
+                    <Text style={[styles.locationText, { color: theme.colors.text }]}>
+                      {dropoff}
                     </Text>
                   </View>
                 </View>
-                {(booking.status === 'confirmed' || booking.status === 'completed') && (
-                  <View style={styles.contactButtons}>
-                    <TouchableOpacity 
-                      style={[styles.contactButton, { backgroundColor: theme.colors.secondary }]}
-                      onPress={handleCallDriver}
-                    >
-                      <Phone size={18} color="#FFFFFF" />
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                      style={[styles.contactButton, { backgroundColor: theme.colors.primary }]}
-                      onPress={handleChatDriver}
-                    >
-                      <MessageCircle size={18} color="#FFFFFF" />
-                    </TouchableOpacity>
-                  </View>
-                )}
               </View>
-            )}
-          </View>
+
+              <View style={[styles.dividerLine, { backgroundColor: theme.colors.border }]} />
+
+              <View style={styles.tripDetails}>
+                <View style={styles.tripDetailItem}>
+                  <Users size={20} color={theme.colors.primary} />
+                  <View>
+                    <Text style={[styles.tripDetailLabel, { color: theme.colors.textSecondary }]}>Seats Booked</Text>
+                    <Text style={[styles.tripDetailValue, { color: theme.colors.text }]}>
+                      {booking.seats} seat{booking.seats > 1 ? 's' : ''}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.tripDetailItem}>
+                  <Calendar size={20} color={theme.colors.primary} />
+                  <View>
+                    <Text style={[styles.tripDetailLabel, { color: theme.colors.textSecondary }]}>Date</Text>
+                    <Text style={[styles.tripDetailValue, { color: theme.colors.text }]}>
+                      {booking.ride?.date || 'N/A'}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.tripDetailItem}>
+                  <Clock size={20} color={theme.colors.primary} />
+                  <View>
+                    <Text style={[styles.tripDetailLabel, { color: theme.colors.textSecondary }]}>Departure Time</Text>
+                    <Text style={[styles.tripDetailValue, { color: theme.colors.text }]}>
+                      {booking.ride?.time || 'N/A'}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            </View>
+          ) : (
+            // PASSENGER VIEW
+            <View style={{ gap: 20 }}>
+              {/* Trip Details Card */}
+              <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+                <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Your Journey</Text>
+                
+                {/* Passenger Pickup/Drop Journey */}
+                <View style={styles.routeContainer}>
+                  <View style={styles.locationRow}>
+                    <View style={[styles.locationDot, { backgroundColor: theme.colors.secondary }]} />
+                    <View style={styles.locationInfo}>
+                      <Text style={[styles.locationLabel, { color: theme.colors.textSecondary }]}>Your Pickup Location</Text>
+                      <Text style={[styles.locationText, { color: theme.colors.text }]}>
+                        {pickup}
+                      </Text>
+                    </View>
+                    {booking.ride?.from?.coordinates && (
+                      <TouchableOpacity 
+                        style={[styles.directionsButton, { backgroundColor: theme.colors.primary }]}
+                        onPress={handleGetDirections}
+                      >
+                        <Navigation size={16} color="#FFFFFF" />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                  
+                  <View style={[styles.routeLine, { backgroundColor: theme.colors.border }]} />
+                  
+                  <View style={styles.locationRow}>
+                    <View style={[styles.locationDot, { backgroundColor: theme.colors.error }]} />
+                    <View style={styles.locationInfo}>
+                      <Text style={[styles.locationLabel, { color: theme.colors.textSecondary }]}>Your Drop Location</Text>
+                      <Text style={[styles.locationText, { color: theme.colors.text }]}>
+                        {dropoff}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                <View style={[styles.dividerLine, { backgroundColor: theme.colors.border }]} />
+
+                {/* Driver's Overall Ride Route */}
+                <Text style={[styles.sectionTitle, { color: theme.colors.text, fontSize: 16 }]}>Driver's Offered Route</Text>
+                <View style={styles.routeContainer}>
+                  <View style={styles.locationRow}>
+                    <View style={[styles.locationDot, { backgroundColor: theme.colors.textSecondary }]} />
+                    <View style={styles.locationInfo}>
+                      <Text style={[styles.locationLabel, { color: theme.colors.textSecondary }]}>Start City</Text>
+                      <Text style={[styles.locationText, { color: theme.colors.text, fontSize: 15 }]}>
+                        {booking.ride?.from?.address || 'Origin'}
+                      </Text>
+                    </View>
+                  </View>
+                  
+                  <View style={[styles.routeLine, { backgroundColor: theme.colors.border, height: 20 }]} />
+                  
+                  <View style={styles.locationRow}>
+                    <View style={[styles.locationDot, { backgroundColor: theme.colors.textSecondary }]} />
+                    <View style={styles.locationInfo}>
+                      <Text style={[styles.locationLabel, { color: theme.colors.textSecondary }]}>Destination City</Text>
+                      <Text style={[styles.locationText, { color: theme.colors.text, fontSize: 15 }]}>
+                        {booking.ride?.to?.address || 'Destination'}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                <View style={[styles.dividerLine, { backgroundColor: theme.colors.border }]} />
+
+                <View style={styles.tripDetails}>
+                  <View style={styles.tripDetailItem}>
+                    <Calendar size={20} color={theme.colors.primary} />
+                    <View>
+                      <Text style={[styles.tripDetailLabel, { color: theme.colors.textSecondary }]}>Date</Text>
+                      <Text style={[styles.tripDetailValue, { color: theme.colors.text }]}>
+                        {booking.ride?.date || 'N/A'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.tripDetailItem}>
+                    <Clock size={20} color={theme.colors.primary} />
+                    <View>
+                      <Text style={[styles.tripDetailLabel, { color: theme.colors.textSecondary }]}>Departure Time</Text>
+                      <Text style={[styles.tripDetailValue, { color: theme.colors.text }]}>
+                        {booking.ride?.time || 'N/A'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.tripDetailItem}>
+                    <Users size={20} color={theme.colors.primary} />
+                    <View>
+                      <Text style={[styles.tripDetailLabel, { color: theme.colors.textSecondary }]}>Seats Booked</Text>
+                      <Text style={[styles.tripDetailValue, { color: theme.colors.text }]}>
+                        {booking.seats} seat{booking.seats > 1 ? 's' : ''}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.tripDetailItem}>
+                    <Car size={20} color={theme.colors.primary} />
+                    <View>
+                      <Text style={[styles.tripDetailLabel, { color: theme.colors.textSecondary }]}>Vehicle</Text>
+                      <Text style={[styles.tripDetailValue, { color: theme.colors.text }]}>
+                        {booking.ride?.carModel || 'Vehicle'}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              </View>
+
+              {/* Driver Card (only shown for passengers) */}
+              <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+                <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Driver</Text>
+                <View style={styles.driverCard}>
+                  {booking.ride?.driverAvatar ? (
+                    <Image source={{ uri: booking.ride.driverAvatar }} style={styles.driverAvatar} />
+                  ) : (
+                    <View style={[styles.driverAvatar, { backgroundColor: theme.colors.border, justifyContent: 'center', alignItems: 'center' }]}>
+                      <Star size={30} color={theme.colors.textSecondary} />
+                    </View>
+                  )}
+                  <View style={styles.driverInfo}>
+                    <Text style={[styles.driverName, { color: theme.colors.text }]}>
+                      {booking.ride?.driverName || 'Driver'}
+                    </Text>
+                    <View style={styles.ratingContainer}>
+                      <Star size={16} color={theme.colors.warning} fill={theme.colors.warning} />
+                      <Text style={[styles.rating, { color: theme.colors.textSecondary }]}>
+                        {booking.ride?.driverRating || 5.0}
+                      </Text>
+                    </View>
+                  </View>
+                  {(booking.status === 'confirmed' || booking.status === 'completed') && (
+                    <View style={styles.contactButtons}>
+                      <TouchableOpacity 
+                        style={[styles.contactButton, { backgroundColor: theme.colors.secondary }]}
+                        onPress={handleCallDriver}
+                      >
+                        <Phone size={18} color="#FFFFFF" />
+                      </TouchableOpacity>
+                      <TouchableOpacity 
+                        style={[styles.contactButton, { backgroundColor: theme.colors.primary }]}
+                        onPress={handleChatDriver}
+                      >
+                        <MessageCircle size={18} color="#FFFFFF" />
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+              </View>
+            </View>
+          )}
 
           {/* Passenger Special Notes */}
           {notes ? (
@@ -475,7 +577,7 @@ export default function BookingDetailsScreen() {
                   Price per seat
                 </Text>
                 <Text style={[styles.paymentValue, { color: theme.colors.text }]}>
-                  ₹{booking.ride?.price || 0.0}
+                  {formatPrice(booking.ride?.price || 0.0)}
                 </Text>
               </View>
 
@@ -493,7 +595,7 @@ export default function BookingDetailsScreen() {
                   Total Amount
                 </Text>
                 <Text style={[styles.totalValue, { color: theme.colors.primary }]}>
-                  ₹{booking.totalPrice}
+                  {formatPrice(booking.totalPrice)}
                 </Text>
               </View>
             </View>
@@ -819,9 +921,22 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   driverName: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 4,
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  avatarCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+  },
+  avatarText: {
+    fontSize: 20,
+  },
+  dividerLine: {
+    height: 1,
+    width: '100%',
+    marginVertical: 4,
   },
   ratingContainer: {
     flexDirection: 'row',

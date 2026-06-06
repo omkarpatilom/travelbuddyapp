@@ -94,7 +94,7 @@ export const rideService = {
   },
 
   async updateTracking(id: string, data: { latitude: number; longitude: number; address?: string }) {
-    return api.post<void>(`/rides/${id}/tracking`, data);
+    return api.post<void>(`/rides/${id}/tracking`, { rideId: id, ...data });
   },
 
   async getTracking(id: string) {

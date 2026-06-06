@@ -16,6 +16,7 @@ import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRides } from '@/contexts/RideContext';
+import { formatPrice } from '@/utils/validation';
 import {
   Search,
   Plus,
@@ -493,7 +494,7 @@ export default function HomeScreen() {
                     </View>
                     <View style={[styles.priceBadge, { backgroundColor: theme.colors.primary + '15' }]}>
                       <Text style={[styles.priceBadgeText, { color: theme.colors.primary }]}>
-                        ₹{ride.price}
+                        {formatPrice(ride.price)}
                       </Text>
                     </View>
                   </View>

@@ -35,7 +35,7 @@ export const validatePassword = (password: string): { isValid: boolean; errors: 
 
 export const validatePrice = (price: string): boolean => {
   const priceNum = parseFloat(price);
-  return !isNaN(priceNum) && priceNum > 0 && priceNum <= 1000;
+  return !isNaN(priceNum) && priceNum > 0 && priceNum <= 10000;
 };
 
 export const validateSeats = (seats: string): boolean => {
@@ -79,12 +79,14 @@ export const formatPhoneNumber = (phone: string): string => {
 };
 
 export const formatPrice = (price: number): string => {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
+  if (price === undefined || price === null || isNaN(price)) {
+    return '₹ 0';
+  }
+  const formattedVal = new Intl.NumberFormat('en-IN', {
     minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
+    maximumFractionDigits: 0,
   }).format(price);
+  return `₹ ${formattedVal}`;
 };
 
 export const formatDate = (date: Date, locale: string = 'en-US'): string => {
