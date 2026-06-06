@@ -19,6 +19,8 @@ import LocationPicker from '@/components/LocationPicker';
 import VehicleSelector from '@/components/VehicleSelector';
 import PreferencesSelector, { RidePreferences } from '@/components/PreferencesSelector';
 import MapLocationSelector from '@/components/MapLocationSelector';
+import DropdownSelector from '@/components/DropdownSelector';
+
 
 interface Vehicle {
   id: string;
@@ -63,7 +65,45 @@ export default function OfferRideScreen() {
 
   useEffect(() => {
     fetchVehicles();
+    fetchDefaultPreferences();
   }, []);
+
+  const fetchDefaultPreferences = async () => {
+    try {
+      const data = await api.get<any>('/preferences');
+      if (data) {
+        setPreferences({
+          nonSmoking: !data.allowSmoking,
+          musicAllowed: data.allowMusic,
+          petsAllowed: data.allowPets,
+          airConditioning: data.comfortAmenities?.includes('ac') ?? true,
+          conversationLevel: data.conversationLevel?.toLowerCase() === 'quiet' ? 'quiet' : 
+                             data.conversationLevel?.toLowerCase() === 'chatty' ? 'chatty' : 'moderate',
+        });
+      }
+    } catch (error) {
+      console.warn('Failed to load default preferences:', error);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedVehicle) {
+      const capacity = parseInt(selectedVehicle.seats) || 4;
+      const defaultAvailable = Math.max(1, capacity - 1);
+      setFormData(prev => ({ ...prev, seats: defaultAvailable.toString() }));
+    }
+  }, [selectedVehicle]);
+
+  const getSeatOptions = () => {
+    if (!selectedVehicle) return ['1'];
+    const capacity = parseInt(selectedVehicle.seats) || 4;
+    const maxAvailable = Math.max(1, capacity - 1);
+    const options = [];
+    for (let i = 1; i <= maxAvailable; i++) {
+      options.push(i.toString());
+    }
+    return options;
+  };
 
   const fetchVehicles = async () => {
     try {
@@ -280,35 +320,14 @@ export default function OfferRideScreen() {
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Ride Details</Text>
           
           <View style={styles.row}>
-            <View style={[styles.inputContainer, styles.halfWidth, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-              <Users size={20} color={theme.colors.textSecondary} />
-              <TouchableOpacity 
-                style={styles.seatSelector}
-                onPress={() => {
-                  Alert.prompt(
-                    'Number of Seats',
-                    'Enter the number of available seats (1-8)',
-                    [
-                      { text: 'Cancel', style: 'cancel' },
-                      { 
-                        text: 'OK', 
-                        onPress: (value?: string) => {
-                          if (value && parseInt(value) >= 1 && parseInt(value) <= 8) {
-                            updateFormData('seats', value);
-                          }
-                        }
-                      }
-                    ],
-                    'plain-text',
-                    formData.seats
-                  );
-                }}
-              >
-                <Text style={[styles.input, { color: theme.colors.text }]}>
-                  {formData.seats} seat{parseInt(formData.seats) > 1 ? 's' : ''}
-                </Text>
-              </TouchableOpacity>
-            </View>
+            <DropdownSelector
+              style={styles.halfWidth}
+              value={formData.seats}
+              options={getSeatOptions()}
+              onValueChange={(value) => updateFormData('seats', value)}
+              icon={<Users size={20} color={theme.colors.textSecondary} />}
+              placeholder="Seats"
+            />
 
             <View style={[styles.inputContainer, styles.halfWidth, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
               <IndianRupee size={20} color={theme.colors.textSecondary} />

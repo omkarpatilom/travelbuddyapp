@@ -133,4 +133,30 @@ describe('TravelBuddy Live E2E Integration Test Suite', () => {
       throw error;
     }
   });
+
+  it('5. Register Device Token Flow', async () => {
+    expect(authToken).toBeTruthy();
+
+    const deviceTokenPayload = {
+      pushToken: 'ExponentPushToken[e2e-test-token-12345]',
+    };
+
+    try {
+      const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL || 'https://whippet-concise-ghastly.ngrok-free.app/api/v1'}/notifications/devices/register`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
+        },
+        body: JSON.stringify(deviceTokenPayload),
+      });
+
+      expect([200, 204]).toContain(response.status);
+      console.log('Device push token successfully registered in NotificationService database!');
+    } catch (error) {
+      console.error('Device token registration failed:', error);
+      throw error;
+    }
+  });
 });

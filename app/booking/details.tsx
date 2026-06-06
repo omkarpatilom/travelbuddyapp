@@ -28,10 +28,15 @@ import {
   CreditCard,
   Navigation,
   X,
-  CheckCircle
+  CheckCircle,
+  Cigarette,
+  Heart,
+  Wind,
+  Music
 } from 'lucide-react-native';
 import RatingModal from '@/components/RatingModal';
 import { formatPrice } from '@/utils/validation';
+import { reviewService } from '@/services/review.service';
 
 export default function BookingDetailsScreen() {
   const [showRatingModal, setShowRatingModal] = useState(false);
@@ -40,6 +45,7 @@ export default function BookingDetailsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [qrLoadError, setQrLoadError] = useState(false);
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
+  const [hasReviewed, setHasReviewed] = useState(false);
   
   const { theme } = useTheme();
   const { user } = useAuth();
@@ -61,6 +67,16 @@ export default function BookingDetailsScreen() {
       const result = await getBookingById(bookingId);
       if (result) {
         setBooking(result);
+        try {
+          const rev = await reviewService.getByBookingId(bookingId);
+          if (rev) {
+            setHasReviewed(true);
+          } else {
+            setHasReviewed(false);
+          }
+        } catch (e) {
+          setHasReviewed(false);
+        }
       } else {
         setError('Booking not found');
       }
@@ -512,6 +528,49 @@ export default function BookingDetailsScreen() {
                 </View>
               </View>
 
+              {/* Ride Preferences Card */}
+              {booking.ride?.preferences && (
+                <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+                  <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Ride Preferences</Text>
+                  <View style={styles.preferencesContainer}>
+                    <View style={[styles.preferenceTag, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+                      <MessageCircle size={16} color={theme.colors.primary} />
+                      <Text style={[styles.preferenceText, { color: theme.colors.text }]}>
+                        Chat: {booking.ride.preferences.conversationLevel.charAt(0).toUpperCase() + booking.ride.preferences.conversationLevel.slice(1)}
+                      </Text>
+                    </View>
+
+                    <View style={[styles.preferenceTag, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+                      <Music size={16} color={theme.colors.secondary} />
+                      <Text style={[styles.preferenceText, { color: theme.colors.text }]}>
+                        {booking.ride.preferences.musicAllowed ? 'Music Allowed' : 'No Music'}
+                      </Text>
+                    </View>
+
+                    <View style={[styles.preferenceTag, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+                      <Cigarette size={16} color={theme.colors.error} />
+                      <Text style={[styles.preferenceText, { color: theme.colors.text }]}>
+                        {booking.ride.preferences.nonSmoking ? 'Non-Smoking' : 'Smoking Allowed'}
+                      </Text>
+                    </View>
+
+                    <View style={[styles.preferenceTag, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+                      <Heart size={16} color={theme.colors.accent} />
+                      <Text style={[styles.preferenceText, { color: theme.colors.text }]}>
+                        {booking.ride.preferences.petsAllowed ? 'Pet Friendly' : 'No Pets'}
+                      </Text>
+                    </View>
+
+                    {booking.ride.preferences.airConditioning && (
+                      <View style={[styles.preferenceTag, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+                        <Wind size={16} color={theme.colors.primary} />
+                        <Text style={[styles.preferenceText, { color: theme.colors.text }]}>AC Available</Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              )}
+
               {/* Driver Card (only shown for passengers) */}
               <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
                 <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Driver</Text>
@@ -728,13 +787,21 @@ export default function BookingDetailsScreen() {
               </TouchableOpacity>
             )}
 
-            {booking.status === 'completed' && (
+             {booking.status === 'completed' && (
               <TouchableOpacity 
-                style={[styles.rateButton, { backgroundColor: theme.colors.primary }]}
-                onPress={() => setShowRatingModal(true)}
+                style={[
+                  styles.rateButton, 
+                  { backgroundColor: hasReviewed ? theme.colors.border : theme.colors.primary }
+                ]}
+                onPress={() => {
+                  if (!hasReviewed) setShowRatingModal(true);
+                }}
+                disabled={hasReviewed}
               >
-                <Star size={20} color="#FFFFFF" />
-                <Text style={styles.rateButtonText}>Rate This Ride</Text>
+                <Star size={20} color={hasReviewed ? theme.colors.textSecondary : "#FFFFFF"} />
+                <Text style={[styles.rateButtonText, { color: hasReviewed ? theme.colors.textSecondary : "#FFFFFF" }]}>
+                  {hasReviewed ? 'Review Submitted' : isDriver ? 'Rate Passenger' : 'Rate This Ride'}
+                </Text>
               </TouchableOpacity>
             )}
           </View>
@@ -744,9 +811,15 @@ export default function BookingDetailsScreen() {
       {booking.ride?.id && (
         <RatingModal
           visible={showRatingModal}
-          onClose={() => setShowRatingModal(false)}
+          onClose={() => {
+            setShowRatingModal(false);
+            fetchBookingDetails();
+          }}
           rideId={booking.ride.id}
-          driverName={booking.ride.driverName || 'Driver'}
+          bookingId={booking.id}
+          targetUserId={isDriver ? booking.userId : booking.ride.driverId}
+          targetName={isDriver ? booking.passengerName : (booking.ride.driverName || 'Driver')}
+          targetRole={isDriver ? 'passenger' : 'driver'}
         />
       )}
 
@@ -815,6 +888,24 @@ const styles = StyleSheet.create({
   content: {
     padding: 20,
     gap: 20,
+  },
+  preferencesContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  preferenceTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 8,
+  },
+  preferenceText: {
+    fontSize: 14,
+    fontWeight: '500',
   },
   statusCard: {
     padding: 20,

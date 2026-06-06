@@ -466,6 +466,16 @@ export default function FindRideScreen() {
                 <Text style={[styles.miniBadgeText, { color: theme.colors.accent }]}>Pet Friendly</Text>
               </View>
             )}
+            {item.preferences.nonSmoking && (
+              <View style={[styles.miniBadge, { backgroundColor: theme.colors.success + '15' }]}>
+                <Text style={[styles.miniBadgeText, { color: theme.colors.success }]}>Non-Smoking</Text>
+              </View>
+            )}
+            <View style={[styles.miniBadge, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderWidth: 1 }]}>
+              <Text style={[styles.miniBadgeText, { color: theme.colors.textSecondary }]}>
+                Chat: {item.preferences.conversationLevel}
+              </Text>
+            </View>
           </View>
         </View>
       </View>

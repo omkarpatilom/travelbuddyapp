@@ -13,10 +13,10 @@ import {
 import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { api } from '@/utils/api';
-import { Car, Hash, Palette, Calendar, Users, ArrowLeft, Save, Plus } from 'lucide-react-native';
+import { Car, Hash, Palette, Calendar, Users, ArrowLeft, Save, Plus, Settings } from 'lucide-react-native';
 import PhotoUploader from '@/components/PhotoUploader';
-import VehicleFeatureTags, { AVAILABLE_FEATURES } from '@/components/VehicleFeatureTags';
-import RidePreferences, { UniversalRidePreferences } from '@/components/RidePreferences';
+import { AVAILABLE_FEATURES } from '@/components/VehicleFeatureTags';
+import DropdownSelector from '@/components/DropdownSelector';
 
 interface Vehicle {
   id: string;
@@ -32,6 +32,11 @@ interface Vehicle {
   features: string[];
   preferences?: UniversalRidePreferences;
 }
+
+const currentYear = new Date().getFullYear();
+const yearsList = Array.from({ length: 22 }, (_, i) => (currentYear - i).toString());
+const colorsList = ['White', 'Black', 'Silver', 'Grey', 'Blue', 'Red', 'Brown', 'Green', 'Yellow', 'Gold', 'Orange'];
+const seatsOptionsList = ['2', '3', '4', '5', '6', '7', '8', '9'];
 
 export default function VehicleDetailsScreen() {
   const { theme } = useTheme();
@@ -497,28 +502,23 @@ export default function VehicleDetailsScreen() {
             </View>
 
             <View style={styles.row}>
-              <View style={[styles.inputContainer, styles.halfWidth, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-                <Calendar size={20} color={theme.colors.textSecondary} />
-                <TextInput
-                  style={[styles.input, { color: theme.colors.text }]}
-                  placeholder="Year"
-                  placeholderTextColor={theme.colors.textSecondary}
-                  value={formData.year}
-                  onChangeText={(value) => updateFormData('year', value)}
-                  keyboardType="numeric"
-                />
-              </View>
+              <DropdownSelector
+                style={styles.halfWidth}
+                value={formData.year}
+                options={yearsList}
+                onValueChange={(value) => updateFormData('year', value)}
+                icon={<Calendar size={20} color={theme.colors.textSecondary} />}
+                placeholder="Year"
+              />
 
-              <View style={[styles.inputContainer, styles.halfWidth, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-                <Palette size={20} color={theme.colors.textSecondary} />
-                <TextInput
-                  style={[styles.input, { color: theme.colors.text }]}
-                  placeholder="Color"
-                  placeholderTextColor={theme.colors.textSecondary}
-                  value={formData.color}
-                  onChangeText={(value) => updateFormData('color', value)}
-                />
-              </View>
+              <DropdownSelector
+                style={styles.halfWidth}
+                value={formData.color}
+                options={colorsList}
+                onValueChange={(value) => updateFormData('color', value)}
+                icon={<Palette size={20} color={theme.colors.textSecondary} />}
+                placeholder="Color"
+              />
             </View>
 
             <View style={styles.row}>
@@ -534,17 +534,14 @@ export default function VehicleDetailsScreen() {
                 />
               </View>
 
-              <View style={[styles.inputContainer, styles.halfWidth, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-                <Users size={20} color={theme.colors.textSecondary} />
-                <TextInput
-                  style={[styles.input, { color: theme.colors.text }]}
-                  placeholder="Seats"
-                  placeholderTextColor={theme.colors.textSecondary}
-                  value={formData.seats}
-                  onChangeText={(value) => updateFormData('seats', value)}
-                  keyboardType="numeric"
-                />
-              </View>
+              <DropdownSelector
+                style={styles.halfWidth}
+                value={formData.seats}
+                options={seatsOptionsList}
+                onValueChange={(value) => updateFormData('seats', value)}
+                icon={<Users size={20} color={theme.colors.textSecondary} />}
+                placeholder="Seats"
+              />
             </View>
           </View>
 
@@ -555,17 +552,21 @@ export default function VehicleDetailsScreen() {
             maxPhotos={8}
           />
 
-          <VehicleFeatureTags
-            selectedFeatures={formData.features}
-            onFeaturesChange={(features) => updateFormData('features', features)}
-          />
-
-          <RidePreferences
-            preferences={formData.preferences}
-            onPreferencesChange={(preferences) => updateFormData('preferences', preferences)}
-            mode="edit"
-            canOverride={true}
-          />
+          {editingVehicle ? (
+            <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+              <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Ride Preferences</Text>
+              <Text style={[styles.inputLabel, { color: theme.colors.textSecondary, marginBottom: 8, fontSize: 13 }]}>
+                Configure social, booking, comfort, and safety preferences in one centralized screen.
+              </Text>
+              <TouchableOpacity 
+                style={[styles.ridePrefsButton, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
+                onPress={() => router.push('/profile/preferences')}
+              >
+                <Settings size={20} color={theme.colors.primary} />
+                <Text style={[styles.ridePrefsText, { color: theme.colors.text }]}>Manage Ride Preferences</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
 
           <TouchableOpacity 
             style={[styles.saveButtonLarge, { backgroundColor: theme.colors.primary }]}
@@ -830,8 +831,17 @@ const styles = StyleSheet.create({
   categoryTabText: {
     fontSize: 11,
   },
-  inputLabel: {
-    fontSize: 14,
+  ridePrefsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 8,
+  },
+  ridePrefsText: {
+    fontSize: 16,
     fontWeight: '600',
   },
 });

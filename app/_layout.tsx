@@ -9,17 +9,24 @@ import { NotificationProvider } from '@/contexts/NotificationContext';
 import { VehicleProvider } from '@/contexts/VehicleContext';
 import { SafetyProvider } from '@/contexts/SafetyContext';
 import { ReviewProvider } from '@/contexts/ReviewContext';
+import { QueryProvider } from '@/providers/QueryProvider';
 import ErrorBoundary from '@/components/ErrorBoundary';
+import { initSQLiteDB } from '@/storage/sqlite';
 
 export default function RootLayout() {
   useFrameworkReady();
 
+  useEffect(() => {
+    initSQLiteDB();
+  }, []);
+
   return (
     <ErrorBoundary>
-      <ThemeProvider>
-        <NotificationProvider>
+      <QueryProvider>
+        <ThemeProvider>
           <AuthProvider>
-            <RideProvider>
+            <NotificationProvider>
+              <RideProvider>
               <VehicleProvider>
                 <SafetyProvider>
                   <ReviewProvider>
@@ -44,10 +51,11 @@ export default function RootLayout() {
                   </ReviewProvider>
                 </SafetyProvider>
               </VehicleProvider>
-            </RideProvider>
+              </RideProvider>
+            </NotificationProvider>
           </AuthProvider>
-        </NotificationProvider>
-      </ThemeProvider>
+        </ThemeProvider>
+      </QueryProvider>
     </ErrorBoundary>
   );
 }

@@ -69,6 +69,8 @@ export default function JourneyCommandCenterScreen() {
     completeDropoff,
     completeRide,
     updateTracking,
+    confirmBooking,
+    completeBooking,
   } = useRides();
   
   const router = useRouter();
@@ -378,14 +380,29 @@ export default function JourneyCommandCenterScreen() {
         if (selectedPassenger.status === 'confirmed') {
           success = true;
         } else {
-          success = await bookingService.confirmBooking(selectedPassenger.id);
+          success = await confirmBooking(selectedPassenger.id);
         }
         if (success) {
-          setBoardedPassengerIds((prev) => [...prev, selectedPassenger.id]);
+          const updatedBoardedIds = [...boardedPassengerIds, selectedPassenger.id];
+          setBoardedPassengerIds(updatedBoardedIds);
           addLog(`✓ Passenger boarded: ${selectedPassenger.passengerName}`);
+          
+          // Count remaining pickups in the entire ride
+          const allPickupBookings = stops
+            .filter(s => s.type === 'pickup')
+            .flatMap(s => s.bookings);
+          const pendingCount = allPickupBookings.filter(b => b.status === 'confirmed' && !updatedBoardedIds.includes(b.id)).length;
+          
+          if (pendingCount === 0) {
+            addLog('🏁 All passengers boarded! Auto-starting ride...');
+            const startOk = await startRide(ride.id);
+            if (startOk) {
+              addLog('🏁 Ride status updated to Started!');
+            }
+          }
         }
       } else {
-        success = await bookingService.completeBooking(selectedPassenger.id);
+        success = await completeBooking(selectedPassenger.id);
         if (success) addLog(`✓ Passenger dropped: ${selectedPassenger.passengerName}`);
       }
 
@@ -514,12 +531,27 @@ export default function JourneyCommandCenterScreen() {
             if (booking.status === 'confirmed') {
               ok = true;
             } else {
-              ok = await bookingService.confirmBooking(booking.id);
+              ok = await confirmBooking(booking.id);
             }
             setIsActionLoading(false);
             if (ok) {
-              setBoardedPassengerIds((prev) => [...prev, booking.id]);
+              const updatedBoardedIds = [...boardedPassengerIds, booking.id];
+              setBoardedPassengerIds(updatedBoardedIds);
               addLog(`✓ Instant manual boarded: ${booking.passengerName}`);
+              
+              // Count remaining pickups in the entire ride
+              const allPickupBookings = stops
+                .filter(s => s.type === 'pickup')
+                .flatMap(s => s.bookings);
+              const pendingCount = allPickupBookings.filter(b => b.status === 'confirmed' && !updatedBoardedIds.includes(b.id)).length;
+              
+              if (pendingCount === 0) {
+                addLog('🏁 All passengers boarded! Auto-starting ride...');
+                const startOk = await startRide(ride.id);
+                if (startOk) {
+                  addLog('🏁 Ride status updated to Started!');
+                }
+              }
               await loadData();
             }
           }
@@ -545,7 +577,7 @@ export default function JourneyCommandCenterScreen() {
           text: 'Quick Drop Confirm',
           onPress: async () => {
             setIsActionLoading(true);
-            const ok = await bookingService.completeBooking(booking.id);
+            const ok = await completeBooking(booking.id);
             setIsActionLoading(false);
             if (ok) {
               addLog(`✓ Instant manual dropped: ${booking.passengerName}`);
@@ -598,14 +630,42 @@ export default function JourneyCommandCenterScreen() {
         );
       case 'driverarrived':
         return (
-          <TouchableOpacity 
-            style={[styles.primaryCTA, { backgroundColor: '#4F46E5' }]} 
-            onPress={() => triggerStateTransition('boarding')} 
-            disabled={isActionLoading}
-          >
-            <Users size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
-            <Text style={styles.primaryCTAText}>Notify Passengers & Start Boarding</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 10, width: '100%' }}>
+            <TouchableOpacity 
+              style={[styles.primaryCTA, { backgroundColor: '#4F46E5', flex: 1 }]} 
+              onPress={() => triggerStateTransition('boarding')} 
+              disabled={isActionLoading}
+            >
+              <Users size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+              <Text style={styles.primaryCTAText}>Start Boarding</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={[styles.primaryCTA, { backgroundColor: '#10B981', flex: 1 }]} 
+              onPress={async () => {
+                setIsActionLoading(true);
+                const success = await startBoarding(ride.id);
+                setIsActionLoading(false);
+                if (success) {
+                  addLog('📋 Boarding checked-in active.');
+                  await loadData();
+                  const firstPending = activeStop?.bookings.find(b => b.status === 'confirmed');
+                  if (firstPending) {
+                    setSelectedPassenger(firstPending);
+                    setIsVerificationOpen(true);
+                  } else {
+                    Alert.alert('Verify Passenger', 'All passengers for this stop have already boarded.');
+                  }
+                } else {
+                  Alert.alert('Error', 'Failed to transition to Boarding state.');
+                }
+              }}
+              disabled={isActionLoading}
+            >
+              <CheckCircle size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+              <Text style={styles.primaryCTAText}>Verify Pass</Text>
+            </TouchableOpacity>
+          </View>
         );
       case 'boarding':
         if (pendingBoardingsCount > 0) {
@@ -953,7 +1013,7 @@ export default function JourneyCommandCenterScreen() {
                                         text: 'Accept & Confirm',
                                         onPress: async () => {
                                           setIsActionLoading(true);
-                                          const ok = await bookingService.confirmBooking(booking.id);
+                                          const ok = await confirmBooking(booking.id);
                                           setIsActionLoading(false);
                                           if (ok) {
                                             addLog(`✓ Accepted and confirmed booking: ${booking.passengerName}`);
