@@ -3,6 +3,8 @@ import { renderHook, act, waitFor } from '@testing-library/react-native';
 import { RideProvider, useRides } from '../contexts/RideContext';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../utils/api';
+import { QueryProvider } from '../providers/QueryProvider';
+import { queryClient } from '../cache/queryClient';
 
 jest.mock('../contexts/AuthContext');
 jest.mock('../utils/api');
@@ -40,6 +42,7 @@ describe('RideContext', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (useAuth as jest.Mock).mockReturnValue({ user: mockUser });
+    queryClient.clear();
   });
 
   it('loads initial data correctly for Driver', async () => {
@@ -52,7 +55,9 @@ describe('RideContext', () => {
     });
 
     const wrapper = ({ children }: { children: React.ReactNode }) => (
-      <RideProvider>{children}</RideProvider>
+      <QueryProvider>
+        <RideProvider>{children}</RideProvider>
+      </QueryProvider>
     );
 
     const { result } = renderHook(() => useRides(), { wrapper });
@@ -75,7 +80,9 @@ describe('RideContext', () => {
     (api.get as jest.Mock).mockRejectedValue(new Error('Network error'));
 
     const wrapper = ({ children }: { children: React.ReactNode }) => (
-      <RideProvider>{children}</RideProvider>
+      <QueryProvider>
+        <RideProvider>{children}</RideProvider>
+      </QueryProvider>
     );
 
     const { result } = renderHook(() => useRides(), { wrapper });
@@ -97,7 +104,9 @@ describe('RideContext', () => {
     });
 
     const wrapper = ({ children }: { children: React.ReactNode }) => (
-      <RideProvider>{children}</RideProvider>
+      <QueryProvider>
+        <RideProvider>{children}</RideProvider>
+      </QueryProvider>
     );
 
     const { result } = renderHook(() => useRides(), { wrapper });
@@ -118,7 +127,9 @@ describe('RideContext', () => {
     (api.post as jest.Mock).mockResolvedValue({ id: 'r2' });
 
     const wrapper = ({ children }: { children: React.ReactNode }) => (
-      <RideProvider>{children}</RideProvider>
+      <QueryProvider>
+        <RideProvider>{children}</RideProvider>
+      </QueryProvider>
     );
 
     const { result } = renderHook(() => useRides(), { wrapper });
@@ -157,7 +168,9 @@ describe('RideContext', () => {
     (api.post as jest.Mock).mockRejectedValue(new Error('Failed to create'));
 
     const wrapper = ({ children }: { children: React.ReactNode }) => (
-      <RideProvider>{children}</RideProvider>
+      <QueryProvider>
+        <RideProvider>{children}</RideProvider>
+      </QueryProvider>
     );
 
     const { result } = renderHook(() => useRides(), { wrapper });

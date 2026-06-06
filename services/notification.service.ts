@@ -30,6 +30,10 @@ export const notificationService = {
     return api.put<void>('/notifications/preferences', data);
   },
 
+  async registerDeviceToken(pushToken: string) {
+    return api.post<void>('/notifications/devices/register', { pushToken });
+  },
+
   async getSettings() {
     return api.get<any>('/notifications/settings');
   },

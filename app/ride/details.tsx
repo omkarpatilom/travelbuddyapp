@@ -21,6 +21,8 @@ import * as Location from 'expo-location';
 import { requestLocationPermission, checkLocationPermission } from '@/utils/permissions';
 import { bookingService } from '@/services/booking.service';
 import { formatPrice } from '@/utils/validation';
+import { reviewService } from '@/services/review.service';
+import RatingModal from '@/components/RatingModal';
 
 
 
@@ -40,6 +42,9 @@ export default function RideDetailsScreen() {
   const [driverLocation, setDriverLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [bookings, setBookings] = useState<any[]>([]);
   const [isBookingsLoading, setIsBookingsLoading] = useState(false);
+  const [selectedBookingForRating, setSelectedBookingForRating] = useState<any | null>(null);
+  const [showRatingModal, setShowRatingModal] = useState(false);
+  const [hasReviewedDriver, setHasReviewedDriver] = useState(false);
 
   const isDriver = user?.id === ride?.driverId;
   const passengerConfirmedBooking = ride && passengerBookings?.find(
@@ -144,10 +149,23 @@ export default function RideDetailsScreen() {
     setIsBookingsLoading(true);
     try {
       const bookingsList = await bookingService.getRideBookings(id);
-      const normalizedBookings = (bookingsList || []).map((b: any) => ({
-        ...b,
-        id: b.bookingId || b.id,
-        status: (b.status || '').toLowerCase()
+      const normalizedBookings = await Promise.all((bookingsList || []).map(async (b: any) => {
+        const bid = b.bookingId || b.id;
+        let hasReviewedPassenger = false;
+        if ((b.status || 'pending').toLowerCase() === 'completed') {
+          try {
+            const rev = await reviewService.getByBookingId(bid);
+            if (rev) hasReviewedPassenger = true;
+          } catch (e) {
+            // not reviewed
+          }
+        }
+        return {
+          ...b,
+          id: bid,
+          status: (b.status || '').toLowerCase(),
+          hasReviewedPassenger
+        };
       }));
       setBookings(normalizedBookings);
     } catch (e) {
@@ -164,6 +182,18 @@ export default function RideDetailsScreen() {
       setRide(data);
       if (data && user?.id === data.driverId) {
         await fetchRideBookings(rideId);
+      } else if (data && user?.id !== data.driverId && data.status === 'completed') {
+        const confirmedBooking = passengerBookings?.find(
+          (b: any) => b.rideId === data.id && (b.status === 'confirmed' || b.status === 'completed')
+        );
+        if (confirmedBooking) {
+          try {
+            const rev = await reviewService.getByBookingId(confirmedBooking.id);
+            if (rev) setHasReviewedDriver(true);
+          } catch (e) {
+            setHasReviewedDriver(false);
+          }
+        }
       }
     } catch (error) {
       console.error('Error fetching ride details:', error);
@@ -522,8 +552,9 @@ export default function RideDetailsScreen() {
   };
 
   return (
-    <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      {/* Header */}
+    <>
+      <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        {/* Header */}
       <View style={[styles.header, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <ArrowLeft size={24} color={theme.colors.text} />
@@ -749,6 +780,49 @@ export default function RideDetailsScreen() {
           </View>
         </View>
 
+        {/* Ride Preferences Section */}
+        {ride && ride.preferences && (
+          <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Ride Preferences</Text>
+            <View style={styles.preferencesContainer}>
+              <View style={[styles.preferenceTag, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+                <MessageCircle size={16} color={theme.colors.primary} />
+                <Text style={[styles.preferenceText, { color: theme.colors.text }]}>
+                  Chat: {ride.preferences.conversationLevel.charAt(0).toUpperCase() + ride.preferences.conversationLevel.slice(1)}
+                </Text>
+              </View>
+
+              <View style={[styles.preferenceTag, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+                <Music size={16} color={theme.colors.secondary} />
+                <Text style={[styles.preferenceText, { color: theme.colors.text }]}>
+                  {ride.preferences.musicAllowed ? 'Music Allowed' : 'No Music'}
+                </Text>
+              </View>
+
+              <View style={[styles.preferenceTag, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+                <Cigarette size={16} color={theme.colors.error} />
+                <Text style={[styles.preferenceText, { color: theme.colors.text }]}>
+                  {ride.preferences.nonSmoking ? 'Non-Smoking' : 'Smoking Allowed'}
+                </Text>
+              </View>
+
+              <View style={[styles.preferenceTag, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+                <Heart size={16} color={theme.colors.accent} />
+                <Text style={[styles.preferenceText, { color: theme.colors.text }]}>
+                  {ride.preferences.petsAllowed ? 'Pet Friendly' : 'No Pets'}
+                </Text>
+              </View>
+
+              {ride.preferences.airConditioning && (
+                <View style={[styles.preferenceTag, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+                  <Wind size={16} color={theme.colors.primary} />
+                  <Text style={[styles.preferenceText, { color: theme.colors.text }]}>AC Available</Text>
+                </View>
+              )}
+            </View>
+          </View>
+        )}
+
         {/* Preference Match Section */}
         {matchedItems.length > 0 && (
           <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
@@ -937,6 +1011,32 @@ export default function RideDetailsScreen() {
                           </TouchableOpacity>
                         </View>
                       )}
+
+                      {item.status === 'completed' && (
+                        <View style={styles.bookingCardActions}>
+                          <TouchableOpacity 
+                            style={[
+                              styles.actionBtnOutline, 
+                              { borderColor: item.hasReviewedPassenger ? theme.colors.border : theme.colors.primary }
+                            ]}
+                            onPress={() => {
+                              if (!item.hasReviewedPassenger) {
+                                setSelectedBookingForRating(item);
+                                setShowRatingModal(true);
+                              }
+                            }}
+                            disabled={item.hasReviewedPassenger}
+                          >
+                            <Star size={16} color={item.hasReviewedPassenger ? theme.colors.textSecondary : theme.colors.primary} />
+                            <Text style={[
+                              styles.actionBtnOutlineText, 
+                              { color: item.hasReviewedPassenger ? theme.colors.textSecondary : theme.colors.primary }
+                            ]}>
+                              {item.hasReviewedPassenger ? 'Passenger Rated' : 'Rate Passenger'}
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      )}
                     </View>
                   );
                 })}
@@ -1076,6 +1176,17 @@ export default function RideDetailsScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.bannerTitle, { color: theme.colors.textSecondary }]}>Ride Completed</Text>
                     <Text style={[styles.bannerText, { color: theme.colors.text }]}>Thank you for riding with TravelBuddy! Rate your experience below.</Text>
+                    {!hasReviewedDriver && passengerConfirmedBooking && (
+                      <TouchableOpacity
+                        style={[styles.rateDriverButton, { backgroundColor: theme.colors.primary, marginTop: 8 }]}
+                        onPress={() => setShowRatingModal(true)}
+                      >
+                        <Text style={styles.rateDriverButtonText}>Rate This Ride</Text>
+                      </TouchableOpacity>
+                    )}
+                    {hasReviewedDriver && (
+                      <Text style={{ color: theme.colors.success, fontWeight: 'bold', marginTop: 8 }}>✓ Review Submitted</Text>
+                    )}
                   </View>
                 </View>
               )}
@@ -1084,10 +1195,75 @@ export default function RideDetailsScreen() {
         </View>
       </View>
     </ScrollView>
+
+      {selectedBookingForRating && (
+        <RatingModal
+          visible={showRatingModal}
+          onClose={() => {
+            setShowRatingModal(false);
+            setSelectedBookingForRating(null);
+            if (ride) fetchRideBookings(ride.id);
+          }}
+          rideId={rideId}
+          bookingId={selectedBookingForRating.id}
+          targetUserId={selectedBookingForRating.userId}
+          targetName={selectedBookingForRating.passengerName}
+          targetRole="passenger"
+        />
+      )}
+
+      {!isDriver && passengerConfirmedBooking && (
+        <RatingModal
+          visible={showRatingModal}
+          onClose={() => {
+            setShowRatingModal(false);
+            if (passengerConfirmedBooking) {
+              reviewService.getByBookingId(passengerConfirmedBooking.id)
+                .then(rev => setHasReviewedDriver(!!rev))
+                .catch(() => setHasReviewedDriver(false));
+            }
+          }}
+          rideId={rideId}
+          bookingId={passengerConfirmedBooking.id}
+          targetUserId={ride.driverId}
+          targetName={ride.driverName || 'Driver'}
+          targetRole="driver"
+        />
+      )}
+    </>
   );
 }
 
 const styles = StyleSheet.create({
+  preferencesContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  preferenceTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 8,
+  },
+  preferenceText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  rateDriverButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+  },
+  rateDriverButtonText: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+  },
   container: {
     flex: 1,
   },

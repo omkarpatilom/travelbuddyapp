@@ -2,6 +2,8 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { storage, StorageKeys } from '@/utils/storage';
 import { validateEmail, validatePassword } from '@/utils/validation';
 import { authService } from '@/services/auth.service';
+import { queryClient } from '@/cache/queryClient';
+import { sqliteStorage } from '@/storage/sqlite';
 import { userService } from '@/services/user.service';
 import { UserProfileDto, UserRole } from '@/utils/types';
 
@@ -163,6 +165,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.log('Server logout failed or already logged out:', e);
         }
       }
+      
+      // Clear TanStack query cache
+      queryClient.clear();
+      // Clear SQLite active caches
+      await sqliteStorage.clearAuthRelatedCache();
       
       await storage.removeItem(StorageKeys.AUTH_TOKEN);
       await storage.removeItem(StorageKeys.REFRESH_TOKEN);

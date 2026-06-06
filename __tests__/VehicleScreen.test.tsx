@@ -20,6 +20,8 @@ jest.mock('lucide-react-native', () => ({
   ArrowLeft: () => 'ArrowLeftIcon',
   Save: () => 'SaveIcon',
   Plus: () => 'PlusIcon',
+  ChevronDown: () => 'ChevronDownIcon',
+  Settings: () => 'SettingsIcon',
 }));
 jest.mock('../components/PhotoUploader', () => 'PhotoUploader');
 jest.mock('../components/VehicleFeatureTags', () => {
@@ -109,7 +111,8 @@ describe('VehicleDetailsScreen', () => {
     fireEvent.press(await findByText(/Add Another Vehicle/));
     fireEvent.changeText(await findByPlaceholderText(/Make/), 'Honda');
     fireEvent.changeText(await findByPlaceholderText(/Model/), 'Civic');
-    fireEvent.changeText(await findByPlaceholderText('Color'), 'Red');
+    fireEvent.press(await findByText('Color'));
+    fireEvent.press(await findByText('Red'));
     fireEvent.changeText(await findByPlaceholderText('License Plate'), 'XYZ789');
     
     await act(async () => {

@@ -292,23 +292,7 @@ export default function SecurityScreen() {
             </View>
           )}
 
-          <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
 
-          <View style={styles.preferenceItem}>
-            <View style={styles.preferenceInfo}>
-              <Smartphone size={20} color={theme.colors.secondary} />
-              <View>
-                <Text style={[styles.preferenceLabel, { color: theme.colors.text }]}>Two-Factor Auth</Text>
-                <Text style={[styles.preferenceSublabel, { color: theme.colors.textSecondary }]}>Protect with phone/email OTP</Text>
-              </View>
-            </View>
-            <Switch
-              value={is2FAEnabled}
-              onValueChange={toggle2FA}
-              trackColor={{ false: theme.colors.border, true: theme.colors.primary + '80' }}
-              thumbColor={is2FAEnabled ? theme.colors.primary : '#f4f3f4'}
-            />
-          </View>
         </View>
 
         {/* Linked Accounts */}

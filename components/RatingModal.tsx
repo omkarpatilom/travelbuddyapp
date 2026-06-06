@@ -17,10 +17,21 @@ interface RatingModalProps {
   visible: boolean;
   onClose: () => void;
   rideId: string;
-  driverName: string;
+  bookingId: string;
+  targetUserId: string;
+  targetName: string;
+  targetRole: 'driver' | 'passenger';
 }
 
-export default function RatingModal({ visible, onClose, rideId, driverName }: RatingModalProps) {
+export default function RatingModal({ 
+  visible, 
+  onClose, 
+  rideId, 
+  bookingId,
+  targetUserId,
+  targetName, 
+  targetRole 
+}: RatingModalProps) {
   const [rating, setRating] = useState(0);
   const [review, setReview] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -36,7 +47,7 @@ export default function RatingModal({ visible, onClose, rideId, driverName }: Ra
 
     setIsLoading(true);
     try {
-      const success = await rateRide(rideId, rating, review);
+      const success = await rateRide(rideId, bookingId, targetUserId, targetRole, rating, review);
       
       if (success) {
         Alert.alert('Thank You!', 'Your rating has been submitted successfully');
@@ -93,14 +104,16 @@ export default function RatingModal({ visible, onClose, rideId, driverName }: Ra
       <View style={styles.overlay}>
         <View style={[styles.modal, { backgroundColor: theme.colors.card }]}>
           <View style={styles.header}>
-            <Text style={[styles.title, { color: theme.colors.text }]}>Rate Your Ride</Text>
+            <Text style={[styles.title, { color: theme.colors.text }]}>
+              {targetRole === 'driver' ? 'Rate Your Ride' : 'Rate Passenger'}
+            </Text>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
               <X size={24} color={theme.colors.textSecondary} />
             </TouchableOpacity>
           </View>
 
           <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
-            How was your ride with {driverName}?
+            How was your experience with {targetName}?
           </Text>
 
           <View style={styles.starsContainer}>
