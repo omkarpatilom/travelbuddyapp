@@ -20,6 +20,7 @@ import RouteMap from '@/components/RouteMap';
 import * as Location from 'expo-location';
 import { requestLocationPermission, checkLocationPermission } from '@/utils/permissions';
 import { bookingService } from '@/services/booking.service';
+import { formatPrice } from '@/utils/validation';
 
 
 
@@ -619,7 +620,7 @@ export default function RideDetailsScreen() {
 
           <View style={styles.priceSection}>
             <Text style={[styles.priceLabel, { color: theme.colors.textSecondary }]}>Price per seat</Text>
-            <Text style={[styles.price, { color: theme.colors.primary }]}>₹{ride.price}</Text>
+            <Text style={[styles.price, { color: theme.colors.primary }]}>{formatPrice(ride.price)}</Text>
           </View>
         </View>
 
@@ -854,7 +855,7 @@ export default function RideDetailsScreen() {
                             {item.seats} Seat{item.seats > 1 ? 's' : ''} requested
                           </Text>
                           <Text style={[styles.bookingPayoutText, { color: theme.colors.textSecondary }]}>
-                            Payout: <Text style={{ fontWeight: 'bold', color: theme.colors.success }}>₹{item.totalPrice}</Text>
+                            Payout: <Text style={{ fontWeight: 'bold', color: theme.colors.success }}>{formatPrice(item.totalPrice)}</Text>
                           </Text>
                         </View>
 

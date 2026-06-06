@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Image,
   Alert,
+  ScrollView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -14,6 +15,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useRides } from '@/contexts/RideContext';
 import { Plus, Calendar, Clock, MapPin, Users, CreditCard as Edit, X } from 'lucide-react-native';
 import { mockRides } from '@/data/mockData';
+import { formatPrice } from '@/utils/validation';
 
 export default function MyRidesScreen() {
   const { theme } = useTheme();
@@ -21,6 +23,26 @@ export default function MyRidesScreen() {
   const { myRides, cancelRide, isLoading, loadInitialData } = useRides();
   const router = useRouter();
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [activeTab, setActiveTab] = useState<'active' | 'upcoming' | 'completed' | 'cancelled'>('active');
+
+  const getFilteredRides = () => {
+    return (myRides || []).filter(ride => {
+      const status = (ride.status || '').toLowerCase();
+      if (activeTab === 'active') {
+        return ['active', 'started', 'driverarrived', 'boarding', 'enroute', 'dropcompleted'].includes(status);
+      }
+      if (activeTab === 'upcoming') {
+        return ['scheduled', 'published', 'confirmed', 'seatsbooked'].includes(status);
+      }
+      if (activeTab === 'completed') {
+        return status === 'completed';
+      }
+      if (activeTab === 'cancelled') {
+        return status === 'cancelled';
+      }
+      return false;
+    });
+  };
 
   const onRefresh = async () => {
     setIsRefreshing(true);
@@ -140,7 +162,7 @@ export default function MyRidesScreen() {
           </Text>
         </View>
         <Text style={[styles.price, { color: theme.colors.primary }]}>
-          ₹{item.price}
+          {formatPrice(item.price)}
         </Text>
       </View>
     </TouchableOpacity>
@@ -159,10 +181,44 @@ export default function MyRidesScreen() {
             <Text style={styles.addButtonText}>Offer Ride</Text>
           </TouchableOpacity>
         </View>
+
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.tabsContainer}
+          style={{ marginTop: 15 }}
+        >
+          {[
+            { id: 'active', label: 'Active Rides' },
+            { id: 'upcoming', label: 'Upcoming Rides' },
+            { id: 'completed', label: 'Completed Rides' },
+            { id: 'cancelled', label: 'Cancelled Rides' },
+          ].map((tab) => {
+            const isSelected = activeTab === tab.id;
+            return (
+              <TouchableOpacity
+                key={tab.id}
+                style={[
+                  styles.tabButton,
+                  { backgroundColor: isSelected ? theme.colors.primary : theme.colors.surface, borderColor: theme.colors.border }
+                ]}
+                onPress={() => setActiveTab(tab.id as any)}
+                activeOpacity={0.8}
+              >
+                <Text style={[
+                  styles.tabButtonText,
+                  { color: isSelected ? '#FFFFFF' : theme.colors.textSecondary }
+                ]}>
+                  {tab.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
       </View>
 
       <FlatList
-        data={myRides}
+        data={getFilteredRides()}
         keyExtractor={(item) => item.id}
         renderItem={renderRide}
         contentContainerStyle={styles.listContent}
@@ -198,7 +254,7 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingTop: 60,
-    paddingBottom: 20,
+    paddingBottom: 16,
     paddingHorizontal: 20,
     borderBottomWidth: 1,
   },
@@ -340,6 +396,22 @@ const styles = StyleSheet.create({
   offerButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
+    fontWeight: '600',
+  },
+  tabsContainer: {
+    paddingHorizontal: 4,
+    gap: 8,
+    alignItems: 'center',
+  },
+  tabButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    marginRight: 4,
+  },
+  tabButtonText: {
+    fontSize: 14,
     fontWeight: '600',
   },
 });

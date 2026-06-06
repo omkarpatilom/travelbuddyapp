@@ -18,6 +18,7 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useRides, Ride } from '@/contexts/RideContext';
+import { formatPrice } from '@/utils/validation';
 import { 
   Search, 
   MapPin, 
@@ -414,7 +415,7 @@ export default function FindRideScreen() {
             {getCategoryEmoji(item.vehicleCategory)} {item.vehicleCategory}
           </Text>
           <View style={styles.priceTag}>
-            <Text style={[styles.priceValue, { color: theme.colors.primary }]}>₹{item.price}</Text>
+            <Text style={[styles.priceValue, { color: theme.colors.primary }]}>{formatPrice(item.price)}</Text>
           </View>
         </View>
 

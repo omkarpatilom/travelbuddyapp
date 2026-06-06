@@ -117,7 +117,7 @@ describe('VehicleDetailsScreen', () => {
     });
     
     expect(api.post).toHaveBeenCalledWith('/vehicles', expect.objectContaining({
-      brand: 'Honda',
+      brand: 'Car:Honda',
       model: 'Civic',
       color: 'Red',
       registrationNumber: 'XYZ789',

@@ -12,7 +12,8 @@ import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useRides } from '@/contexts/RideContext';
 import { api } from '@/utils/api';
-import { Users, DollarSign, ArrowLeft } from 'lucide-react-native';
+import { Users, IndianRupee, ArrowLeft } from 'lucide-react-native';
+import { formatPrice } from '@/utils/validation';
 import DatePicker from '@/components/DatePicker';
 import LocationPicker from '@/components/LocationPicker';
 import VehicleSelector from '@/components/VehicleSelector';
@@ -147,8 +148,8 @@ export default function OfferRideScreen() {
       return false;
     }
 
-    if (parseFloat(formData.price) < 1) {
-      Alert.alert('Invalid Price', 'Price must be at least $1');
+    if (parseFloat(formData.price) < 50) {
+      Alert.alert('Invalid Price', 'Price must be at least ₹ 50');
       return false;
     }
 
@@ -310,13 +311,13 @@ export default function OfferRideScreen() {
             </View>
 
             <View style={[styles.inputContainer, styles.halfWidth, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-              <DollarSign size={20} color={theme.colors.textSecondary} />
+              <IndianRupee size={20} color={theme.colors.textSecondary} />
               <TouchableOpacity 
                 style={styles.priceSelector}
                 onPress={() => {
                   Alert.prompt(
                     'Price per Seat',
-                    'Enter the price per seat in dollars',
+                    'Enter the price per seat in rupees',
                     [
                       { text: 'Cancel', style: 'cancel' },
                       { 
@@ -334,7 +335,7 @@ export default function OfferRideScreen() {
                 }}
               >
                 <Text style={[styles.input, { color: theme.colors.text }]}>
-                  ${formData.price || '0'} per seat
+                  {formData.price ? formatPrice(parseFloat(formData.price)) : '₹ 0'} per seat
                 </Text>
               </TouchableOpacity>
             </View>

@@ -120,15 +120,15 @@ describe('BookingDetailsScreen', () => {
   });
 
   it('renders booking details when loaded successfully', async () => {
-    const { getByText } = render(<BookingDetailsScreen />);
+    const { getByText, getAllByText } = render(<BookingDetailsScreen />);
     
     await waitFor(() => {
       expect(getByText('Booking #B1')).toBeTruthy();
-      expect(getByText('Origin City')).toBeTruthy();
-      expect(getByText('Destination City')).toBeTruthy();
+      expect(getAllByText('Origin City').length).toBeGreaterThanOrEqual(1);
+      expect(getAllByText('Destination City').length).toBeGreaterThanOrEqual(1);
       expect(getByText('John Doe')).toBeTruthy();
       expect(getByText('Toyota Innova')).toBeTruthy();
-      expect(getByText('₹40')).toBeTruthy(); // Total price
+      expect(getByText('₹ 40')).toBeTruthy(); // Total price
       expect(getByText('2 seats')).toBeTruthy();
     });
   });

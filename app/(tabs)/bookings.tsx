@@ -15,6 +15,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRides } from '@/contexts/RideContext';
 import { Calendar, Clock, MapPin, Star, Phone, X } from 'lucide-react-native';
+import { formatPrice } from '@/utils/validation';
 
 export default function BookingsScreen() {
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past'>('upcoming');
@@ -165,7 +166,7 @@ export default function BookingsScreen() {
               {item.seats} seat{item.seats > 1 ? 's' : ''}
             </Text>
             <Text style={[styles.totalPrice, { color: theme.colors.primary }]}>
-              ₹{item.totalPrice}
+              {formatPrice(item.totalPrice)}
             </Text>
           </View>
         </View>

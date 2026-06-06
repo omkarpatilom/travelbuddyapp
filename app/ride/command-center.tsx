@@ -19,6 +19,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useRides, Ride, Booking } from '@/contexts/RideContext';
 import RouteMap from '@/components/RouteMap';
 import { bookingService } from '@/services/booking.service';
+import { formatPrice } from '@/utils/validation';
 import {
   MapPin,
   Clock,
@@ -1016,7 +1017,7 @@ export default function JourneyCommandCenterScreen() {
           <View style={styles.footerPayoutSection}>
             <TrendingUp size={14} color="#10B981" style={{ marginRight: 6 }} />
             <Text style={[styles.footerPayoutText, { color: '#10B981' }]}>
-              Est. Ride Earnings: ₹{(bookings.filter(b => b.status !== 'cancelled').reduce((sum, b) => sum + b.totalPrice, 0)).toFixed(2)}
+              Est. Ride Earnings: {formatPrice(bookings.filter(b => b.status !== 'cancelled').reduce((sum, b) => sum + b.totalPrice, 0))}
             </Text>
           </View>
         </View>
