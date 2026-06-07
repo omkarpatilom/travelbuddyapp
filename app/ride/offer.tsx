@@ -34,6 +34,17 @@ interface Vehicle {
   isDefault: boolean;
 }
 
+interface PricingSuggestion {
+  suggestedRideCost: number;
+  suggestedPricePerSeat: number;
+  minPricePerSeat: number;
+  maxPricePerSeat: number;
+  distanceKm: number;
+  durationMinutes: number;
+  vehicleType: string;
+  vehicleMultiplier: number;
+}
+
 export default function OfferRideScreen() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedTime, setSelectedTime] = useState<Date | null>(null);
@@ -58,10 +69,82 @@ export default function OfferRideScreen() {
   });
   const [isLoading, setIsLoading] = useState(false);
   const [isFetchingVehicles, setIsFetchingVehicles] = useState(true);
+
+  const [pricingSuggestion, setPricingSuggestion] = useState<PricingSuggestion | null>(null);
+  const [isFetchingPricing, setIsFetchingPricing] = useState(false);
+  const [pricingError, setPricingError] = useState<string | null>(null);
   
   const { theme } = useTheme();
   const { createRide } = useRides();
   const router = useRouter();
+
+  useEffect(() => {
+    const fetchPricingSuggestion = async () => {
+      if (
+        !formData.fromCoords.latitude ||
+        !formData.fromCoords.longitude ||
+        !formData.toCoords.latitude ||
+        !formData.toCoords.longitude ||
+        !selectedVehicle
+      ) {
+        return;
+      }
+
+      setIsFetchingPricing(true);
+      setPricingError(null);
+      try {
+        const query = `?vehicleId=${selectedVehicle.id}&fromLat=${formData.fromCoords.latitude}&fromLng=${formData.fromCoords.longitude}&toLat=${formData.toCoords.latitude}&toLng=${formData.toCoords.longitude}&seats=${formData.seats}&tollAdjustment=0`;
+        const data = await api.get<PricingSuggestion>(`/pricing/suggest${query}`);
+        setPricingSuggestion(data);
+        
+        if (!formData.price) {
+          setFormData(prev => ({ ...prev, price: data.suggestedPricePerSeat.toString() }));
+        }
+      } catch (error: any) {
+        console.error('Error fetching pricing suggestion:', error);
+        setPricingError(error.message || 'Failed to fetch suggested pricing');
+      } finally {
+        setIsFetchingPricing(false);
+      }
+    };
+
+    fetchPricingSuggestion();
+  }, [formData.fromCoords.latitude, formData.fromCoords.longitude, formData.toCoords.latitude, formData.toCoords.longitude, selectedVehicle, formData.seats]);
+
+  const getCategoryAndValidation = () => {
+    if (!pricingSuggestion || !formData.price) return { category: null, isValid: true, error: null };
+    const priceNum = parseFloat(formData.price);
+    if (isNaN(priceNum)) return { category: null, isValid: true, error: null };
+
+    if (priceNum < pricingSuggestion.minPricePerSeat) {
+      return { 
+        category: null, 
+        isValid: false, 
+        error: `Price must be at least ₹${pricingSuggestion.minPricePerSeat}` 
+      };
+    }
+    if (priceNum > pricingSuggestion.maxPricePerSeat) {
+      return { 
+        category: null, 
+        isValid: false, 
+        error: `Price cannot exceed ₹${pricingSuggestion.maxPricePerSeat}` 
+      };
+    }
+
+    const suggested = pricingSuggestion.suggestedPricePerSeat;
+    let category: 'Budget' | 'Standard' | 'Premium' = 'Standard';
+    if (priceNum <= suggested) {
+      category = 'Budget';
+    } else if (priceNum <= suggested * 1.2) {
+      category = 'Standard';
+    } else {
+      category = 'Premium';
+    }
+
+    return { category, isValid: true, error: null };
+  };
+
+  const { category: currentCategory, isValid: isPriceValid, error: priceValidationError } = getCategoryAndValidation();
 
   useEffect(() => {
     fetchVehicles();
@@ -191,6 +274,14 @@ export default function OfferRideScreen() {
     if (parseFloat(formData.price) < 50) {
       Alert.alert('Invalid Price', 'Price must be at least ₹ 50');
       return false;
+    }
+
+    if (pricingSuggestion) {
+      const priceNum = parseFloat(formData.price);
+      if (priceNum < pricingSuggestion.minPricePerSeat || priceNum > pricingSuggestion.maxPricePerSeat) {
+        Alert.alert('Invalid Price', `Your price must be between ₹${pricingSuggestion.minPricePerSeat} and ₹${pricingSuggestion.maxPricePerSeat}.`);
+        return false;
+      }
     }
 
     return true;
@@ -359,6 +450,52 @@ export default function OfferRideScreen() {
               </TouchableOpacity>
             </View>
           </View>
+
+          {/* Pricing Guide Widget */}
+          {isFetchingPricing && (
+            <View style={styles.pricingLoader}>
+              <ActivityIndicator size="small" color={theme.colors.primary} />
+              <Text style={[styles.pricingText, { color: theme.colors.textSecondary }]}>Calculating suggested fare...</Text>
+            </View>
+          )}
+
+          {!isFetchingPricing && pricingSuggestion && (
+            <View style={[styles.pricingGuide, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+              <View style={styles.pricingRow}>
+                <Text style={[styles.pricingLabel, { color: theme.colors.textSecondary }]}>Suggested Price:</Text>
+                <Text style={[styles.pricingValue, { color: theme.colors.text }]}>₹{pricingSuggestion.suggestedPricePerSeat} / seat</Text>
+              </View>
+              <View style={styles.pricingRow}>
+                <Text style={[styles.pricingLabel, { color: theme.colors.textSecondary }]}>Allowed Range:</Text>
+                <Text style={[styles.pricingValue, { color: theme.colors.text }]}>₹{pricingSuggestion.minPricePerSeat} - ₹{pricingSuggestion.maxPricePerSeat}</Text>
+              </View>
+
+              {currentCategory && (
+                <View style={styles.pricingRow}>
+                  <Text style={[styles.pricingLabel, { color: theme.colors.textSecondary }]}>Category:</Text>
+                  <View style={[
+                    styles.badge,
+                    currentCategory === 'Budget' ? styles.badgeBudget :
+                    currentCategory === 'Standard' ? styles.badgeStandard : styles.badgePremium
+                  ]}>
+                    <Text style={[
+                      styles.badgeText,
+                      currentCategory === 'Budget' ? styles.badgeTextBudget :
+                      currentCategory === 'Standard' ? styles.badgeTextStandard : styles.badgeTextPremium
+                    ]}>{currentCategory}</Text>
+                  </View>
+                </View>
+              )}
+
+              {priceValidationError && (
+                <Text style={styles.pricingErrorText}>{priceValidationError}</Text>
+              )}
+            </View>
+          )}
+
+          {pricingError && (
+            <Text style={styles.pricingErrorText}>{pricingError}</Text>
+          )}
         </View>
 
         <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
@@ -465,5 +602,67 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: '600',
+  },
+  pricingLoader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 10,
+    justifyContent: 'center',
+  },
+  pricingText: {
+    fontSize: 14,
+  },
+  pricingGuide: {
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 12,
+    marginTop: 12,
+    gap: 8,
+  },
+  pricingRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  pricingLabel: {
+    fontSize: 14,
+  },
+  pricingValue: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  pricingErrorText: {
+    color: '#D93025',
+    fontSize: 13,
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  badge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  badgeText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  badgeBudget: {
+    backgroundColor: '#E6F4EA',
+  },
+  badgeTextBudget: {
+    color: '#137333',
+  },
+  badgeStandard: {
+    backgroundColor: '#E8F0FE',
+  },
+  badgeTextStandard: {
+    color: '#1A73E8',
+  },
+  badgePremium: {
+    backgroundColor: '#F3E8FF',
+  },
+  badgeTextPremium: {
+    color: '#7E22CE',
   },
 });
