@@ -117,4 +117,8 @@ export const rideService = {
   async completeDropoff(id: string) {
     return api.post<void>(`/rides/${id}/drop-completed`, {});
   },
+
+  async completeStop(id: string, stopId: string) {
+    return api.post<boolean>(`/rides/${id}/stops/${stopId}/complete`, {});
+  },
 };

@@ -57,7 +57,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const notificationsQuery = useNotificationsQuery();
+  const notificationsQuery = useNotificationsQuery(!!user);
 
   // Register device token with backend whenever both user + token are ready
   useEffect(() => {
@@ -105,7 +105,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
     // AppState: refetch when app comes back to foreground
     const appStateSubscription = AppState.addEventListener('change', (nextState) => {
-      if (appState.current.match(/inactive|background/) && nextState === 'active') {
+      if (appState.current.match(/inactive|background/) && nextState === 'active' && user) {
         queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.notifications] });
       }
       appState.current = nextState;
@@ -119,6 +119,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   }, []);
 
   const fetchNotifications = async () => {
+    if (!user) return;
     try {
       await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.notifications] });
     } catch (e) {
@@ -127,6 +128,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   };
 
   const markAsRead = async (id: string) => {
+    if (!user) return;
     try {
       // Optimistic update in SQLite
       await sqliteStorage.updateNotificationReadStatus(id, true);
@@ -138,6 +140,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   };
 
   const markAllAsRead = async () => {
+    if (!user) return;
     try {
       const cached = await sqliteStorage.getCachedNotifications();
       const unread = cached.filter(x => !x.isRead);
@@ -152,6 +155,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   };
 
   const deleteNotification = async (id: string) => {
+    if (!user) return;
     try {
       await notificationService.deleteNotification(id);
       await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.notifications] });
@@ -161,6 +165,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   };
 
   const getSettings = async () => {
+    if (!user) return null;
     try {
       return await notificationService.getPreferences();
     } catch (e) {
@@ -170,6 +175,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   };
 
   const updateSettings = async (settings: any) => {
+    if (!user) return;
     try {
       await notificationService.updatePreferences(settings);
     } catch (e) {

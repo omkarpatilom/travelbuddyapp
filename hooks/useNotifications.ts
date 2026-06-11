@@ -4,7 +4,7 @@ import { notificationService } from '../services/notification.service';
 import { sqliteStorage } from '../storage/sqlite';
 import { CACHE_KEYS } from '../cache/cacheKeys';
 
-export function useNotificationsQuery() {
+export function useNotificationsQuery(enabled: boolean = true) {
   return useQuery({
     queryKey: [CACHE_KEYS.notifications],
     queryFn: async () => {
@@ -28,8 +28,9 @@ export function useNotificationsQuery() {
       return notifications;
     },
     staleTime: 0,                  // Always re-fetch for freshness
-    refetchInterval: 20_000,       // Poll every 20 seconds for real-time updates
+    refetchInterval: enabled ? 20_000 : false,       // Poll every 20 seconds for real-time updates
     refetchIntervalInBackground: false, // Pause polling when app is in background
+    enabled: enabled,
   });
 }
 

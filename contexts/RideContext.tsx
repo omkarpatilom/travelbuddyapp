@@ -44,6 +44,8 @@ interface RideContextType {
   bookRide: (rideId: string, seats: number, passengerData: any) => Promise<boolean>;
   confirmBooking: (bookingId: string) => Promise<boolean>;
   completeBooking: (bookingId: string) => Promise<boolean>;
+  verifyBooking: (bookingId: string, data: { verificationType: 'OTP' | 'QR'; otp?: string; qrToken?: string }) => Promise<boolean>;
+  completeStop: (rideId: string, stopId: string) => Promise<boolean>;
   cancelBooking: (bookingId: string, reason?: string) => Promise<boolean>;
   rateRide: (
     rideId: string,
@@ -317,6 +319,28 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const verifyBooking = async (bookingId: string, data: { verificationType: 'OTP' | 'QR'; otp?: string; qrToken?: string }): Promise<boolean> => {
+    try {
+      await bookingService.verifyBooking(bookingId, data);
+      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.bookings] });
+      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] });
+      return true;
+    } catch (e) {
+      return false;
+    }
+  };
+
+  const completeStop = async (rideId: string, stopId: string): Promise<boolean> => {
+    try {
+      await rideService.completeStop(rideId, stopId);
+      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] });
+      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] });
+      return true;
+    } catch (e) {
+      return false;
+    }
+  };
+
   const cancelBooking = async (bookingId: string, reason: string = 'User cancelled'): Promise<boolean> => {
     try {
       await bookingService.cancelBooking(bookingId, reason);
@@ -450,6 +474,8 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
         bookRide, 
         confirmBooking,
         completeBooking,
+        verifyBooking,
+        completeStop,
         cancelBooking, 
         rateRide,
         updateTracking,

@@ -87,11 +87,29 @@ export default function BookingsScreen() {
     }
   };
 
-  const renderBooking = ({ item }: { item: any }) => (
-    <TouchableOpacity 
-      style={[styles.bookingCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
-      onPress={() => router.push(`/booking/details?id=${item.id}`)}
-    >
+  const parsePassengerLocations = (bookingItem: any) => {
+    let pickup = bookingItem?.ride?.from?.address || 'Start Location';
+    let dropoff = bookingItem?.ride?.to?.address || 'Destination';
+
+    if (bookingItem?.specialRequest) {
+      try {
+        const parsed = JSON.parse(bookingItem.specialRequest);
+        if (parsed.requestedPickup) pickup = parsed.requestedPickup;
+        if (parsed.requestedDropoff) dropoff = parsed.requestedDropoff;
+      } catch (e) {
+        // Ignore parsing errors
+      }
+    }
+    return { pickup, dropoff };
+  };
+
+  const renderBooking = ({ item }: { item: any }) => {
+    const { pickup, dropoff } = parsePassengerLocations(item);
+    return (
+      <TouchableOpacity 
+        style={[styles.bookingCard, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}
+        onPress={() => router.push(`/booking/details?id=${item.id}`)}
+      >
       <View style={styles.bookingHeader}>
         <View style={styles.statusContainer}>
           <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) + '20' }]}>
@@ -143,13 +161,13 @@ export default function BookingsScreen() {
           <View style={styles.locationRow}>
             <MapPin size={16} color={theme.colors.secondary} />
             <Text style={[styles.locationText, { color: theme.colors.text }]} numberOfLines={1}>
-              {item.ride?.from?.address || 'Start Location'}
+              {pickup}
             </Text>
           </View>
           <View style={styles.locationRow}>
             <MapPin size={16} color={theme.colors.error} />
             <Text style={[styles.locationText, { color: theme.colors.text }]} numberOfLines={1}>
-              {item.ride?.to?.address || 'Destination'}
+              {dropoff}
             </Text>
           </View>
         </View>
@@ -172,7 +190,8 @@ export default function BookingsScreen() {
         </View>
       </View>
     </TouchableOpacity>
-  );
+    );
+  };
 
   if (isLoading && (!bookings || bookings.length === 0) && !isRefreshing) {
     return (

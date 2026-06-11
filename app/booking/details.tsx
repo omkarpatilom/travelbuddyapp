@@ -353,7 +353,7 @@ export default function BookingDetailsScreen() {
                 <View style={styles.locationRow}>
                   <View style={[styles.locationDot, { backgroundColor: theme.colors.secondary }]} />
                   <View style={styles.locationInfo}>
-                    <Text style={[styles.locationLabel, { color: theme.colors.textSecondary }]}>Passenger Pickup Location</Text>
+                    <Text style={[styles.locationLabel, { color: theme.colors.textSecondary }]}>From</Text>
                     <Text style={[styles.locationText, { color: theme.colors.text }]}>
                       {pickup}
                     </Text>
@@ -373,7 +373,7 @@ export default function BookingDetailsScreen() {
                 <View style={styles.locationRow}>
                   <View style={[styles.locationDot, { backgroundColor: theme.colors.error }]} />
                   <View style={styles.locationInfo}>
-                    <Text style={[styles.locationLabel, { color: theme.colors.textSecondary }]}>Passenger Drop Location</Text>
+                    <Text style={[styles.locationLabel, { color: theme.colors.textSecondary }]}>To</Text>
                     <Text style={[styles.locationText, { color: theme.colors.text }]}>
                       {dropoff}
                     </Text>
@@ -427,7 +427,7 @@ export default function BookingDetailsScreen() {
                   <View style={styles.locationRow}>
                     <View style={[styles.locationDot, { backgroundColor: theme.colors.secondary }]} />
                     <View style={styles.locationInfo}>
-                      <Text style={[styles.locationLabel, { color: theme.colors.textSecondary }]}>Your Pickup Location</Text>
+                      <Text style={[styles.locationLabel, { color: theme.colors.textSecondary }]}>From</Text>
                       <Text style={[styles.locationText, { color: theme.colors.text }]}>
                         {pickup}
                       </Text>
@@ -447,7 +447,7 @@ export default function BookingDetailsScreen() {
                   <View style={styles.locationRow}>
                     <View style={[styles.locationDot, { backgroundColor: theme.colors.error }]} />
                     <View style={styles.locationInfo}>
-                      <Text style={[styles.locationLabel, { color: theme.colors.textSecondary }]}>Your Drop Location</Text>
+                      <Text style={[styles.locationLabel, { color: theme.colors.textSecondary }]}>To</Text>
                       <Text style={[styles.locationText, { color: theme.colors.text }]}>
                         {dropoff}
                       </Text>
@@ -787,7 +787,7 @@ export default function BookingDetailsScreen() {
               </TouchableOpacity>
             )}
 
-             {booking.status === 'completed' && (
+             {booking.status === 'completed' && (booking.ride?.status === 'completed' || booking.ride?.status === 'dropcompleted' || !booking.ride?.status) && (
               <TouchableOpacity 
                 style={[
                   styles.rateButton, 

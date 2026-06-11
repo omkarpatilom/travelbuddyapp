@@ -29,12 +29,15 @@ export interface Ride {
   isDriverVerified: boolean;
   isVehicleVerified: boolean;
   features: string[];
-  status: 'active' | 'completed' | 'cancelled' | 'started' | 'scheduled' | 'draft' | 'published' | 'seatsbooked' | 'confirmed' | 'driverarrived' | 'boarding' | 'enroute' | 'dropcompleted';
+  status: 'draft' | 'published' | 'scheduled' | 'inprogress' | 'completed' | 'cancelled' | 'expired';
   distance: string;
   duration: string;
   pickupDistanceMeters?: number;
   dropoffDistanceMeters?: number;
   polyline?: string;
+  currentPhase?: number;
+  currentPassengerId?: string | null;
+  stops?: any[];
   preferences: {
     nonSmoking: boolean;
     musicAllowed: boolean;
@@ -55,6 +58,7 @@ export interface Booking {
   bookingDate: string;
   passengerName: string;
   passengerPhone: string;
+  specialRequest?: string;
 }
 
 const driverCache: Record<string, any> = {};
@@ -114,45 +118,27 @@ export const mapRideData = async (ride: RideDto | RideSearchDto): Promise<Ride> 
   }
 
   const statusMap: Record<RideStatus | string, any> = {
-    [RideStatus.Scheduled]: 'scheduled',
-    [RideStatus.Active]: 'active',
-    [RideStatus.Started]: 'started',
-    [RideStatus.Completed]: 'completed',
-    [RideStatus.Cancelled]: 'cancelled',
     [RideStatus.Draft]: 'draft',
     [RideStatus.Published]: 'published',
-    [RideStatus.SeatsBooked]: 'seatsbooked',
-    [RideStatus.Confirmed]: 'confirmed',
-    [RideStatus.DriverArrived]: 'driverarrived',
-    [RideStatus.Boarding]: 'boarding',
-    [RideStatus.EnRoute]: 'enroute',
-    [RideStatus.DropCompleted]: 'dropcompleted',
-    'Scheduled': 'scheduled',
-    'Active': 'active',
-    'Started': 'started',
-    'Completed': 'completed',
-    'Cancelled': 'cancelled',
+    [RideStatus.Scheduled]: 'scheduled',
+    [RideStatus.InProgress]: 'inprogress',
+    [RideStatus.Completed]: 'completed',
+    [RideStatus.Cancelled]: 'cancelled',
+    [RideStatus.Expired]: 'expired',
     'Draft': 'draft',
     'Published': 'published',
-    'SeatsBooked': 'seatsbooked',
-    'Confirmed': 'confirmed',
-    'DriverArrived': 'driverarrived',
-    'Boarding': 'boarding',
-    'EnRoute': 'enroute',
-    'DropCompleted': 'dropcompleted',
-    'scheduled': 'scheduled',
-    'active': 'active',
-    'started': 'started',
-    'completed': 'completed',
-    'cancelled': 'cancelled',
+    'Scheduled': 'scheduled',
+    'InProgress': 'inprogress',
+    'Completed': 'completed',
+    'Cancelled': 'cancelled',
+    'Expired': 'expired',
     'draft': 'draft',
     'published': 'published',
-    'seatsbooked': 'seatsbooked',
-    'confirmed': 'confirmed',
-    'driverarrived': 'driverarrived',
-    'boarding': 'boarding',
-    'enroute': 'enroute',
-    'dropcompleted': 'dropcompleted',
+    'scheduled': 'scheduled',
+    'inprogress': 'inprogress',
+    'completed': 'completed',
+    'cancelled': 'cancelled',
+    'expired': 'expired',
   };
 
   const convMap: Record<ConversationLevel | string, any> = {
@@ -238,6 +224,9 @@ export const mapRideData = async (ride: RideDto | RideSearchDto): Promise<Ride> 
     pickupDistanceMeters: searchData.pickupDistanceMeters,
     dropoffDistanceMeters: searchData.dropoffDistanceMeters,
     polyline: searchData.polyline,
+    currentPhase: ride.currentPhase,
+    currentPassengerId: ride.currentPassengerId,
+    stops: ride.stops,
     preferences: {
       nonSmoking: ride.preference ? !ride.preference.allowSmoking : true,
       musicAllowed: ride.preference ? ride.preference.allowMusic : true,
@@ -268,5 +257,6 @@ export const mapBookingData = async (booking: BookingResponseDto): Promise<Booki
     bookingDate: booking.bookingDate,
     passengerName: booking.passengerName,
     passengerPhone: booking.passengerPhone,
+    specialRequest: booking.specialRequest,
   };
 };

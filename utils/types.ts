@@ -6,19 +6,48 @@ export enum UserRole {
 }
 
 export enum RideStatus {
-  Scheduled = 0,
-  Active = 1,
-  Started = 2,
+  Draft = 0,
+  Published = 1,
+  Scheduled = 2,
+  InProgress = 3,
+  Completed = 4,
+  Cancelled = 5,
+  Expired = 6,
+}
+
+export enum BookingStatus {
+  Requested = 0,
+  Accepted = 1,
+  ArrivedAtPickup = 2,
+  VerificationPending = 3,
+  Verified = 4,
+  EnRoute = 5,
+  DropReached = 6,
+  WaitingPassengerConfirmation = 7,
+  Completed = 8,
+  Cancelled = 9,
+  Rejected = 10,
+  Expired = 11,
+}
+
+export enum RidePhase {
+  None = 0,
+  NavigatingToPickup = 1,
+  PickingPassenger = 2,
+  EnRoute = 3,
+  DroppingPassenger = 4,
+}
+
+export enum StopStatus {
+  Pending = 0,
+  Navigating = 1,
+  Arrived = 2,
   Completed = 3,
-  Cancelled = 4,
-  Draft = 5,
-  Published = 6,
-  SeatsBooked = 7,
-  Confirmed = 8,
-  DriverArrived = 9,
-  Boarding = 10,
-  EnRoute = 11,
-  DropCompleted = 12,
+}
+
+export enum StopType {
+  Pickup = 0,
+  Dropoff = 1,
 }
 
 export enum ConversationLevel {
@@ -94,6 +123,19 @@ export interface RidePreferenceDto {
   conversationLevel: ConversationLevel;
 }
 
+export interface RideStopDto {
+  id: string;
+  rideId: string;
+  bookingId: string;
+  stopName: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  type: StopType;
+  status: StopStatus;
+  sequence: number;
+}
+
 export interface RideDto {
   id: string;
   driverId: string;
@@ -105,6 +147,9 @@ export interface RideDto {
   totalSeats: number;
   availableSeats: number;
   status: RideStatus;
+  currentPhase: RidePhase;
+  currentPassengerId: string | null;
+  stops: RideStopDto[];
   preference: RidePreferenceDto;
   createdAt: string;
 }

@@ -22,6 +22,10 @@ export const bookingService = {
     return api.post<boolean>(`/bookings/${bookingId}/complete`, {});
   },
 
+  async verifyBooking(bookingId: string, data: { verificationType: 'OTP' | 'QR'; otp?: string; qrToken?: string }) {
+    return api.post<boolean>(`/bookings/${bookingId}/verify`, data);
+  },
+
   async getMyBookings() {
     return api.get<BookingResponseDto[]>('/bookings/my-bookings');
   },

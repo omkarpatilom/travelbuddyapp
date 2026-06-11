@@ -8,6 +8,9 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
 } from 'react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useRides } from '@/contexts/RideContext';
@@ -101,66 +104,79 @@ export default function RatingModal({
       animationType="fade"
       onRequestClose={onClose}
     >
-      <View style={styles.overlay}>
-        <View style={[styles.modal, { backgroundColor: theme.colors.card }]}>
-          <View style={styles.header}>
-            <Text style={[styles.title, { color: theme.colors.text }]}>
-              {targetRole === 'driver' ? 'Rate Your Ride' : 'Rate Passenger'}
-            </Text>
-            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <X size={24} color={theme.colors.textSecondary} />
-            </TouchableOpacity>
-          </View>
-
-          <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
-            How was your experience with {targetName}?
-          </Text>
-
-          <View style={styles.starsContainer}>
-            {renderStars()}
-          </View>
-
-          <Text style={[styles.ratingText, { color: theme.colors.primary }]}>
-            {getRatingText()}
-          </Text>
-
-          <View style={[styles.reviewContainer, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-            <TextInput
-              style={[styles.reviewInput, { color: theme.colors.text }]}
-              placeholder="Share your experience (optional)"
-              placeholderTextColor={theme.colors.textSecondary}
-              value={review}
-              onChangeText={setReview}
-              multiline
-              numberOfLines={4}
-              textAlignVertical="top"
-            />
-          </View>
-
-          <View style={styles.buttonContainer}>
-            <TouchableOpacity 
-              style={[styles.cancelButton, { backgroundColor: theme.colors.surface }]}
-              onPress={onClose}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
+      >
+        <View style={styles.overlay}>
+          <View style={[styles.modal, { backgroundColor: theme.colors.card }]}>
+            <ScrollView
+              bounces={false}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
             >
-              <Text style={[styles.cancelButtonText, { color: theme.colors.textSecondary }]}>
-                Skip
-              </Text>
-            </TouchableOpacity>
+              <View style={{ gap: 20 }}>
+                <View style={styles.header}>
+                  <Text style={[styles.title, { color: theme.colors.text }]}>
+                    {targetRole === 'driver' ? 'Rate Your Ride' : 'Rate Passenger'}
+                  </Text>
+                  <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+                    <X size={24} color={theme.colors.textSecondary} />
+                  </TouchableOpacity>
+                </View>
 
-            <TouchableOpacity 
-              style={[styles.submitButton, { backgroundColor: theme.colors.primary }]}
-              onPress={handleSubmit}
-              disabled={isLoading || rating === 0}
-            >
-              {isLoading ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <Text style={styles.submitButtonText}>Submit Rating</Text>
-              )}
-            </TouchableOpacity>
+                <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
+                  How was your experience with {targetName}?
+                </Text>
+
+                <View style={styles.starsContainer}>
+                  {renderStars()}
+                </View>
+
+                <Text style={[styles.ratingText, { color: theme.colors.primary }]}>
+                  {getRatingText()}
+                </Text>
+
+                <View style={[styles.reviewContainer, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+                  <TextInput
+                    style={[styles.reviewInput, { color: theme.colors.text }]}
+                    placeholder="Share your experience (optional)"
+                    placeholderTextColor={theme.colors.textSecondary}
+                    value={review}
+                    onChangeText={setReview}
+                    multiline
+                    numberOfLines={4}
+                    textAlignVertical="top"
+                  />
+                </View>
+
+                <View style={styles.buttonContainer}>
+                  <TouchableOpacity 
+                    style={[styles.cancelButton, { backgroundColor: theme.colors.surface }]}
+                    onPress={onClose}
+                  >
+                    <Text style={[styles.cancelButtonText, { color: theme.colors.textSecondary }]}>
+                      Skip
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity 
+                    style={[styles.submitButton, { backgroundColor: theme.colors.primary }]}
+                    onPress={handleSubmit}
+                    disabled={isLoading || rating === 0}
+                  >
+                    {isLoading ? (
+                      <ActivityIndicator color="#FFFFFF" />
+                    ) : (
+                      <Text style={styles.submitButtonText}>Submit Rating</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </ScrollView>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
