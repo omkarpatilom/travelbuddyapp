@@ -113,6 +113,13 @@ describe('TravelBuddy Live E2E Integration Test Suite', () => {
       allowSmoking: false,
       allowPets: true,
       preferredLanguage: 'EN',
+      musicPreference: 'Any',
+      conversationLevel: 'Moderate',
+      instantBooking: true,
+      femalePassengersOnly: false,
+      verifiedPassengersOnly: false,
+      safetyFeatures: 'None',
+      comfortAmenities: 'None'
     };
 
     try {
