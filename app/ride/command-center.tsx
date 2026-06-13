@@ -325,15 +325,19 @@ export default function JourneyCommandCenterScreen() {
 
   const getBookingOtp = (id: string) => {
     let hash = 0;
-    for (let i = 0; i < id.length; i++) {
-      hash = id.charCodeAt(i) + ((hash << 5) - hash);
+    const normalizedId = (id || '').toLowerCase();
+    for (let i = 0; i < normalizedId.length; i++) {
+      hash = normalizedId.charCodeAt(i) + ((hash << 5) - hash);
     }
     const code = Math.abs(hash % 9000) + 1000;
     return code.toString();
   };
 
   const handleVerifyPassenger = async (method: 'otp' | 'qr' | 'manual', scannedToken?: string) => {
-    const passengerToVerify = selectedPassenger || bookings.find(b => b.id === ride?.currentPassengerId || b.bookingId === ride?.currentPassengerId);
+    const passengerToVerify = selectedPassenger || bookings.find(
+      b => (b.id || '').toLowerCase() === (ride?.currentPassengerId || '').toLowerCase() || 
+           (b.bookingId || '').toLowerCase() === (ride?.currentPassengerId || '').toLowerCase()
+    );
     if (!passengerToVerify || !ride) return;
     setIsActionLoading(true);
 
@@ -483,7 +487,8 @@ export default function JourneyCommandCenterScreen() {
   };
 
   const currentPassengerBooking = bookings.find(
-    b => b.id === ride?.currentPassengerId || b.bookingId === ride?.currentPassengerId
+    b => (b.id || '').toLowerCase() === (ride?.currentPassengerId || '').toLowerCase() || 
+         (b.bookingId || '').toLowerCase() === (ride?.currentPassengerId || '').toLowerCase()
   ) || null;
 
   const activeStop = stops[currentStopIndex];

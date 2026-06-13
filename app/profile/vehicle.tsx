@@ -313,7 +313,18 @@ export default function VehicleDetailsScreen() {
 
       setIsEditing(false);
       fetchVehicles();
-      Alert.alert('Success', 'Vehicle saved successfully!');
+      Alert.alert('Success', 'Vehicle saved successfully!', [
+        {
+          text: 'OK',
+          onPress: () => {
+            if (router.canGoBack()) {
+              router.back();
+            } else {
+              router.replace('/(tabs)/profile');
+            }
+          }
+        }
+      ]);
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to save vehicle. Please try again.');
     } finally {

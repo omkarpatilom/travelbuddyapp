@@ -135,7 +135,18 @@ export default function PreferencesScreen() {
       };
 
       await api.put('/preferences', payload);
-      Alert.alert('Success', 'Ride Preferences updated successfully!');
+      Alert.alert('Success', 'Ride Preferences updated successfully!', [
+        {
+          text: 'OK',
+          onPress: () => {
+            if (router.canGoBack()) {
+              router.back();
+            } else {
+              router.replace('/(tabs)/profile');
+            }
+          }
+        }
+      ]);
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to update preferences');
     } finally {
