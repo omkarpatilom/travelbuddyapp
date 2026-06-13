@@ -304,6 +304,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
       await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] });
       return true;
     } catch (e) {
+      console.error('Error confirming booking:', e);
       return false;
     }
   };
@@ -315,6 +316,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
       await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] });
       return true;
     } catch (e) {
+      console.error('Error completing booking:', e);
       return false;
     }
   };
@@ -326,6 +328,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
       await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] });
       return true;
     } catch (e) {
+      console.error('Error verifying booking:', e);
       return false;
     }
   };
@@ -337,6 +340,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
       await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] });
       return true;
     } catch (e) {
+      console.error('Error completing stop:', e);
       return false;
     }
   };
