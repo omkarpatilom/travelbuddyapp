@@ -78,6 +78,15 @@ export const formatPhoneNumber = (phone: string): string => {
   return phone;
 };
 
+/**
+ * Sanitize phone number for backend E.164 compliance:
+ * - Remove non-digits
+ * - Strip leading zero
+ */
+export const sanitizePhoneNumber = (phone: string): string => {
+  return phone.replace(/\D/g, '').replace(/^0+/, '');
+};
+
 export const formatPrice = (price: number): string => {
   if (price === undefined || price === null || isNaN(price)) {
     return '₹ 0';

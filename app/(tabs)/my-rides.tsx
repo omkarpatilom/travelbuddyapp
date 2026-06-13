@@ -29,7 +29,7 @@ export default function MyRidesScreen() {
     return (myRides || []).filter(ride => {
       const status = (ride.status || '').toLowerCase();
       if (activeTab === 'active') {
-        return ['active', 'started', 'driverarrived', 'boarding', 'enroute', 'dropcompleted'].includes(status);
+        return ['active', 'inprogress', 'started', 'driverarrived', 'boarding', 'enroute', 'dropcompleted'].includes(status);
       }
       if (activeTab === 'upcoming') {
         return ['scheduled', 'published', 'confirmed', 'seatsbooked'].includes(status);
@@ -80,8 +80,13 @@ export default function MyRidesScreen() {
   };
 
   const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'active': return theme.colors.success;
+    const s = (status || '').toLowerCase();
+    switch (s) {
+      case 'active':
+      case 'inprogress':
+      case 'started':
+      case 'enroute':
+        return theme.colors.success;
       case 'completed': return theme.colors.textSecondary;
       case 'cancelled': return theme.colors.error;
       default: return theme.colors.textSecondary;
@@ -100,7 +105,7 @@ export default function MyRidesScreen() {
           </Text>
         </View>
         
-        {item.status === 'active' && (
+        {['published', 'scheduled', 'active'].includes(item.status) && (
           <View style={styles.actionButtons}>
             <TouchableOpacity 
               onPress={() => handleEditRide(item.id)}

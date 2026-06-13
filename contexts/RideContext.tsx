@@ -503,3 +503,4 @@ export function useRides() {
   }
   return context;
 }
+export type { Ride, Booking } from '@/utils/mappers';

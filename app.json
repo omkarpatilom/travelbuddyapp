@@ -72,6 +72,9 @@
       },
       "router": {}
     },
-    "owner": "omkarpatilom"
+    "owner": "omkarpatilom",
+    "updates": {
+      "enabled": false
+    }
   }
 }

@@ -35,10 +35,10 @@ export const notificationService = {
   },
 
   async getSettings() {
-    return api.get<any>('/notifications/settings');
+    return this.getPreferences();
   },
 
   async updateSettings(data: any) {
-    return api.put<void>('/notifications/settings', data);
+    return this.updatePreferences(data);
   },
 };

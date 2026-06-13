@@ -17,7 +17,8 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { useRides, Ride, Booking } from '@/contexts/RideContext';
+import { useRides } from '@/contexts/RideContext';
+import { Ride, Booking } from '@/utils/mappers';
 import RouteMap from '@/components/RouteMap';
 import { bookingService } from '@/services/booking.service';
 import { formatPrice } from '@/utils/validation';
@@ -66,6 +67,8 @@ export default function JourneyCommandCenterScreen() {
     startRide,
     verifyBooking,
     completeStop,
+    confirmBooking,
+    updateTracking,
   } = useRides();
   
   const router = useRouter();
@@ -197,17 +200,21 @@ export default function JourneyCommandCenterScreen() {
 
         const generatedStops = (rideData.stops && rideData.stops.length > 0)
           ? rideData.stops.map((s: any) => {
-              const stopBookings = normalizedBookings.filter((b: any) => b.id === s.bookingId || b.bookingId === s.bookingId);
+              const stopBookings = normalizedBookings.filter((b: any) => 
+                (b.id || '').toLowerCase() === (s.bookingId || '').toLowerCase() || 
+                ((b.bookingId || '') as string).toLowerCase() === (s.bookingId || '').toLowerCase()
+              );
+              const stopType = s.type === 0 ? 'pickup' : 'drop';
               return {
                 id: s.id,
                 name: s.stopName,
-                type: s.type === 0 ? 'pickup' : 'drop',
+                type: stopType as 'pickup' | 'drop',
                 address: s.address,
                 coordinates: { latitude: s.latitude, longitude: s.longitude },
                 passengerCount: stopBookings.length,
                 seatsCount: stopBookings.reduce((sum, b) => sum + b.seats, 0),
                 bookings: stopBookings,
-                status: s.status === 3 ? 'completed' : (s.status === 1 || s.status === 2 ? 'current' : 'pending'),
+                status: (s.status === 3 ? 'completed' : (s.status === 1 || s.status === 2 ? 'current' : 'pending')) as 'completed' | 'current' | 'pending',
                 sequence: s.sequence
               };
             })
@@ -336,19 +343,28 @@ export default function JourneyCommandCenterScreen() {
   const handleVerifyPassenger = async (method: 'otp' | 'qr' | 'manual', scannedToken?: string) => {
     const passengerToVerify = selectedPassenger || bookings.find(
       b => (b.id || '').toLowerCase() === (ride?.currentPassengerId || '').toLowerCase() || 
-           (b.bookingId || '').toLowerCase() === (ride?.currentPassengerId || '').toLowerCase()
+           ((b as any).bookingId || '').toLowerCase() === (ride?.currentPassengerId || '').toLowerCase()
     );
-    if (!passengerToVerify || !ride) return;
+    if (!passengerToVerify || !ride) {
+      Alert.alert('Verification Error', 'No passenger selected for verification.');
+      return false;
+    }
+
+    if (method === 'otp' && (!otpValue || otpValue.length < 4)) {
+      Alert.alert('Validation Error', 'Please enter a valid 4-digit OTP code.');
+      return false;
+    }
+
+    if (method === 'qr' && !scannedToken) {
+      Alert.alert('Scan Error', 'No QR code was detected. Please try again.');
+      return false;
+    }
+
     setIsActionLoading(true);
 
+    let success = false;
     try {
-      let success = false;
       if (method === 'otp') {
-        if (!otpValue || otpValue.length < 4) {
-          Alert.alert('Validation Error', 'Please enter a 4-digit code.');
-          setIsActionLoading(false);
-          return;
-        }
         success = await verifyBooking(passengerToVerify.id, {
           verificationType: 'OTP',
           otp: otpValue
@@ -368,15 +384,16 @@ export default function JourneyCommandCenterScreen() {
 
       if (success) {
         addLog(`✓ Passenger verified: ${passengerToVerify.passengerName}`);
-        
-        // Auto-complete the pickup stop immediately to transition Ride phase to next stop / EnRoute
         const activeStop = stops[currentStopIndex];
         if (activeStop) {
-          addLog(`🏁 Auto-completing pickup stop: ${activeStop.name}`);
+          const actionText = activeStop.type === 'pickup' ? 'pickup' : 'drop-off';
+          addLog(`🏁 Auto-completing ${actionText} stop: ${activeStop.name}`);
           await completeStop(ride.id, activeStop.id);
         }
-        
+
         setIsVerificationOpen(false);
+        setQrScannerActive(false);
+        setScanned(false);
         setSelectedPassenger(null);
         setOtpValue('');
         await loadData();
@@ -389,6 +406,8 @@ export default function JourneyCommandCenterScreen() {
     } finally {
       setIsActionLoading(false);
     }
+
+    return success;
   };
 
   const handleDropConfirm = async () => {
@@ -412,11 +431,23 @@ export default function JourneyCommandCenterScreen() {
     }
   };
 
-  const startQrScanner = async () => {
+  const openVerificationModal = (passenger?: Booking) => {
+    if (passenger) {
+      setSelectedPassenger(passenger);
+    } else if (currentPassengerBooking) {
+      setSelectedPassenger(currentPassengerBooking);
+    }
+
+    setOtpValue('');
+    setQrScannerActive(false);
     setScanned(false);
-    setQrScannerActive(true);
     setIsVerificationOpen(true);
-    
+  };
+
+  const startQrScanner = async (passenger?: Booking) => {
+    openVerificationModal(passenger);
+    setQrScannerActive(true);
+
     if (!cameraPermission || !cameraPermission.granted) {
       try {
         const res = await requestCameraPermission();
@@ -434,13 +465,13 @@ export default function JourneyCommandCenterScreen() {
   const handleBarCodeScanned = async ({ type, data }: { type: string; data: string }) => {
     if (scanned) return;
     setScanned(true);
-    
     addLog(`📷 Scanned barcode data: ${data}`);
-    
-    setQrScannerActive(false);
-    setScanned(false);
-    setIsVerificationOpen(false);
-    await handleVerifyPassenger('qr', data);
+
+    const success = await handleVerifyPassenger('qr', data);
+    if (!success) {
+      setQrScannerActive(false);
+      setScanned(false);
+    }
   };
 
   const triggerSosAlert = () => {
@@ -487,8 +518,7 @@ export default function JourneyCommandCenterScreen() {
   };
 
   const currentPassengerBooking = bookings.find(
-    b => (b.id || '').toLowerCase() === (ride?.currentPassengerId || '').toLowerCase() || 
-         (b.bookingId || '').toLowerCase() === (ride?.currentPassengerId || '').toLowerCase()
+    b => (b.id || '').toLowerCase() === (ride?.currentPassengerId || '').toLowerCase()
   ) || null;
 
   const activeStop = stops[currentStopIndex];
@@ -496,7 +526,7 @@ export default function JourneyCommandCenterScreen() {
   const renderHUDContent = () => {
     if (!ride) return null;
 
-    const initials = currentPassengerBooking ? currentPassengerBooking.passengerName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : '';
+    const initials = currentPassengerBooking ? currentPassengerBooking.passengerName.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2) : '';
 
     if (ride.status === 'draft' || ride.status === 'published' || ride.status === 'scheduled') {
       return (
@@ -603,7 +633,10 @@ export default function JourneyCommandCenterScreen() {
                     />
                     <TouchableOpacity
                       style={[styles.hudVerifyBtn, { backgroundColor: '#10B981' }]}
-                      onPress={() => handleVerifyPassenger('otp')}
+                      onPress={() => {
+                        setSelectedPassenger(currentPassengerBooking);
+                        handleVerifyPassenger('otp');
+                      }}
                       disabled={isActionLoading}
                     >
                       <Text style={styles.hudBtnText}>Verify</Text>
@@ -613,14 +646,17 @@ export default function JourneyCommandCenterScreen() {
                   <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
                     <TouchableOpacity
                       style={[styles.hudActionOutlineBtn, { flex: 1, borderColor: '#4F46E5' }]}
-                      onPress={startQrScanner}
+                      onPress={() => startQrScanner(currentPassengerBooking)}
                     >
                       <Camera size={14} color="#818CF8" />
                       <Text style={{ fontSize: 11, color: '#818CF8', fontWeight: 'bold', marginLeft: 4 }}>Scan QR</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.hudActionOutlineBtn, { flex: 1, borderColor: '#10B981' }]}
-                      onPress={() => handleVerifyPassenger('manual')}
+                      onPress={() => {
+                        setSelectedPassenger(currentPassengerBooking);
+                        handleVerifyPassenger('manual');
+                      }}
                     >
                       <CheckCircle size={14} color="#34D399" />
                       <Text style={{ fontSize: 11, color: '#34D399', fontWeight: 'bold', marginLeft: 4 }}>Bypass</Text>
@@ -681,7 +717,7 @@ export default function JourneyCommandCenterScreen() {
                   </View>
                   <TouchableOpacity
                     style={[styles.hudPrimaryBtn, { backgroundColor: '#F59E0B' }]}
-                    onPress={() => handleDropConfirm()}
+                    onPress={() => openVerificationModal(currentPassengerBooking || undefined)}
                     disabled={isActionLoading}
                   >
                     <CheckCircle size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
@@ -859,7 +895,7 @@ export default function JourneyCommandCenterScreen() {
                         const isPending = booking.status === 'requested';
                         const boarded = ['verified', 'enroute', 'dropreached', 'waitingpassengerconfirmation', 'completed'].includes(booking.status);
                         const dropped = ['completed', 'waitingpassengerconfirmation'].includes(booking.status);
-                        const initials = booking.passengerName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+                        const initials = booking.passengerName.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2);
 
                         return (
                           <View 
@@ -941,6 +977,10 @@ export default function JourneyCommandCenterScreen() {
                                           if (ok) {
                                             addLog(`✓ Accepted and confirmed booking: ${booking.passengerName}`);
                                             await loadData();
+                                            openVerificationModal({
+                                              ...booking,
+                                              status: 'accepted'
+                                            });
                                           } else {
                                             Alert.alert('Error', 'Failed to accept booking.');
                                           }
@@ -950,13 +990,11 @@ export default function JourneyCommandCenterScreen() {
                                   );
                                 } else if (stop.type === 'pickup') {
                                   if (!boarded) {
-                                    setSelectedPassenger(booking);
-                                    setIsVerificationOpen(true);
+                                    openVerificationModal(booking);
                                   }
                                 } else {
                                   if (!dropped) {
-                                    setSelectedPassenger(booking);
-                                    handleDropConfirm();
+                                    openVerificationModal(booking);
                                   }
                                 }
                               }}
@@ -1104,17 +1142,26 @@ export default function JourneyCommandCenterScreen() {
                 showsVerticalScrollIndicator={false}
                 keyboardShouldPersistTaps="handled"
               >
-                {selectedPassenger && (
-                  <View style={styles.pVerifyHeader}>
-                    <View>
-                      <Text style={[styles.pVerifyNameText, { color: theme.colors.text }]}>{selectedPassenger.passengerName}</Text>
-                      <Text style={{ fontSize: 11, color: theme.colors.textSecondary }}>Seats: {selectedPassenger.seats} | Phone: {selectedPassenger.passengerPhone}</Text>
+                {(() => {
+                  const passenger = selectedPassenger || currentPassengerBooking;
+                  return (
+                    <View style={styles.pVerifyHeader}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.pVerifyNameText, { color: theme.colors.text }]}>
+                          {passenger ? passenger.passengerName : 'Verify Boarding'}
+                        </Text>
+                        {passenger && (
+                          <Text style={{ fontSize: 11, color: theme.colors.textSecondary }}>
+                            Seats: {passenger.seats} | Phone: {passenger.passengerPhone}
+                          </Text>
+                        )}
+                      </View>
+                      <TouchableOpacity onPress={() => setIsVerificationOpen(false)} style={styles.modalCloseBtn}>
+                        <Text style={{ fontSize: 24, color: theme.colors.textSecondary }}>×</Text>
+                      </TouchableOpacity>
                     </View>
-                    <TouchableOpacity onPress={() => setIsVerificationOpen(false)} style={styles.modalCloseBtn}>
-                      <Text style={{ fontSize: 24, color: theme.colors.textSecondary }}>×</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
+                  );
+                })()}
 
                 {!qrScannerActive ? (
                   <View style={{ gap: 16, marginTop: 12 }}>
@@ -1138,7 +1185,7 @@ export default function JourneyCommandCenterScreen() {
 
                     <View style={[styles.dividerLine, { backgroundColor: theme.colors.border }]} />
 
-                    <TouchableOpacity style={[styles.verifyMethodBtn, { borderColor: theme.colors.border }]} onPress={startQrScanner}>
+                    <TouchableOpacity style={[styles.verifyMethodBtn, { borderColor: theme.colors.border }]} onPress={() => startQrScanner()}>
                       <Camera size={16} color={theme.colors.text} style={{ marginRight: 8 }} />
                       <Text style={[styles.verifyMethodBtnText, { color: theme.colors.text }]}>Scan QR Passcode</Text>
                     </TouchableOpacity>

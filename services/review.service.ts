@@ -1,5 +1,5 @@
 import { api } from '../utils/api';
-import { ReviewResponseDto, RatingSummaryDto } from '../utils/types';
+import { ReviewResponseDto, RatingSummaryDto, FlagReviewDto } from '../utils/types';
 
 export const reviewService = {
   async createReview(data: any) {
@@ -42,7 +42,7 @@ export const reviewService = {
     return api.get<RatingSummaryDto>(`/reviews/summary/user/${userId}`);
   },
 
-  async flagReview(id: string, data: any) {
+  async flagReview(id: string, data: FlagReviewDto) {
     return api.post<void>(`/reviews/${id}/flag`, data);
   },
 };

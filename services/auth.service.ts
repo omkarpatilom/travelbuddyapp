@@ -16,7 +16,7 @@ export const authService = {
   async refreshToken(accessToken: string, refreshToken: string) {
     return api.post<{ accessToken: string; refreshToken: string }>(
       '/auth/refresh-token',
-      { accessToken, refreshToken }
+      { token: refreshToken }
     );
   },
 

@@ -55,7 +55,12 @@ export default function RouteMap({ from, to, distance, duration, driverLocation,
 
   useEffect(() => {
     fetchRouteData();
-  }, [from.coordinates, to.coordinates]);
+  }, [
+    from.coordinates.latitude,
+    from.coordinates.longitude,
+    to.coordinates.latitude,
+    to.coordinates.longitude
+  ]);
 
   const fetchRouteData = async () => {
     setIsLoading(true);

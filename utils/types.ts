@@ -152,6 +152,9 @@ export interface RideDto {
   stops: RideStopDto[];
   preference: RidePreferenceDto;
   createdAt: string;
+  distanceKm?: number;
+  durationMinutes?: number;
+  rideCategory?: string;
 }
 
 export interface RideSearchDto extends RideDto {
@@ -233,6 +236,12 @@ export interface RatingSummaryDto {
   threeStarCount: number;
   twoStarCount: number;
   oneStarCount: number;
+}
+
+export interface FlagReviewDto {
+  reviewId: string;
+  reason: ReviewFlagReason;
+  description: string;
 }
 
 export interface EmergencyContactDto {

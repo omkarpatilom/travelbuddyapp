@@ -54,7 +54,7 @@ export interface Booking {
   ride: Ride;
   seats: number;
   totalPrice: number;
-  status: 'confirmed' | 'completed' | 'cancelled' | 'pending';
+  status: 'requested' | 'accepted' | 'confirmed' | 'verified' | 'enroute' | 'dropreached' | 'waitingpassengerconfirmation' | 'completed' | 'cancelled' | 'rejected' | 'pending';
   bookingDate: string;
   passengerName: string;
   passengerPhone: string;
@@ -105,7 +105,7 @@ export const mapRideData = async (ride: RideDto | RideSearchDto): Promise<Ride> 
       }
       carModel = `${brand} ${vehicle.model}`;
       carColor = vehicle.color;
-      carPlate = vehicle.registrationNumber;
+      carPlate = vehicle.registrationNumber ?? undefined;
       isVehicleVerified = vehicle.status?.toLowerCase() === 'active';
 
       if (!featureCache[ride.vehicleId]) {
@@ -159,33 +159,45 @@ export const mapRideData = async (ride: RideDto | RideSearchDto): Promise<Ride> 
   let durationStr = 'Unknown';
 
   try {
-    const startLat = ride.from.latitude;
-    const startLon = ride.from.longitude;
-    const endLat = ride.to.latitude;
-    const endLon = ride.to.longitude;
-
-    if (startLat && startLon && endLat && endLon) {
-      const R = 6371; // km
-      const dLat = (endLat - startLat) * Math.PI / 180;
-      const dLon = (endLon - startLon) * Math.PI / 180;
-      const a = 
-        Math.sin(dLat/2) * Math.sin(dLat/2) +
-        Math.cos(startLat * Math.PI / 180) * Math.cos(endLat * Math.PI / 180) * 
-        Math.sin(dLon/2) * Math.sin(dLon/2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-      const straightDistance = R * c;
-      const estimatedDistance = straightDistance * 1.3;
-      distanceStr = `${estimatedDistance.toFixed(1)} km`;
-
-      const estimatedHours = estimatedDistance / 45;
-      const totalMinutes = Math.round(estimatedHours * 60);
+    if (ride.distanceKm && ride.distanceKm > 0) {
+      distanceStr = `${ride.distanceKm.toFixed(1)} km`;
+      const totalMinutes = Math.round(ride.durationMinutes || 0);
       const hours = Math.floor(totalMinutes / 60);
       const minutes = totalMinutes % 60;
-
       if (hours > 0) {
         durationStr = `${hours}h ${minutes}m`;
       } else {
         durationStr = `${minutes} mins`;
+      }
+    } else {
+      const startLat = ride.from.latitude;
+      const startLon = ride.from.longitude;
+      const endLat = ride.to.latitude;
+      const endLon = ride.to.longitude;
+
+      if (startLat && startLon && endLat && endLon) {
+        const R = 6371; // km
+        const dLat = (endLat - startLat) * Math.PI / 180;
+        const dLon = (endLon - startLon) * Math.PI / 180;
+        const a = 
+          Math.sin(dLat/2) * Math.sin(dLat/2) +
+          Math.cos(startLat * Math.PI / 180) * Math.cos(endLat * Math.PI / 180) * 
+          Math.sin(dLon/2) * Math.sin(dLon/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        const straightDistance = R * c;
+        const estimatedDistance = straightDistance * 1.3;
+        distanceStr = `${estimatedDistance.toFixed(1)} km`;
+
+        const estimatedHours = estimatedDistance / 45;
+        const totalMinutes = Math.round(estimatedHours * 60);
+        const hours = Math.floor(totalMinutes / 60);
+        const minutes = totalMinutes % 60;
+
+        if (hours > 0) {
+          durationStr = `${hours}h ${minutes}m`;
+        } else {
+          durationStr = `${minutes} mins`;
+        }
       }
     }
   } catch (err) {
@@ -246,6 +258,17 @@ export const mapBookingData = async (booking: BookingResponseDto): Promise<Booki
     console.error('Error fetching ride for booking:', e);
   }
 
+  const rawStatus = (booking.status || '').toLowerCase();
+  let mappedStatus = rawStatus;
+  
+  if (rawStatus === 'requested') {
+    mappedStatus = 'pending';
+  } else if (rawStatus === 'accepted') {
+    mappedStatus = 'confirmed';
+  } else if (['rejected', 'expired'].includes(rawStatus)) {
+    mappedStatus = 'cancelled';
+  }
+
   return {
     id: booking.bookingId,
     rideId: booking.rideId,
@@ -253,10 +276,10 @@ export const mapBookingData = async (booking: BookingResponseDto): Promise<Booki
     ride: ride!,
     seats: booking.seats,
     totalPrice: booking.totalPrice,
-    status: booking.status.toLowerCase() as any,
+    status: mappedStatus as any,
     bookingDate: booking.bookingDate,
     passengerName: booking.passengerName,
     passengerPhone: booking.passengerPhone,
-    specialRequest: booking.specialRequest,
+    specialRequest: booking.specialRequest ?? undefined,
   };
 };

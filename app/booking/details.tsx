@@ -731,8 +731,9 @@ export default function BookingDetailsScreen() {
                     {(() => {
                       const getBookingOtp = (id: string) => {
                         let hash = 0;
-                        for (let i = 0; i < id.length; i++) {
-                          hash = id.charCodeAt(i) + ((hash << 5) - hash);
+                        const normalizedId = (id || '').toLowerCase();
+                        for (let i = 0; i < normalizedId.length; i++) {
+                          hash = normalizedId.charCodeAt(i) + ((hash << 5) - hash);
                         }
                         const code = Math.abs(hash % 9000) + 1000;
                         return code.toString();

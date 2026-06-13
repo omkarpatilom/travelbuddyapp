@@ -1049,7 +1049,7 @@ export default function RideDetailsScreen() {
         <View style={styles.actionButtons}>
           {isDriver ? (
             <View style={{ gap: 12 }}>
-              {['started', 'enroute', 'driverarrived', 'boarding', 'dropcompleted'].includes(ride.status) ? (
+              {['inprogress', 'started', 'enroute', 'driverarrived', 'boarding', 'dropcompleted'].includes(ride.status) ? (
                 <TouchableOpacity 
                   style={[styles.bookButton, { backgroundColor: theme.colors.primary, flexDirection: 'row' }]}
                   onPress={() => router.push(`/ride/command-center?id=${ride.id}`)}
@@ -1131,7 +1131,7 @@ export default function RideDetailsScreen() {
                 </View>
               )}
 
-              {['started', 'enroute'].includes(ride.status) && (
+              {['inprogress', 'started', 'enroute'].includes(ride.status) && (
                 <View style={{ gap: 12 }}>
                   <View style={[styles.passengerBanner, { backgroundColor: theme.colors.secondary + '15', borderColor: theme.colors.secondary }]}>
                     <Car size={24} color={theme.colors.secondary} />

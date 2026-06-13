@@ -74,12 +74,15 @@ export default function RegisterScreen() {
     if (!validateForm()) return;
 
     setIsLoading(true);
+    // Sanitize phone: remove non-digits, then remove leading 0
+    const sanitizedPhone = formData.phone.replace(/\D/g, '').replace(/^0+/, '');
+    
     const success = await register({
       email: formData.email,
       password: formData.password,
       firstName: formData.firstName,
       lastName: formData.lastName,
-      phone: formData.phone,
+      phone: sanitizedPhone,
     });
     setIsLoading(false);
 

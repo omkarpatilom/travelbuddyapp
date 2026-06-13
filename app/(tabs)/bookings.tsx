@@ -38,11 +38,11 @@ export default function BookingsScreen() {
   }, [loadInitialData]);
 
   const upcomingBookings = (bookings || []).filter(booking => 
-    booking.status === 'confirmed' || booking.status === 'pending'
+    ['confirmed', 'accepted', 'arrivedatpickup', 'verificationpending', 'verified', 'enroute', 'dropreached', 'waitingpassengerconfirmation'].includes(booking.status) || booking.status === 'pending'
   );
 
   const pastBookings = (bookings || []).filter(booking => 
-    booking.status === 'completed' || booking.status === 'cancelled'
+    booking.status === 'completed' || ['cancelled', 'rejected', 'expired'].includes(booking.status)
   );
 
   const handleCancelBooking = (bookingId: string) => {
@@ -69,21 +69,59 @@ export default function BookingsScreen() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'confirmed': return theme.colors.success;
-      case 'pending': return theme.colors.warning;
-      case 'cancelled': return theme.colors.error;
-      case 'completed': return theme.colors.textSecondary;
-      default: return theme.colors.textSecondary;
+      case 'accepted':
+      case 'confirmed':
+      case 'verified':
+      case 'completed':
+        return theme.colors.success;
+      case 'arrivedatpickup':
+      case 'verificationpending':
+      case 'enroute':
+      case 'dropreached':
+      case 'waitingpassengerconfirmation':
+        return theme.colors.primary;
+      case 'requested':
+      case 'pending':
+        return theme.colors.warning;
+      case 'cancelled':
+      case 'rejected':
+      case 'expired':
+        return theme.colors.error;
+      default:
+        return theme.colors.textSecondary;
     }
   };
 
   const getStatusText = (status: string) => {
     switch (status) {
-      case 'confirmed': return 'Confirmed';
-      case 'pending': return 'Pending';
-      case 'cancelled': return 'Cancelled';
-      case 'completed': return 'Completed';
-      default: return status;
+      case 'requested':
+      case 'pending':
+        return 'Pending';
+      case 'accepted':
+      case 'confirmed':
+        return 'Confirmed';
+      case 'arrivedatpickup':
+        return 'Arrived at Pickup';
+      case 'verificationpending':
+        return 'Verification Pending';
+      case 'verified':
+        return 'Verified';
+      case 'enroute':
+        return 'En Route';
+      case 'dropreached':
+        return 'Arrived at Destination';
+      case 'waitingpassengerconfirmation':
+        return 'Waiting Confirmation';
+      case 'completed':
+        return 'Completed';
+      case 'cancelled':
+        return 'Cancelled';
+      case 'rejected':
+        return 'Rejected';
+      case 'expired':
+        return 'Expired';
+      default:
+        return status.charAt(0).toUpperCase() + status.slice(1);
     }
   };
 
@@ -117,7 +155,7 @@ export default function BookingsScreen() {
               {getStatusText(item.status)}
             </Text>
           </View>
-          {item.status === 'confirmed' && (
+          {['confirmed', 'accepted', 'arrivedatpickup', 'verificationpending'].includes(item.status) && (
             <TouchableOpacity 
               onPress={() => handleCancelBooking(item.id)}
               style={[styles.cancelButton, { backgroundColor: theme.colors.error + '20' }]}
