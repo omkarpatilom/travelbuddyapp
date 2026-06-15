@@ -13,6 +13,7 @@ import {
 import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { SearchCacheService, CachedSearch } from '../../services/SearchCacheService';
+import { rideService } from '../../services/ride.service';
 import { api } from '../../utils/api';
 import { 
   Search, 
@@ -132,9 +133,10 @@ export default function SearchScreen() {
     setLoading(true);
     setIsOffline(false);
     try {
-      const data = await api.get<any[]>(
-        `/rides/search?srcLat=${pickupPlace.lat}&srcLon=${pickupPlace.lon}&dstLat=${dropoffPlace.lat}&dstLon=${dropoffPlace.lon}`
-      );
+      const data = await rideService.searchRides({
+        FromCoords: { latitude: pickupPlace.lat, longitude: pickupPlace.lon },
+        ToCoords: { latitude: dropoffPlace.lat, longitude: dropoffPlace.lon }
+      });
       
       // Navigate to FindRide with these results or just show them here
       // To keep it seamless, let's navigate to /ride/find with the correct params

@@ -20,6 +20,7 @@ import RouteMap from '@/components/RouteMap';
 import * as Location from 'expo-location';
 import { requestLocationPermission, checkLocationPermission } from '@/utils/permissions';
 import { bookingService } from '@/services/booking.service';
+import { safetyService } from '@/services/safety.service';
 import { formatPrice } from '@/utils/validation';
 import { reviewService } from '@/services/review.service';
 import RatingModal from '@/components/RatingModal';

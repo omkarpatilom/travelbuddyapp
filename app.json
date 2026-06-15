@@ -7,7 +7,7 @@
     "icon": "./assets/images/icon.png",
     "scheme": "travelbuddy",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.travelbuddy.ridesharing",
@@ -61,7 +61,9 @@
           "color": "#2563EB"
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "expo-secure-store",
+      "expo-sqlite"
     ],
     "experiments": {
       "typedRoutes": true

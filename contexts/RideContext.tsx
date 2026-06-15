@@ -34,6 +34,7 @@ interface RideContextType {
   ) => Promise<Ride[]>;
   createRide: (rideData: any) => Promise<boolean>;
   updateRide: (rideId: string, rideData: Partial<Ride>) => Promise<boolean>;
+  publishRide: (rideId: string) => Promise<boolean>;
   cancelRide: (rideId: string, reason: string) => Promise<boolean>;
   startRide: (rideId: string) => Promise<boolean>;
   arriveAtPickup: (rideId: string, lat?: number, lng?: number) => Promise<boolean>;
@@ -204,6 +205,17 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
       return true;
     } catch (error) {
       console.error('Error cancelling ride:', error);
+      return false;
+    }
+  };
+
+  const publishRide = async (rideId: string): Promise<boolean> => {
+    try {
+      await rideService.publishRide(rideId);
+      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] });
+      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] });
+      return true;
+    } catch (e) {
       return false;
     }
   };
@@ -468,6 +480,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
         searchRides, 
         createRide, 
         updateRide,
+        publishRide,
         cancelRide,
         startRide,
         arriveAtPickup,

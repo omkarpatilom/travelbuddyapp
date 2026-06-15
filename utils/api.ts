@@ -1,6 +1,6 @@
 import { storage, StorageKeys } from './storage';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.7:5000/api/v1';
+export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.7:5000/api/v1';
 
 if (!process.env.EXPO_PUBLIC_API_URL && process.env.NODE_ENV !== 'test') {
   console.warn('EXPO_PUBLIC_API_URL is not defined in environment variables. Falling back to default URL.');

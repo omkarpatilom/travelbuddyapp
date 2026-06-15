@@ -27,7 +27,13 @@ export const vehicleService = {
   },
 
   async search(params: any) {
-    const query = new URLSearchParams(params).toString();
+    const queryParams: any = {};
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        queryParams[key] = value;
+      }
+    });
+    const query = new URLSearchParams(queryParams).toString();
     return api.get<VehicleResponseDto[]>(`/vehicles/search?${query}`);
   },
 

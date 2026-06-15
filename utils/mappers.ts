@@ -35,7 +35,7 @@ export interface Ride {
   pickupDistanceMeters?: number;
   dropoffDistanceMeters?: number;
   polyline?: string;
-  currentPhase?: number;
+  currentPhase?: string;
   currentPassengerId?: string | null;
   stops?: any[];
   preferences: {
@@ -260,12 +260,16 @@ export const mapBookingData = async (booking: BookingResponseDto): Promise<Booki
 
   const rawStatus = (booking.status || '').toLowerCase();
   let mappedStatus = rawStatus;
-  
-  if (rawStatus === 'requested') {
-    mappedStatus = 'pending';
+
+  if (rawStatus === 'pending') {
+    mappedStatus = 'requested';
+  } else if (rawStatus === 'confirmed') {
+    mappedStatus = 'accepted';
+  } else if (rawStatus === 'requested') {
+    mappedStatus = 'requested';
   } else if (rawStatus === 'accepted') {
-    mappedStatus = 'confirmed';
-  } else if (['rejected', 'expired'].includes(rawStatus)) {
+    mappedStatus = 'accepted';
+  } else if (['rejected', 'expired', 'cancelled'].includes(rawStatus)) {
     mappedStatus = 'cancelled';
   }
 

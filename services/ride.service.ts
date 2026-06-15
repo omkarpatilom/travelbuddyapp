@@ -29,21 +29,25 @@ export const rideService = {
     AllowPets?: boolean;
     AllowMusic?: boolean;
   }) {
-    const queryParams: any = {
-      date: params.Date,
-      seats: params.Seats,
-      maxPrice: params.MaxPrice,
-      allowPets: params.AllowPets,
-      allowMusic: params.AllowMusic,
-    };
+    const queryParams: any = {};
+
+    if (params.Date) queryParams.date = params.Date;
+    if (params.Seats !== undefined && params.Seats !== null) queryParams.seats = params.Seats;
+    if (params.MaxPrice !== undefined && params.MaxPrice !== null) queryParams.maxPrice = params.MaxPrice;
+    if (params.AllowPets !== undefined && params.AllowPets !== null) queryParams.allowPets = params.AllowPets;
+    if (params.AllowMusic !== undefined && params.AllowMusic !== null) queryParams.allowMusic = params.AllowMusic;
 
     if (params.FromCoords) {
-      queryParams.srcLat = params.FromCoords.latitude;
-      queryParams.srcLon = params.FromCoords.longitude;
+      if (params.FromCoords.latitude !== undefined && params.FromCoords.latitude !== null)
+        queryParams.srcLat = params.FromCoords.latitude;
+      if (params.FromCoords.longitude !== undefined && params.FromCoords.longitude !== null)
+        queryParams.srcLon = params.FromCoords.longitude;
     }
     if (params.ToCoords) {
-      queryParams.dstLat = params.ToCoords.latitude;
-      queryParams.dstLon = params.ToCoords.longitude;
+      if (params.ToCoords.latitude !== undefined && params.ToCoords.latitude !== null)
+        queryParams.dstLat = params.ToCoords.latitude;
+      if (params.ToCoords.longitude !== undefined && params.ToCoords.longitude !== null)
+        queryParams.dstLon = params.ToCoords.longitude;
     }
 
     const query = new URLSearchParams(queryParams).toString();
@@ -57,7 +61,14 @@ export const rideService = {
     Date?: string;
     Seats?: number;
   }) {
-    const query = new URLSearchParams(params as any).toString();
+    const queryParams: any = {};
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        queryParams[key] = value;
+      }
+    });
+
+    const query = new URLSearchParams(queryParams).toString();
     return api.get<RideDto[]>(`/rides/nearby?${query}`);
   },
 
@@ -67,6 +78,10 @@ export const rideService = {
 
   async getActiveRides() {
     return api.get<RideDto[]>('/rides/active');
+  },
+
+  async publishRide(id: string) {
+    return api.post<void>(`/rides/${id}/publish`, {});
   },
 
   async startRide(id: string) {
