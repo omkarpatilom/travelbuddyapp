@@ -231,6 +231,7 @@ export default function FindRideScreen() {
   }, [fromCoords, toCoords]);
 
   const performSearch = async () => {
+    console.log('Performing search with:', { fromLocation, toLocation, fromCoords, toCoords, selectedDate, passengerCount });
     if (!fromLocation || !toLocation) {
       Alert.alert('Incomplete Search', 'Please provide both start and end locations.');
       return;
