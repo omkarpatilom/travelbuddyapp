@@ -32,7 +32,7 @@ export default function MyRidesScreen() {
         return ['active', 'inprogress', 'started', 'driverarrived', 'boarding', 'enroute', 'dropcompleted'].includes(status);
       }
       if (activeTab === 'upcoming') {
-        return ['scheduled', 'published', 'confirmed', 'seatsbooked'].includes(status);
+        return ['draft', 'scheduled', 'published', 'confirmed', 'seatsbooked'].includes(status);
       }
       if (activeTab === 'completed') {
         return status === 'completed';
@@ -105,7 +105,7 @@ export default function MyRidesScreen() {
           </Text>
         </View>
         
-        {['published', 'scheduled', 'active'].includes(item.status) && (
+        {['draft', 'published', 'scheduled', 'active'].includes(item.status) && (
           <View style={styles.actionButtons}>
             <TouchableOpacity 
               onPress={() => handleEditRide(item.id)}

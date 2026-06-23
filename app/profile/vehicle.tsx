@@ -17,6 +17,7 @@ import { Car, Hash, Palette, Calendar, Users, ArrowLeft, Save, Plus, Settings } 
 import PhotoUploader from '@/components/PhotoUploader';
 import { AVAILABLE_FEATURES } from '@/components/VehicleFeatureTags';
 import DropdownSelector from '@/components/DropdownSelector';
+import { UniversalRidePreferences } from '@/components/RidePreferences';
 
 interface Vehicle {
   id: string;
@@ -708,6 +709,10 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     fontSize: 16,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '500',
   },
   saveButtonLarge: {
     flexDirection: 'row',

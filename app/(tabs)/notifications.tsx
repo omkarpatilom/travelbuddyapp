@@ -13,18 +13,25 @@ import {
 import { useTheme } from '@/contexts/ThemeContext';
 import { useNotifications } from '@/contexts/NotificationContext';
 import { useRides } from '@/contexts/RideContext';
-import { Bell, Car, Calendar, Star, CircleCheck as CheckCircle, X } from 'lucide-react-native';
+import {
+  Bell,
+  Car,
+  Calendar,
+  Star,
+  CircleCheck as CheckCircle,
+  X,
+} from 'lucide-react-native';
 
 export default function NotificationsScreen() {
   const { theme } = useTheme();
-  const { 
-    notifications, 
-    unreadCount, 
-    isLoading, 
-    fetchNotifications, 
-    markAsRead, 
-    markAllAsRead, 
-    deleteNotification 
+  const {
+    notifications,
+    unreadCount,
+    isLoading,
+    fetchNotifications,
+    markAsRead,
+    markAllAsRead,
+    deleteNotification,
   } = useNotifications();
 
   const [refreshing, setRefreshing] = useState(false);
@@ -44,19 +51,25 @@ export default function NotificationsScreen() {
             try {
               const ok = await completeBooking(bookingId);
               if (ok) {
-                Alert.alert('Success', 'Drop-off confirmed successfully! Thank you for traveling with TravelBuddy.');
+                Alert.alert(
+                  'Success',
+                  'Drop-off confirmed successfully! Thank you for traveling with TravelBuddy.',
+                );
                 await fetchNotifications();
               } else {
                 Alert.alert('Error', 'Failed to confirm drop-off.');
               }
             } catch (err: any) {
-              Alert.alert('Error', err.message || 'Failed to confirm drop-off.');
+              Alert.alert(
+                'Error',
+                err.message || 'Failed to confirm drop-off.',
+              );
             } finally {
               setIsLoadingAction(false);
             }
-          }
-        }
-      ]
+          },
+        },
+      ],
     );
   };
 
@@ -72,9 +85,12 @@ export default function NotificationsScreen() {
 
   const getNotificationIcon = (type: string) => {
     const t = type.toLowerCase();
-    if (t.includes('booking')) return <Calendar size={20} color={theme.colors.primary} />;
-    if (t.includes('ride')) return <Car size={20} color={theme.colors.secondary} />;
-    if (t.includes('review')) return <Star size={20} color={theme.colors.warning} />;
+    if (t.includes('booking'))
+      return <Calendar size={20} color={theme.colors.primary} />;
+    if (t.includes('ride'))
+      return <Car size={20} color={theme.colors.secondary} />;
+    if (t.includes('review'))
+      return <Star size={20} color={theme.colors.warning} />;
     return <Bell size={20} color={theme.colors.accent} />;
   };
 
@@ -82,7 +98,7 @@ export default function NotificationsScreen() {
     const date = new Date(dateStr);
     const now = new Date();
     const diff = now.getTime() - date.getTime();
-    
+
     const minutes = Math.floor(diff / 60000);
     const hours = Math.floor(minutes / 60);
     const days = Math.floor(hours / 24);
@@ -96,62 +112,100 @@ export default function NotificationsScreen() {
   const renderNotification = ({ item }: { item: any }) => {
     const titleLower = (item.title || '').toLowerCase();
     const msgLower = (item.message || '').toLowerCase();
-    const isDropoffMsg = titleLower.includes('drop') || titleLower.includes('arrive') || titleLower.includes('enroute') || msgLower.includes('drop') || msgLower.includes('arrive') || msgLower.includes('enroute');
-    const matchingBooking = isDropoffMsg ? (bookings || []).find(b => b.status === 'confirmed') : null;
+    const isDropoffMsg =
+      titleLower.includes('drop') ||
+      titleLower.includes('arrive') ||
+      titleLower.includes('enroute') ||
+      msgLower.includes('drop') ||
+      msgLower.includes('arrive') ||
+      msgLower.includes('enroute');
+    const matchingBooking = isDropoffMsg
+      ? (bookings || []).find((b) => b.status === 'confirmed')
+      : null;
 
     return (
-      <TouchableOpacity 
+      <TouchableOpacity
         style={[
-          styles.notificationCard, 
-          { 
-            backgroundColor: item.isRead ? theme.colors.card : theme.colors.primary + '10',
-            borderColor: theme.colors.border 
-          }
+          styles.notificationCard,
+          {
+            backgroundColor: item.isRead
+              ? theme.colors.card
+              : theme.colors.primary + '10',
+            borderColor: theme.colors.border,
+          },
         ]}
         onPress={() => !item.isRead && markAsRead(item.id)}
       >
         <View style={styles.notificationContent}>
           <View style={styles.notificationHeader}>
             <View style={styles.iconContainer}>
-              <View style={[styles.iconPlaceholder, { backgroundColor: theme.colors.surface }]}>
+              <View
+                style={[
+                  styles.iconPlaceholder,
+                  { backgroundColor: theme.colors.surface },
+                ]}
+              >
                 {getNotificationIcon(item.type)}
               </View>
             </View>
-            
+
             <View style={styles.textContent}>
               <View style={styles.titleRow}>
-                <Text style={[styles.title, { color: theme.colors.text }]} numberOfLines={1}>
+                <Text
+                  style={[styles.title, { color: theme.colors.text }]}
+                  numberOfLines={1}
+                >
                   {item.title}
                 </Text>
                 {!item.isRead && (
-                  <View style={[styles.unreadDot, { backgroundColor: theme.colors.primary }]} />
+                  <View
+                    style={[
+                      styles.unreadDot,
+                      { backgroundColor: theme.colors.primary },
+                    ]}
+                  />
                 )}
               </View>
-              
-              <Text style={[styles.message, { color: theme.colors.textSecondary }]} numberOfLines={2}>
+
+              <Text
+                style={[styles.message, { color: theme.colors.textSecondary }]}
+                numberOfLines={2}
+              >
                 {item.message}
               </Text>
-              
-              <Text style={[styles.timestamp, { color: theme.colors.textSecondary }]}>
+
+              <Text
+                style={[
+                  styles.timestamp,
+                  { color: theme.colors.textSecondary },
+                ]}
+              >
                 {formatTimestamp(item.createdAt)}
               </Text>
             </View>
           </View>
 
           {matchingBooking && (
-            <View style={[styles.actionButtons, { marginTop: 8, marginLeft: 52 }]}>
-              <TouchableOpacity 
-                style={[styles.actionButton, { backgroundColor: theme.colors.success }]}
+            <View
+              style={[styles.actionButtons, { marginTop: 8, marginLeft: 52 }]}
+            >
+              <TouchableOpacity
+                style={[
+                  styles.actionButton,
+                  { backgroundColor: theme.colors.success },
+                ]}
                 onPress={() => handleConfirmDropoff(matchingBooking.id)}
               >
                 <CheckCircle size={14} color="#FFFFFF" />
-                <Text style={styles.actionButtonText}>Confirm Safe Drop-off</Text>
+                <Text style={styles.actionButtonText}>
+                  Confirm Safe Drop-off
+                </Text>
               </TouchableOpacity>
             </View>
           )}
         </View>
 
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.deleteButton}
           onPress={() => deleteNotification(item.id)}
         >
@@ -162,20 +216,39 @@ export default function NotificationsScreen() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      <View style={[styles.header, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
+    <View
+      style={[styles.container, { backgroundColor: theme.colors.background }]}
+    >
+      <View
+        style={[
+          styles.header,
+          {
+            backgroundColor: theme.colors.surface,
+            borderBottomColor: theme.colors.border,
+          },
+        ]}
+      >
         <View style={styles.headerContent}>
-          <Text style={[styles.headerTitle, { color: theme.colors.text }]}>Notifications</Text>
+          <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
+            Notifications
+          </Text>
           {unreadCount > 0 && (
-            <View style={[styles.badge, { backgroundColor: theme.colors.primary }]}>
+            <View
+              style={[styles.badge, { backgroundColor: theme.colors.primary }]}
+            >
               <Text style={styles.badgeText}>{unreadCount}</Text>
             </View>
           )}
         </View>
-        
+
         {unreadCount > 0 && (
-          <TouchableOpacity onPress={markAllAsRead} style={styles.markAllButton}>
-            <Text style={[styles.markAllText, { color: theme.colors.primary }]}>Mark all as read</Text>
+          <TouchableOpacity
+            onPress={markAllAsRead}
+            style={styles.markAllButton}
+          >
+            <Text style={[styles.markAllText, { color: theme.colors.primary }]}>
+              Mark all as read
+            </Text>
           </TouchableOpacity>
         )}
       </View>
@@ -187,16 +260,31 @@ export default function NotificationsScreen() {
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[theme.colors.primary]} />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[theme.colors.primary]}
+          />
         }
         ListEmptyComponent={
           isLoading ? (
-            <ActivityIndicator size="large" color={theme.colors.primary} style={{ marginTop: 40 }} />
+            <ActivityIndicator
+              size="large"
+              color={theme.colors.primary}
+              style={{ marginTop: 40 }}
+            />
           ) : (
             <View style={styles.emptyContainer}>
               <Bell size={60} color={theme.colors.textSecondary} />
-              <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>No notifications</Text>
-              <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>
+              <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>
+                No notifications
+              </Text>
+              <Text
+                style={[
+                  styles.emptyText,
+                  { color: theme.colors.textSecondary },
+                ]}
+              >
                 You're all caught up! New notifications will appear here.
               </Text>
             </View>

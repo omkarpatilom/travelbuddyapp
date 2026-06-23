@@ -228,7 +228,7 @@ export const sqliteStorage = {
     );
     
     // Maintain max limit of 10 items in history
-    const history = await db.getAllAsync<{ id: string }>('SELECT id FROM RideSearchHistory ORDER BY timestamp DESC;');
+    const history = (await db.getAllAsync('SELECT id FROM RideSearchHistory ORDER BY timestamp DESC;')) as Array<{ id: string }>;
     if (history.length > 10) {
       const toDeleteIds = history.slice(10).map((x) => x.id);
       for (const delId of toDeleteIds) {
@@ -263,10 +263,10 @@ export const sqliteStorage = {
 
   async getCachedRides(searchKey: string): Promise<any[] | null> {
     const db = getDB();
-    const cached = await db.getFirstAsync<{ dataJson: string; timestamp: string }>(
+    const cached = (await db.getFirstAsync(
       'SELECT dataJson, timestamp FROM RideCache WHERE searchKey = ?;',
       [searchKey]
-    );
+    )) as { dataJson: string; timestamp: string } | null;
     if (!cached) return null;
 
     // Check 5 minutes cache TTL
@@ -303,7 +303,7 @@ export const sqliteStorage = {
 
   async getCachedNotifications(): Promise<any[]> {
     const db = getDB();
-    const rows = await db.getAllAsync<{ dataJson: string }>('SELECT dataJson FROM NotificationHistory ORDER BY timestamp DESC;');
+    const rows = (await db.getAllAsync('SELECT dataJson FROM NotificationHistory ORDER BY timestamp DESC;')) as Array<{ dataJson: string }>;
     const results: any[] = [];
     for (const row of rows) {
       try {
@@ -321,7 +321,7 @@ export const sqliteStorage = {
     await db.runAsync('UPDATE NotificationHistory SET isRead = ? WHERE id = ?;', [isReadInt, id]);
     
     // Also update the JSON content stored in database
-    const cached = await db.getFirstAsync<{ dataJson: string }>('SELECT dataJson FROM NotificationHistory WHERE id = ?;', [id]);
+    const cached = (await db.getFirstAsync('SELECT dataJson FROM NotificationHistory WHERE id = ?;', [id])) as { dataJson: string } | null;
     if (cached) {
       try {
         const data = JSON.parse(cached.dataJson);

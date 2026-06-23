@@ -76,7 +76,7 @@ export default function RideDetailsScreen() {
     let pollingIntervalId: any = null;
 
     const startLiveTracking = async () => {
-      if (!ride || ride.status !== 'started') {
+      if (!ride || (ride.status as any) !== 'started') {
         setDriverLocation(null);
         return;
       }
@@ -1050,7 +1050,7 @@ export default function RideDetailsScreen() {
         <View style={styles.actionButtons}>
           {isDriver ? (
             <View style={{ gap: 12 }}>
-              {['inprogress', 'started', 'enroute', 'driverarrived', 'boarding', 'dropcompleted'].includes(ride.status) ? (
+              {['inprogress', 'started', 'enroute', 'driverarrived', 'boarding', 'dropcompleted'].includes(ride.status as any) ? (
                 <TouchableOpacity 
                   style={[styles.bookButton, { backgroundColor: theme.colors.primary, flexDirection: 'row' }]}
                   onPress={() => router.push(`/ride/command-center?id=${ride.id}`)}
@@ -1058,7 +1058,7 @@ export default function RideDetailsScreen() {
                   <Navigation size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
                   <Text style={styles.bookButtonText}>Resume Ride in Command Center</Text>
                 </TouchableOpacity>
-              ) : ['active', 'scheduled', 'published', 'confirmed', 'seatsbooked'].includes(ride.status) ? (
+              ) : ['active', 'scheduled', 'published', 'confirmed', 'seatsbooked'].includes(ride.status as any) ? (
                 <View style={{ gap: 12 }}>
                   <TouchableOpacity 
                     style={[styles.bookButton, { backgroundColor: theme.colors.primary, flexDirection: 'row' }]}
@@ -1093,7 +1093,7 @@ export default function RideDetailsScreen() {
             </View>
           ) : (
             <View style={{ gap: 12 }}>
-              {['active', 'published', 'scheduled'].includes(ride.status) && (
+              {['active', 'published', 'scheduled'].includes(ride.status as any) && (
                 <TouchableOpacity 
                   style={[styles.bookButton, { backgroundColor: theme.colors.primary }]}
                   onPress={handleBookRide}
@@ -1102,7 +1102,7 @@ export default function RideDetailsScreen() {
                 </TouchableOpacity>
               )}
 
-              {['confirmed', 'seatsbooked'].includes(ride.status) && (
+              {['confirmed', 'seatsbooked'].includes(ride.status as any) && (
                 <View style={[styles.passengerBanner, { backgroundColor: theme.colors.success + '15', borderColor: theme.colors.success }]}>
                   <ShieldCheck size={24} color={theme.colors.success} />
                   <View style={{ flex: 1 }}>
@@ -1112,7 +1112,7 @@ export default function RideDetailsScreen() {
                 </View>
               )}
 
-              {ride.status === 'driverarrived' && (
+              {(ride.status as any) === 'driverarrived' && (
                 <View style={[styles.passengerBanner, { backgroundColor: theme.colors.primary + '15', borderColor: theme.colors.primary }]}>
                   <MapPin size={24} color={theme.colors.primary} />
                   <View style={{ flex: 1 }}>
@@ -1122,7 +1122,7 @@ export default function RideDetailsScreen() {
                 </View>
               )}
 
-              {ride.status === 'boarding' && (
+              {(ride.status as any) === 'boarding' && (
                 <View style={[styles.passengerBanner, { backgroundColor: theme.colors.primary + '10', borderColor: theme.colors.primary }]}>
                   <Users size={24} color={theme.colors.primary} />
                   <View style={{ flex: 1 }}>
@@ -1132,7 +1132,7 @@ export default function RideDetailsScreen() {
                 </View>
               )}
 
-              {['inprogress', 'started', 'enroute'].includes(ride.status) && (
+              {['inprogress', 'started', 'enroute'].includes(ride.status as any) && (
                 <View style={{ gap: 12 }}>
                   <View style={[styles.passengerBanner, { backgroundColor: theme.colors.secondary + '15', borderColor: theme.colors.secondary }]}>
                     <Car size={24} color={theme.colors.secondary} />
@@ -1161,7 +1161,7 @@ export default function RideDetailsScreen() {
                 </View>
               )}
 
-              {ride.status === 'dropcompleted' && (
+              {(ride.status as any) === 'dropcompleted' && (
                 <View style={[styles.passengerBanner, { backgroundColor: theme.colors.success + '15', borderColor: theme.colors.success }]}>
                   <CheckCircle size={24} color={theme.colors.success} />
                   <View style={{ flex: 1 }}>
@@ -1533,26 +1533,6 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '800',
     letterSpacing: 2,
-  },
-  preferencesGridContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  preferenceTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    gap: 8,
-    minWidth: '47%',
-    flexGrow: 1,
-  },
-  preferenceTagText: {
-    fontSize: 14,
-    fontWeight: '500',
   },
   conversationCard: {
     flexDirection: 'row',

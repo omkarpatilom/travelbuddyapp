@@ -1,7 +1,7 @@
 import { userService } from '../services/user.service';
 import { vehicleService } from '../services/vehicle.service';
 import { rideService } from '../services/ride.service';
-import { RideDto, BookingResponseDto, RideStatus, ConversationLevel, RideSearchDto } from './types';
+import { RideDto, BookingResponseDto, RideStatus, ConversationLevel, RideSearchDto, RidePhase } from './types';
 
 export interface Ride {
   id: string;
@@ -236,7 +236,7 @@ export const mapRideData = async (ride: RideDto | RideSearchDto): Promise<Ride> 
     pickupDistanceMeters: searchData.pickupDistanceMeters,
     dropoffDistanceMeters: searchData.dropoffDistanceMeters,
     polyline: searchData.polyline,
-    currentPhase: ride.currentPhase,
+    currentPhase: ride.currentPhase !== undefined && ride.currentPhase !== null ? RidePhase[ride.currentPhase] : undefined,
     currentPassengerId: ride.currentPassengerId,
     stops: ride.stops,
     preferences: {

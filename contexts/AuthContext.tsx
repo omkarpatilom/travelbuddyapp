@@ -68,7 +68,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (error.message?.includes('401')) {
             await logout();
           } else {
-            const cachedUser = await storage.getItem<User>(StorageKeys.USER_DATA);
+            const cachedUser = await storage.getItem<User>(
+              StorageKeys.USER_DATA,
+            );
             if (cachedUser) {
               setUser(cachedUser);
             } else {
@@ -105,16 +107,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
     try {
       const response = await authService.login({ email, password });
-      
+
       if (response.accessToken) {
         await storage.setItem(StorageKeys.AUTH_TOKEN, response.accessToken);
         if (response.refreshToken) {
-          await storage.setItem(StorageKeys.REFRESH_TOKEN, response.refreshToken);
+          await storage.setItem(
+            StorageKeys.REFRESH_TOKEN,
+            response.refreshToken,
+          );
         }
-        
+
         const profile = await userService.getMe();
         const mappedUser = mapUserProfile(profile);
-        
+
         await storage.setItem(StorageKeys.USER_DATA, mappedUser);
         setUser(mappedUser);
         return true;
@@ -137,13 +142,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
     try {
       const fullName = `${userData.firstName} ${userData.lastName}`.trim();
-      
+
       await authService.register({
         fullName,
         email: userData.email,
         phoneNumber: userData.phone,
         password: userData.password,
-        role: userData.role ?? UserRole.Passenger
+        role: userData.role ?? UserRole.Passenger,
       });
 
       return await login(userData.email, userData.password);
@@ -157,7 +162,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     try {
-      const refreshToken = await storage.getItem<string>(StorageKeys.REFRESH_TOKEN);
+      const refreshToken = await storage.getItem<string>(
+        StorageKeys.REFRESH_TOKEN,
+      );
       if (refreshToken) {
         try {
           await authService.logout(refreshToken);
@@ -165,12 +172,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.log('Server logout failed or already logged out:', e);
         }
       }
-      
+
       // Clear TanStack query cache
       queryClient.clear();
       // Clear SQLite active caches
       await sqliteStorage.clearAuthRelatedCache();
-      
+
       await storage.removeItem(StorageKeys.AUTH_TOKEN);
       await storage.removeItem(StorageKeys.REFRESH_TOKEN);
       await storage.removeItem(StorageKeys.USER_DATA);
@@ -186,10 +193,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (userData.fullName || userData.phone) {
           await userService.updateProfile({
             fullName: userData.fullName || user.fullName,
-            phoneNumber: userData.phone || user.phone
+            phoneNumber: userData.phone || user.phone,
           });
         }
-        
+
         const updatedUser = { ...user, ...userData };
         await storage.setItem(StorageKeys.USER_DATA, updatedUser);
         setUser(updatedUser);
@@ -218,12 +225,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (response.accessToken) {
         await storage.setItem(StorageKeys.AUTH_TOKEN, response.accessToken);
         if (response.refreshToken) {
-          await storage.setItem(StorageKeys.REFRESH_TOKEN, response.refreshToken);
+          await storage.setItem(
+            StorageKeys.REFRESH_TOKEN,
+            response.refreshToken,
+          );
         }
-        
+
         const profile = await userService.getMe();
         const mappedUser = mapUserProfile(profile);
-        
+
         await storage.setItem(StorageKeys.USER_DATA, mappedUser);
         setUser(mappedUser);
         return true;
@@ -260,12 +270,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, register, logout, updateUser, refreshProfile, loginWithGoogle, linkGoogle, unlinkGoogle }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        isLoading,
+        login,
+        register,
+        logout,
+        updateUser,
+        refreshProfile,
+        loginWithGoogle,
+        linkGoogle,
+        unlinkGoogle,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
 }
-
 
 export function useAuth() {
   const context = useContext(AuthContext);

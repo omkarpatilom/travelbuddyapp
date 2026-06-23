@@ -34,7 +34,7 @@ export const mockRides: Ride[] = [
     isDriverVerified: true,
     isVehicleVerified: true,
     features: ['ac', 'music', 'wifi'],
-    status: 'active',
+    status: 'published',
     distance: '35 km',
     duration: '45 min',
     preferences: defaultPreferences
@@ -64,7 +64,7 @@ export const mockRides: Ride[] = [
     isDriverVerified: false,
     isVehicleVerified: true,
     features: ['ac', 'charging_port'],
-    status: 'active',
+    status: 'published',
     distance: '15 km',
     duration: '25 min',
     preferences: defaultPreferences
@@ -94,7 +94,7 @@ export const mockRides: Ride[] = [
     isDriverVerified: true,
     isVehicleVerified: false,
     features: ['ac', 'music'],
-    status: 'active',
+    status: 'published',
     distance: '12 km',
     duration: '20 min',
     preferences: defaultPreferences
@@ -124,7 +124,7 @@ export const mockRides: Ride[] = [
     isDriverVerified: false,
     isVehicleVerified: false,
     features: [],
-    status: 'active',
+    status: 'published',
     distance: '20 km',
     duration: '30 min',
     preferences: defaultPreferences
