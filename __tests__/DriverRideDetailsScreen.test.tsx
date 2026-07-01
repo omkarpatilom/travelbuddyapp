@@ -96,7 +96,7 @@ describe('DriverRideDetailsScreen', () => {
     carModel: 'Toyota Camry',
     carColor: 'Blue',
     carPlate: 'ABC-1234',
-    status: 'active',
+    status: 'published',
     distance: '35 km',
     duration: '45 mins',
     preferences: {
@@ -264,7 +264,7 @@ describe('DriverRideDetailsScreen', () => {
   it('renders CTA to resume the ride if ride status is already started', async () => {
     mockGetRideById.mockResolvedValue({
       ...mockRide,
-      status: 'started',
+      status: 'ridestarted',
     });
 
     const { getByText } = render(<RideDetailsScreen />);

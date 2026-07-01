@@ -129,8 +129,13 @@ export const rideService = {
     return api.post<void>(`/rides/${id}/enroute`, {});
   },
 
+  async arriveAtDrop(id: string, lat?: number, lng?: number) {
+    const query = lat !== undefined && lng !== undefined ? `?lat=${lat}&lng=${lng}` : '';
+    return api.post<void>(`/rides/${id}/arrive-drop${query}`, {});
+  },
+
   async completeDropoff(id: string) {
-    return api.post<void>(`/rides/${id}/drop-completed`, {});
+    return api.post<void>(`/rides/${id}/dropoff`, {});
   },
 
   async completeStop(id: string, stopId: string) {

@@ -59,15 +59,29 @@ interface Stop {
   status: 'pending' | 'current' | 'completed';
 }
 
+// Helper: check if a string is a valid UUID (backend stop IDs are UUIDs; UI-generated fake IDs are not)
+const isValidUUID = (id: string): boolean =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
+// Active ride statuses where polling and live tracking should run
+const ACTIVE_RIDE_STATUSES = ['ridestarted', 'arrivedatpickup', 'boarding', 'intransit', 'arrivedatdrop', 'dropoff'];
+
 export default function JourneyCommandCenterScreen() {
   const { theme, isDark } = useTheme();
   const { user } = useAuth();
   const {
     getRideById,
     startRide,
+    arriveAtPickup,
+    startBoarding,
+    transitionEnRoute,
+    arriveAtDrop,
+    completeDropoff,
+    completeRide,
     verifyBooking,
     completeStop,
     confirmBooking,
+    cancelRide,
     updateTracking,
   } = useRides();
   
@@ -133,7 +147,7 @@ export default function JourneyCommandCenterScreen() {
   // Periodic polling for automated state transitions
   useEffect(() => {
     let interval: any = null;
-    if (rideId && ride && ride.status === 'inprogress') {
+    if (rideId && ride && ACTIVE_RIDE_STATUSES.includes(ride.status)) {
       interval = setInterval(() => {
         loadData();
       }, 5000);
@@ -146,7 +160,7 @@ export default function JourneyCommandCenterScreen() {
   // BG coordinates syncing
   useEffect(() => {
     const setupLiveTracking = async () => {
-      if (!ride || ride.status !== 'inprogress') {
+      if (!ride || !ACTIVE_RIDE_STATUSES.includes(ride.status)) {
         if (locationSubscriptionRef.current) {
           locationSubscriptionRef.current.remove();
           locationSubscriptionRef.current = null;
@@ -187,8 +201,10 @@ export default function JourneyCommandCenterScreen() {
   }, [ride?.status]);
 
   const loadData = async () => {
+    console.log(`[DEBUG] CommandCenter loadData called with rideId: ${rideId}`);
     try {
       const rideData = await getRideById(rideId);
+      console.log(`[DEBUG] CommandCenter fetched rideData:`, rideData);
       if (rideData) {
         setRide(rideData);
         
@@ -253,7 +269,7 @@ export default function JourneyCommandCenterScreen() {
         passengerCount: activeBookings.length,
         seatsCount: activeBookings.reduce((sum, b) => sum + b.seats, 0),
         bookings: activeBookings,
-        status: rideObj.status === 'inprogress' ? 'current' : 'pending',
+        status: ACTIVE_RIDE_STATUSES.includes(rideObj.status) ? 'current' : 'pending',
       });
     } else {
       const mid = Math.ceil(activeBookings.length / 2);
@@ -269,7 +285,7 @@ export default function JourneyCommandCenterScreen() {
         passengerCount: stop1Bookings.length,
         seatsCount: stop1Bookings.reduce((sum, b) => sum + b.seats, 0),
         bookings: stop1Bookings,
-        status: rideObj.status === 'inprogress' ? 'current' : 'pending',
+        status: ACTIVE_RIDE_STATUSES.includes(rideObj.status) ? 'current' : 'pending',
       });
 
       const offsetLat = rideObj.from.coordinates.latitude + (rideObj.to.coordinates.latitude - rideObj.from.coordinates.latitude) * 0.35;
@@ -301,6 +317,96 @@ export default function JourneyCommandCenterScreen() {
     });
 
     return stopsList;
+  };
+
+  const handleStartBoarding = async () => {
+    if (!ride) return;
+    setIsActionLoading(true);
+    try {
+      const ok = await startBoarding(ride.id);
+      if (ok) {
+        addLog('⚡ Manual Override: Boarding phase initiated!');
+        await loadData();
+      } else {
+        Alert.alert('Error', 'Failed to start boarding.');
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const handleTransitionEnRoute = async () => {
+    if (!ride) return;
+    setIsActionLoading(true);
+    try {
+      const ok = await transitionEnRoute(ride.id);
+      if (ok) {
+        addLog('⚡ Manual Override: En Route phase initiated!');
+        await loadData();
+      } else {
+        Alert.alert('Error', 'Failed to transition en route.');
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const handleCompleteDropoff = async () => {
+    if (!ride) return;
+    setIsActionLoading(true);
+    try {
+      const ok = await completeDropoff(ride.id);
+      if (ok) {
+        addLog('⚡ Manual Override: Drop-off phase initiated!');
+        await loadData();
+      } else {
+        Alert.alert('Error', 'Failed to begin drop-off.');
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const handleArriveAtPickupOverride = async () => {
+    if (!ride) return;
+    setIsActionLoading(true);
+    try {
+      const ok = await arriveAtPickup(ride.id);
+      if (ok) {
+        addLog('⚡ Manual Override: Driver arrived at pickup geofence!');
+        await loadData();
+      } else {
+        Alert.alert('Error', 'Failed to trigger arrival at pickup.');
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const handleArriveAtDropOverride = async () => {
+    if (!ride) return;
+    setIsActionLoading(true);
+    try {
+      const ok = await arriveAtDrop(ride.id);
+      if (ok) {
+        addLog('⚡ Manual Override: Driver arrived at drop geofence!');
+        await loadData();
+      } else {
+        Alert.alert('Error', 'Failed to trigger arrival at drop-off.');
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsActionLoading(false);
+    }
   };
 
   const simulateLocationUpdate = async (type: 'far' | 'arrived') => {
@@ -411,8 +517,17 @@ export default function JourneyCommandCenterScreen() {
         const activeStop = stops[currentStopIndex];
         if (activeStop) {
           const actionText = activeStop.type === 'pickup' ? 'pickup' : 'drop-off';
-          addLog(`🏁 Auto-completing ${actionText} stop: ${activeStop.name}`);
-          await completeStop(ride.id, activeStop.id);
+          if (isValidUUID(activeStop.id)) {
+            addLog(`🏁 Auto-completing ${actionText} stop: ${activeStop.name}`);
+            try {
+              await completeStop(ride.id, activeStop.id);
+            } catch (e) {
+              console.error('[DEBUG] completeStop error:', e);
+              addLog(`⚠️ Stop completion API failed, but verification was successful.`);
+            }
+          } else {
+            addLog(`🏁 ${actionText} stop completed (UI-only stop, no backend call needed): ${activeStop.name}`);
+          }
         }
 
         setIsVerificationOpen(false);
@@ -442,17 +557,23 @@ export default function JourneyCommandCenterScreen() {
 
     setIsActionLoading(true);
     try {
-      const ok = await completeStop(ride.id, activeStop.id);
-      if (ok) {
-        addLog(`✓ Drop-off completed for stop: ${activeStop.name}`);
+      if (isValidUUID(activeStop.id)) {
+        const ok = await completeStop(ride.id, activeStop.id);
+        if (ok) {
+          addLog(`✓ Drop-off completed for stop: ${activeStop.name}`);
+          await loadData();
+          return true;
+        }
+        Alert.alert('Error', 'Failed to complete drop-off.');
+        return false;
+      } else {
+        // UI-generated stop — no backend call needed
+        addLog(`✓ Drop-off completed (UI-only stop): ${activeStop.name}`);
         await loadData();
         return true;
       }
-
-      Alert.alert('Error', 'Failed to complete drop-off.');
-      return false;
     } catch (e) {
-      console.error(e);
+      console.error('[DEBUG] handleDropConfirm error:', e);
       return false;
     } finally {
       setIsActionLoading(false);
@@ -559,7 +680,7 @@ export default function JourneyCommandCenterScreen() {
 
   const currentPassengerBooking = bookings.find(
     b => (b.id || '').toLowerCase() === (ride?.currentPassengerId || '').toLowerCase()
-  ) || null;
+  ) || (stops[currentStopIndex]?.bookings?.[0]) || null;
 
   const activeStop = stops[currentStopIndex];
 
@@ -568,28 +689,64 @@ export default function JourneyCommandCenterScreen() {
 
     const initials = currentPassengerBooking ? currentPassengerBooking.passengerName.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2) : '';
 
-    if (ride.status === 'draft' || ride.status === 'published' || ride.status === 'scheduled') {
+    if (ride.status === 'published' || ride.status === 'scheduled') {
+      // Per lifecycle doc: StartRide requires at least one Confirmed booking
+      const confirmedBookings = bookings.filter(b =>
+        ['confirmed', 'accepted'].includes((b.status || '').toLowerCase())
+      );
+      const hasConfirmedBookings = confirmedBookings.length > 0;
+
       return (
         <View style={styles.hudCardBody}>
           <Text style={styles.hudTitle}>Ready to Depart</Text>
-          <Text style={styles.hudSubtitle}>Start the ride to initiate stops routing & tracking.</Text>
+          {hasConfirmedBookings ? (
+            <Text style={styles.hudSubtitle}>
+              {confirmedBookings.length} confirmed booking(s). Start the ride to initiate stops routing & tracking.
+            </Text>
+          ) : (
+            <Text style={[styles.hudSubtitle, { color: '#F59E0B' }]}>
+              ⚠ No confirmed bookings yet. You need at least 1 confirmed booking before starting the ride.
+            </Text>
+          )}
           <TouchableOpacity
-            style={[styles.hudPrimaryBtn, { backgroundColor: '#10B981' }]}
+            style={[styles.hudPrimaryBtn, { backgroundColor: hasConfirmedBookings ? '#10B981' : '#6B7280' }]}
             onPress={async () => {
+              if (!hasConfirmedBookings) {
+                Alert.alert(
+                  'Cannot Start Ride',
+                  'You need at least one confirmed booking before starting the ride. Please accept a pending booking first.',
+                  [{ text: 'OK' }]
+                );
+                return;
+              }
               setIsActionLoading(true);
-              const ok = await startRide(ride.id);
-              setIsActionLoading(false);
-              if (ok) {
-                addLog('🏁 Ride started successfully!');
-                await loadData();
-              } else {
-                Alert.alert('Error', 'Failed to start ride.');
+              try {
+                const ok = await startRide(ride.id);
+                if (ok) {
+                  addLog('🏁 Ride started successfully!');
+                  await loadData();
+                } else {
+                  Alert.alert(
+                    'Failed to Start Ride',
+                    'The ride could not be started. Ensure at least one booking is confirmed and try again.'
+                  );
+                }
+              } catch (e: any) {
+                console.error('[DEBUG] Start ride error:', e);
+                const msg = e?.message || 'An unexpected error occurred.';
+                if (msg.toLowerCase().includes('booking')) {
+                  Alert.alert('Cannot Start Ride', 'At least one booking must be confirmed before starting the ride.');
+                } else {
+                  Alert.alert('Error', msg);
+                }
+              } finally {
+                setIsActionLoading(false);
               }
             }}
             disabled={isActionLoading}
           >
             <Play size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-            <Text style={styles.hudBtnText}>Start Journey</Text>
+            <Text style={styles.hudBtnText}>{hasConfirmedBookings ? 'Start Journey' : 'Waiting for Bookings'}</Text>
           </TouchableOpacity>
         </View>
       );
@@ -611,9 +768,9 @@ export default function JourneyCommandCenterScreen() {
       );
     }
 
-    if (ride.status === 'inprogress') {
-      switch (ride.currentPhase) {
-        case 1: // NavigatingToPickup
+    if (['ridestarted', 'arrivedatpickup', 'boarding', 'intransit', 'arrivedatdrop', 'dropoff'].includes(ride.status.toLowerCase())) {
+      switch (ride.status.toLowerCase()) {
+        case 'ridestarted':
           return (
             <View style={styles.hudCardBody}>
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -642,10 +799,31 @@ export default function JourneyCommandCenterScreen() {
                   <Compass size={14} color="#94A3B8" style={{ marginRight: 6 }} />
                   <Text style={[styles.hudBtnTextSecondary, { color: '#FFFFFF' }]}>Simulate Arrived (0m)</Text>
                 </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.hudSecondaryBtn, { flex: 1, backgroundColor: '#F59E0B' }]}
+                  onPress={handleArriveAtPickupOverride}
+                >
+                  <Compass size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
+                  <Text style={[styles.hudBtnTextSecondary, { color: '#FFFFFF' }]}>Arrive Override</Text>
+                </TouchableOpacity>
               </View>
             </View>
           );
-        case 2: // PickingPassenger
+        case 'arrivedatpickup':
+          return (
+            <View style={styles.hudCardBody}>
+              <Text style={styles.hudTitle}>Arrived at Pickup</Text>
+              <Text style={styles.hudSubtitle}>Wait for passengers or tap Begin Boarding to start check-in.</Text>
+              <TouchableOpacity
+                style={[styles.hudPrimaryBtn, { marginTop: 8, backgroundColor: '#4F46E5' }]}
+                onPress={handleStartBoarding}
+                disabled={isActionLoading}
+              >
+                <Text style={styles.hudBtnText}>Begin Boarding</Text>
+              </TouchableOpacity>
+            </View>
+          );
+        case 'boarding':
           return (
             <View style={styles.hudCardBody}>
               <Text style={styles.hudTitle}>Passenger Boarding Check-In</Text>
@@ -655,60 +833,74 @@ export default function JourneyCommandCenterScreen() {
                     <View style={styles.avatarCircleSmall}>
                       <Text style={styles.avatarTextSmall}>{initials}</Text>
                     </View>
-                    <View>
+                    <View style={{ flex: 1 }}>
                       <Text style={styles.verifyPassengerName}>{currentPassengerBooking.passengerName}</Text>
-                      <Text style={styles.verifyPassengerSeats}>{currentPassengerBooking.seats} Seats Requested</Text>
+                      <Text style={styles.verifyPassengerSeats}>{currentPassengerBooking.seats} Seats • {currentPassengerBooking.status.toUpperCase()}</Text>
                     </View>
                   </View>
 
-                  <View style={styles.verifyFormRow}>
-                    <TextInput
-                      style={[styles.hudOtpInput, { color: '#FFFFFF', borderColor: '#334155' }]}
-                      maxLength={4}
-                      keyboardType="numeric"
-                      placeholder="Enter OTP"
-                      placeholderTextColor="#64748B"
-                      value={otpValue}
-                      onChangeText={setOtpValue}
-                    />
-                    <TouchableOpacity
-                      style={[styles.hudVerifyBtn, { backgroundColor: '#10B981' }]}
-                      onPress={() => {
-                        setSelectedPassenger(currentPassengerBooking);
-                        handleVerifyPassenger('otp');
-                      }}
-                      disabled={isActionLoading}
-                    >
-                      <Text style={styles.hudBtnText}>Verify</Text>
-                    </TouchableOpacity>
-                  </View>
+                  {['pending', 'confirmed', 'readyforboarding'].includes(currentPassengerBooking.status.toLowerCase()) ? (
+                    <>
+                      <View style={styles.verifyFormRow}>
+                        <TextInput
+                          style={[styles.hudOtpInput, { color: '#FFFFFF', borderColor: '#334155' }]}
+                          maxLength={4}
+                          keyboardType="numeric"
+                          placeholder="Enter OTP"
+                          placeholderTextColor="#64748B"
+                          value={otpValue}
+                          onChangeText={setOtpValue}
+                        />
+                        <TouchableOpacity
+                          style={[styles.hudVerifyBtn, { backgroundColor: '#10B981' }]}
+                          onPress={() => {
+                            setSelectedPassenger(currentPassengerBooking);
+                            handleVerifyPassenger('otp');
+                          }}
+                          disabled={isActionLoading}
+                        >
+                          <Text style={styles.hudBtnText}>Verify</Text>
+                        </TouchableOpacity>
+                      </View>
 
-                  <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
-                    <TouchableOpacity
-                      style={[styles.hudActionOutlineBtn, { flex: 1, borderColor: '#4F46E5' }]}
-                      onPress={() => startQrScanner(currentPassengerBooking)}
-                    >
-                      <Camera size={14} color="#818CF8" />
-                      <Text style={{ fontSize: 11, color: '#818CF8', fontWeight: 'bold', marginLeft: 4 }}>Scan QR</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.hudActionOutlineBtn, { flex: 1, borderColor: '#10B981' }]}
-                      onPress={() => {
-                        setSelectedPassenger(currentPassengerBooking);
-                        handleVerifyPassenger('manual');
-                      }}
-                    >
-                      <CheckCircle size={14} color="#34D399" />
-                      <Text style={{ fontSize: 11, color: '#34D399', fontWeight: 'bold', marginLeft: 4 }}>Bypass</Text>
-                    </TouchableOpacity>
-                  </View>
+                      <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
+                        <TouchableOpacity
+                          style={[styles.hudActionOutlineBtn, { flex: 1, borderColor: '#4F46E5' }]}
+                          onPress={() => startQrScanner(currentPassengerBooking)}
+                        >
+                          <Camera size={14} color="#818CF8" />
+                          <Text style={{ fontSize: 11, color: '#818CF8', fontWeight: 'bold', marginLeft: 4 }}>Scan QR</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.hudActionOutlineBtn, { flex: 1, borderColor: '#10B981' }]}
+                          onPress={() => {
+                            setSelectedPassenger(currentPassengerBooking);
+                            handleVerifyPassenger('manual');
+                          }}
+                        >
+                          <CheckCircle size={14} color="#34D399" />
+                          <Text style={{ fontSize: 11, color: '#34D399', fontWeight: 'bold', marginLeft: 4 }}>Bypass</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </>
+                  ) : (
+                    <Text style={{ color: '#10B981', fontWeight: 'bold', marginVertical: 8 }}>✓ Boarded / Checked In</Text>
+                  )}
                 </View>
               ) : (
                 <Text style={styles.hudSubtitle}>No boarding passenger selected by route sequence.</Text>
               )}
+              
+              <TouchableOpacity
+                style={[styles.hudPrimaryBtn, { marginTop: 12, backgroundColor: '#10B981' }]}
+                onPress={handleTransitionEnRoute}
+                disabled={isActionLoading}
+              >
+                <Text style={styles.hudBtnText}>Depart Stop (Transition En Route)</Text>
+              </TouchableOpacity>
             </View>
           );
-        case 3: // EnRoute
+        case 'intransit':
           return (
             <View style={styles.hudCardBody}>
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -737,13 +929,34 @@ export default function JourneyCommandCenterScreen() {
                   <Compass size={14} color="#94A3B8" style={{ marginRight: 6 }} />
                   <Text style={[styles.hudBtnTextSecondary, { color: '#FFFFFF' }]}>Simulate Arrived (0m)</Text>
                 </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.hudSecondaryBtn, { flex: 1, backgroundColor: '#F59E0B' }]}
+                  onPress={handleArriveAtDropOverride}
+                >
+                  <Compass size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
+                  <Text style={[styles.hudBtnTextSecondary, { color: '#FFFFFF' }]}>Arrive Override</Text>
+                </TouchableOpacity>
               </View>
             </View>
           );
-        case 4: // DroppingPassenger
+        case 'arrivedatdrop':
           return (
             <View style={styles.hudCardBody}>
               <Text style={styles.hudTitle}>Arrived at Destination</Text>
+              <Text style={styles.hudSubtitle}>Tap Begin Drop-Off to verify passenger checkout.</Text>
+              <TouchableOpacity
+                style={[styles.hudPrimaryBtn, { marginTop: 8, backgroundColor: '#4F46E5' }]}
+                onPress={handleCompleteDropoff}
+                disabled={isActionLoading}
+              >
+                <Text style={styles.hudBtnText}>Begin Drop-Off</Text>
+              </TouchableOpacity>
+            </View>
+          );
+        case 'dropoff':
+          return (
+            <View style={styles.hudCardBody}>
+              <Text style={styles.hudTitle}>Passenger Drop-Off Verification</Text>
               {currentPassengerBooking ? (
                 <View style={styles.passengerVerifyBox}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
@@ -752,17 +965,21 @@ export default function JourneyCommandCenterScreen() {
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.verifyPassengerName}>{currentPassengerBooking.passengerName}</Text>
-                      <Text style={styles.verifyPassengerSeats}>{currentPassengerBooking.seats} Seats dropped</Text>
+                      <Text style={styles.verifyPassengerSeats}>{currentPassengerBooking.seats} Seats dropped • {currentPassengerBooking.status.toUpperCase()}</Text>
                     </View>
                   </View>
-                  <TouchableOpacity
-                    style={[styles.hudPrimaryBtn, { backgroundColor: '#F59E0B' }]}
-                    onPress={() => openVerificationModal(currentPassengerBooking || undefined, 'dropoff')}
-                    disabled={isActionLoading}
-                  >
-                    <CheckCircle size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-                    <Text style={styles.hudBtnText}>Confirm Passenger Dropped</Text>
-                  </TouchableOpacity>
+                  {currentPassengerBooking.status.toLowerCase() !== 'completed' ? (
+                    <TouchableOpacity
+                      style={[styles.hudPrimaryBtn, { backgroundColor: '#F59E0B' }]}
+                      onPress={() => openVerificationModal(currentPassengerBooking || undefined, 'dropoff')}
+                      disabled={isActionLoading}
+                    >
+                      <CheckCircle size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                      <Text style={styles.hudBtnText}>Confirm Passenger Dropped</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <Text style={{ color: '#10B981', fontWeight: 'bold', marginVertical: 8 }}>✓ Dropped / Completed</Text>
+                  )}
                 </View>
               ) : (
                 <Text style={styles.hudSubtitle}>No dropoff passenger details found.</Text>
@@ -859,7 +1076,7 @@ export default function JourneyCommandCenterScreen() {
           </View>
           <View style={[styles.statusBadge, { backgroundColor: theme.colors.primary + '15' }]}>
             <Text style={[styles.statusBadgeText, { color: theme.colors.primary }]}>
-              {ride.status === 'inprogress' ? (ride.currentPhase === 2 ? 'BOARDING' : 'DRIVING') : ride.status.toUpperCase()}
+              {ride.status.toUpperCase()}
             </Text>
           </View>
         </View>
@@ -932,10 +1149,10 @@ export default function JourneyCommandCenterScreen() {
                   {isExpanded && stop.bookings.length > 0 && (
                     <View style={styles.stopPassengersContainer}>
                       {stop.bookings.map((booking) => {
-                        const isPending = booking.status === 'pending' || booking.status === 'requested';
+                        const isPending = booking.status === 'pending';
                         const boardedStatus = (booking.status as string).toLowerCase();
-                        const boarded = ['verified', 'enroute', 'dropreached', 'waitingpassengerconfirmation', 'completed'].includes(boardedStatus);
-                        const dropped = ['completed', 'waitingpassengerconfirmation'].includes(boardedStatus);
+                        const boarded = ['boarded', 'inride', 'readyfordrop', 'completed'].includes(boardedStatus);
+                        const dropped = ['completed'].includes(boardedStatus);
                         const initials = booking.passengerName.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2);
 
                         return (
@@ -991,7 +1208,7 @@ export default function JourneyCommandCenterScreen() {
                             </View>
 
                             {/* Actions */}
-                             {(booking.status !== 'requested') && (
+                             {(booking.status !== 'pending') && (
                                <View style={styles.quickContactRow}>
                                  <TouchableOpacity 
                                    style={[styles.contactIconBtn, { borderColor: theme.colors.border, backgroundColor: theme.colors.card }]}
@@ -1042,7 +1259,7 @@ export default function JourneyCommandCenterScreen() {
                                                 await loadData();
                                                 openVerificationModal({
                                                   ...booking,
-                                                  status: 'accepted'
+                                                  status: 'confirmed'
                                                 });
                                               } else {
                                                 Alert.alert('Error', 'Failed to accept booking.');

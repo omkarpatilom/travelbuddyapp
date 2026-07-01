@@ -9,33 +9,38 @@ export enum RideStatus {
   Draft = 0,
   Published = 1,
   Scheduled = 2,
-  InProgress = 3,
-  Completed = 4,
-  Cancelled = 5,
-  Expired = 6,
+  RideStarted = 3,
+  ArrivedAtPickup = 4,
+  Boarding = 5,
+  InTransit = 6,
+  ArrivedAtDrop = 7,
+  DropOff = 8,
+  Completed = 9,
+  Cancelled = 10,
+}
+
+// Matches backend RidePhase enum (if used)
+export enum RidePhase {
+  PreRide = 0,
+  EnRoute = 1,
+  AtPickup = 2,
+  Boarding = 3,
+  InTransit = 4,
+  AtDrop = 5,
+  Completed = 6,
 }
 
 export enum BookingStatus {
-  Requested = 0,
-  Accepted = 1,
-  ArrivedAtPickup = 2,
-  VerificationPending = 3,
-  Verified = 4,
-  EnRoute = 5,
-  DropReached = 6,
-  WaitingPassengerConfirmation = 7,
+  Pending = 0,
+  Confirmed = 1,
+  Rejected = 2,
+  Cancelled = 3,
+  ReadyForBoarding = 4,
+  Boarded = 5,
+  InRide = 6,
+  ReadyForDrop = 7,
   Completed = 8,
-  Cancelled = 9,
-  Rejected = 10,
-  Expired = 11,
-}
-
-export enum RidePhase {
-  None = 0,
-  NavigatingToPickup = 1,
-  PickingPassenger = 2,
-  EnRoute = 3,
-  DroppingPassenger = 4,
+  NoShow = 9,
 }
 
 export enum StopStatus {
@@ -147,7 +152,7 @@ export interface RideDto {
   totalSeats: number;
   availableSeats: number;
   status: RideStatus;
-  currentPhase: RidePhase;
+  currentPhase?: any;
   currentPassengerId: string | null;
   stops: RideStopDto[];
   preference: RidePreferenceDto;

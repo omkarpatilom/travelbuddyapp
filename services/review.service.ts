@@ -34,8 +34,9 @@ export const reviewService = {
     return api.get<ReviewResponseDto[]>(`/reviews/ride/${rideId}`);
   },
 
-  async getByBookingId(bookingId: string) {
-    return api.get<ReviewResponseDto>(`/reviews/booking/${bookingId}`);
+  async getByBookingId(bookingId: string): Promise<ReviewResponseDto | null> {
+    // Returns null if no review exists for this booking (404 is expected when not yet reviewed)
+    return api.getOrNull<ReviewResponseDto>(`/reviews/booking/${bookingId}`);
   },
 
   async getSummary(userId: string) {

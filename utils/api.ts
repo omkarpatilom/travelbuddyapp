@@ -143,6 +143,31 @@ export const api = {
     return execute();
   },
 
+  // Like get<T> but returns null on 404 instead of throwing — use for optional lookups
+  async getOrNull<T>(endpoint: string): Promise<T | null> {
+    const execute = async (): Promise<T | null> => {
+      const headers = await getApiHeaders(false);
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), 10000);
+
+      try {
+        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+          method: 'GET',
+          headers,
+          signal: controller.signal,
+        });
+        clearTimeout(id);
+        if (response.status === 404) return null;
+        return handleResponse<T>(response, endpoint, execute as () => Promise<T>);
+      } catch (e: any) {
+        clearTimeout(id);
+        if (e.name === 'AbortError') throw new Error('Request Timeout');
+        throw e;
+      }
+    };
+    return execute();
+  },
+
   async post<T>(endpoint: string, body: any): Promise<T> {
     const execute = async (): Promise<T> => {
       const isFormData = body instanceof FormData;

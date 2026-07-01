@@ -55,6 +55,7 @@ export default function BookingDetailsScreen() {
   const bookingId = params.id as string;
 
   const fetchBookingDetails = useCallback(async () => {
+    console.log(`[DEBUG] fetchBookingDetails called with bookingId: ${bookingId}`);
     if (!bookingId) {
       setError('No booking ID provided');
       setIsLoading(false);
@@ -65,10 +66,12 @@ export default function BookingDetailsScreen() {
     setError(null);
     try {
       const result = await getBookingById(bookingId);
+      console.log(`[DEBUG] getBookingById result:`, result);
       if (result) {
         setBooking(result);
         try {
           const rev = await reviewService.getByBookingId(bookingId);
+          console.log(`[DEBUG] Fetched review for booking:`, rev);
           if (rev) {
             setHasReviewed(true);
           } else {
@@ -227,22 +230,52 @@ export default function BookingDetailsScreen() {
   };
 
   const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'confirmed': return theme.colors.success;
-      case 'pending': return theme.colors.warning;
-      case 'cancelled': return theme.colors.error;
-      case 'completed': return theme.colors.textSecondary;
-      default: return theme.colors.textSecondary;
+    const s = (status || '').toLowerCase();
+    switch (s) {
+      case 'confirmed':
+      case 'boarded':
+      case 'completed':
+        return theme.colors.success;
+      case 'readyforboarding':
+      case 'inride':
+      case 'readyfordrop':
+        return theme.colors.primary;
+      case 'pending':
+        return theme.colors.warning;
+      case 'cancelled':
+      case 'rejected':
+      case 'noshow':
+        return theme.colors.error;
+      default:
+        return theme.colors.textSecondary;
     }
   };
 
   const getStatusText = (status: string) => {
-    switch (status) {
-      case 'confirmed': return 'Confirmed';
-      case 'pending': return 'Pending Confirmation';
-      case 'cancelled': return 'Cancelled';
-      case 'completed': return 'Completed';
-      default: return status;
+    const s = (status || '').toLowerCase();
+    switch (s) {
+      case 'pending':
+        return 'Pending Confirmation';
+      case 'confirmed':
+        return 'Confirmed';
+      case 'readyforboarding':
+        return 'Ready for Boarding';
+      case 'boarded':
+        return 'Boarded';
+      case 'inride':
+        return 'In Ride';
+      case 'readyfordrop':
+        return 'Ready for Drop';
+      case 'completed':
+        return 'Completed';
+      case 'cancelled':
+        return 'Cancelled';
+      case 'rejected':
+        return 'Rejected';
+      case 'noshow':
+        return 'No Show';
+      default:
+        return status.charAt(0).toUpperCase() + status.slice(1);
     }
   };
 
@@ -626,49 +659,10 @@ export default function BookingDetailsScreen() {
             </View>
           ) : null}
 
-          {/* Payment Information */}
-          <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
-            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Payment Summary</Text>
-            
-            <View style={styles.paymentDetails}>
-              <View style={styles.paymentRow}>
-                <Text style={[styles.paymentLabel, { color: theme.colors.textSecondary }]}>
-                  Price per seat
-                </Text>
-                <Text style={[styles.paymentValue, { color: theme.colors.text }]}>
-                  {formatPrice(booking.ride?.price || 0.0)}
-                </Text>
-              </View>
-
-              <View style={styles.paymentRow}>
-                <Text style={[styles.paymentLabel, { color: theme.colors.textSecondary }]}>
-                  Number of seats
-                </Text>
-                <Text style={[styles.paymentValue, { color: theme.colors.text }]}>
-                  {booking.seats}
-                </Text>
-              </View>
-
-              <View style={[styles.paymentRow, styles.totalRow]}>
-                <Text style={[styles.totalLabel, { color: theme.colors.text }]}>
-                  Total Amount
-                </Text>
-                <Text style={[styles.totalValue, { color: theme.colors.primary }]}>
-                  {formatPrice(booking.totalPrice)}
-                </Text>
-              </View>
-            </View>
-
-            <View style={[styles.paymentMethod, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-              <CreditCard size={20} color={theme.colors.primary} />
-              <Text style={[styles.paymentMethodText, { color: theme.colors.text }]}>
-                Credit Card ending in 4242
-              </Text>
-            </View>
-          </View>
+         
 
           {/* Boarding Pass Refactor (Section 6) */}
-          {(booking.status === 'confirmed' || booking.status === 'pending') && (
+          {['confirmed', 'readyforboarding', 'boarded', 'inride', 'readyfordrop'].includes((booking.status || '').toLowerCase()) && (
             <View style={[styles.boardingPassCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.primary }]}>
               {/* Card Notch Elements */}
               <View style={[styles.passNotchLeft, { backgroundColor: theme.colors.background }]} />
@@ -807,6 +801,46 @@ export default function BookingDetailsScreen() {
             )}
           </View>
         </View>
+         {/* Payment Information */}
+          <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Payment Summary</Text>
+            
+            <View style={styles.paymentDetails}>
+              <View style={styles.paymentRow}>
+                <Text style={[styles.paymentLabel, { color: theme.colors.textSecondary }]}>
+                  Price per seat
+                </Text>
+                <Text style={[styles.paymentValue, { color: theme.colors.text }]}>
+                  {formatPrice(booking.ride?.price || 0.0)}
+                </Text>
+              </View>
+
+              <View style={styles.paymentRow}>
+                <Text style={[styles.paymentLabel, { color: theme.colors.textSecondary }]}>
+                  Number of seats
+                </Text>
+                <Text style={[styles.paymentValue, { color: theme.colors.text }]}>
+                  {booking.seats}
+                </Text>
+              </View>
+
+              <View style={[styles.paymentRow, styles.totalRow]}>
+                <Text style={[styles.totalLabel, { color: theme.colors.text }]}>
+                  Total Amount
+                </Text>
+                <Text style={[styles.totalValue, { color: theme.colors.primary }]}>
+                  {formatPrice(booking.totalPrice)}
+                </Text>
+              </View>
+            </View>
+
+            <View style={[styles.paymentMethod, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+              <CreditCard size={20} color={theme.colors.primary} />
+              <Text style={[styles.paymentMethodText, { color: theme.colors.text }]}>
+                Credit Card ending in 4242
+              </Text>
+            </View>
+          </View>
       </ScrollView>
 
       {booking.ride?.id && (

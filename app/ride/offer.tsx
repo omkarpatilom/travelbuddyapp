@@ -9,8 +9,10 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useRides } from '@/contexts/RideContext';
+import { CACHE_KEYS } from '@/cache/cacheKeys';
 import { api } from '@/utils/api';
 import { Users, IndianRupee, ArrowLeft } from 'lucide-react-native';
 import { formatPrice } from '@/utils/validation';
@@ -76,6 +78,7 @@ export default function OfferRideScreen() {
   
   const { theme } = useTheme();
   const { createRide } = useRides();
+  const queryClient = useQueryClient();
   const router = useRouter();
 
   useEffect(() => {
@@ -312,9 +315,15 @@ export default function OfferRideScreen() {
         preferences,
       };
 
+      console.log('[DEBUG] offer.tsx: Submitting ride creation:', rideData);
       const success = await createRide(rideData);
-      
+      console.log('[DEBUG] offer.tsx: Ride creation result:', success);
+
       if (success) {
+        // Force-invalidate my-rides cache to ensure the new ride appears immediately
+        await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides, 'my-rides'] });
+        await queryClient.refetchQueries({ queryKey: [CACHE_KEYS.rides, 'my-rides'] });
+        console.log('[DEBUG] offer.tsx: my-rides cache invalidated and refetched');
         Alert.alert('Success', 'Your ride has been posted successfully!', [
           { text: 'OK', onPress: () => router.back() }
         ]);
@@ -322,6 +331,7 @@ export default function OfferRideScreen() {
         Alert.alert('Error', 'Failed to create ride. Please try again.');
       }
     } catch (error) {
+      console.error('[DEBUG] offer.tsx: Error during ride creation:', error);
       Alert.alert('Error', 'An unexpected error occurred. Please try again.');
     } finally {
       setIsLoading(false);
@@ -517,6 +527,7 @@ export default function OfferRideScreen() {
             <Text style={styles.submitButtonText}>Post Ride</Text>
           )}
         </TouchableOpacity>
+        
       </View>
     </ScrollView>
   );

@@ -26,6 +26,14 @@ export default function BookingsScreen() {
   const { bookings, cancelBooking, isLoading, loadInitialData } = useRides();
   const router = useRouter();
 
+  console.log('[DEBUG] BookingsScreen Render:', {
+    userId: user?.id,
+    userFullName: user?.fullName,
+    bookingsCount: bookings?.length,
+    activeTab,
+    isLoading
+  });
+
   const onRefresh = useCallback(async () => {
     setIsRefreshing(true);
     try {
@@ -38,12 +46,14 @@ export default function BookingsScreen() {
   }, [loadInitialData]);
 
   const upcomingBookings = (bookings || []).filter(booking => 
-    ['confirmed', 'accepted', 'arrivedatpickup', 'verificationpending', 'verified', 'enroute', 'dropreached', 'waitingpassengerconfirmation'].includes(booking.status) || booking.status === 'pending'
+    ['pending', 'confirmed', 'readyforboarding', 'boarded', 'inride', 'readyfordrop'].includes((booking.status || '').toLowerCase())
   );
+  console.log('[DEBUG] Upcoming bookings filtered count:', upcomingBookings.length);
 
   const pastBookings = (bookings || []).filter(booking => 
-    booking.status === 'completed' || ['cancelled', 'rejected', 'expired'].includes(booking.status)
+    ['completed', 'cancelled', 'rejected', 'noshow'].includes((booking.status || '').toLowerCase())
   );
+  console.log('[DEBUG] Past bookings filtered count:', pastBookings.length);
 
   const handleCancelBooking = (bookingId: string) => {
     Alert.alert(
@@ -68,24 +78,21 @@ export default function BookingsScreen() {
   };
 
   const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'accepted':
+    const s = (status || '').toLowerCase();
+    switch (s) {
       case 'confirmed':
-      case 'verified':
+      case 'boarded':
       case 'completed':
         return theme.colors.success;
-      case 'arrivedatpickup':
-      case 'verificationpending':
-      case 'enroute':
-      case 'dropreached':
-      case 'waitingpassengerconfirmation':
+      case 'readyforboarding':
+      case 'inride':
+      case 'readyfordrop':
         return theme.colors.primary;
-      case 'requested':
       case 'pending':
         return theme.colors.warning;
       case 'cancelled':
       case 'rejected':
-      case 'expired':
+      case 'noshow':
         return theme.colors.error;
       default:
         return theme.colors.textSecondary;
@@ -93,33 +100,28 @@ export default function BookingsScreen() {
   };
 
   const getStatusText = (status: string) => {
-    switch (status) {
-      case 'requested':
+    const s = (status || '').toLowerCase();
+    switch (s) {
       case 'pending':
         return 'Pending';
-      case 'accepted':
       case 'confirmed':
         return 'Confirmed';
-      case 'arrivedatpickup':
-        return 'Arrived at Pickup';
-      case 'verificationpending':
-        return 'Verification Pending';
-      case 'verified':
-        return 'Verified';
-      case 'enroute':
-        return 'En Route';
-      case 'dropreached':
-        return 'Arrived at Destination';
-      case 'waitingpassengerconfirmation':
-        return 'Waiting Confirmation';
+      case 'readyforboarding':
+        return 'Ready for Boarding';
+      case 'boarded':
+        return 'Boarded';
+      case 'inride':
+        return 'In Ride';
+      case 'readyfordrop':
+        return 'Ready for Drop';
       case 'completed':
         return 'Completed';
       case 'cancelled':
         return 'Cancelled';
       case 'rejected':
         return 'Rejected';
-      case 'expired':
-        return 'Expired';
+      case 'noshow':
+        return 'No Show';
       default:
         return status.charAt(0).toUpperCase() + status.slice(1);
     }
@@ -155,7 +157,7 @@ export default function BookingsScreen() {
               {getStatusText(item.status)}
             </Text>
           </View>
-          {['confirmed', 'accepted', 'arrivedatpickup', 'verificationpending'].includes(item.status) && (
+          {['pending', 'confirmed', 'readyforboarding'].includes((item.status || '').toLowerCase()) && (
             <TouchableOpacity 
               onPress={() => handleCancelBooking(item.id)}
               style={[styles.cancelButton, { backgroundColor: theme.colors.error + '20' }]}

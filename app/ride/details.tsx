@@ -49,7 +49,7 @@ export default function RideDetailsScreen() {
 
   const isDriver = user?.id === ride?.driverId;
   const passengerConfirmedBooking = ride && passengerBookings?.find(
-    (b: any) => b.rideId === ride.id && (b.status === 'confirmed' || b.status === 'completed')
+    (b: any) => b.rideId === ride.id && ['confirmed', 'readyforboarding', 'boarded', 'inride', 'readyfordrop', 'completed'].includes((b.status || '').toLowerCase())
   );
 
   const parsePassengerLocations = (bookingItem: any) => {
@@ -76,7 +76,7 @@ export default function RideDetailsScreen() {
     let pollingIntervalId: any = null;
 
     const startLiveTracking = async () => {
-      if (!ride || (ride.status as any) !== 'started') {
+      if (!ride || !['ridestarted', 'arrivedatpickup', 'boarding', 'intransit', 'arrivedatdrop', 'dropoff'].includes((ride.status as string).toLowerCase())) {
         setDriverLocation(null);
         return;
       }
@@ -178,18 +178,23 @@ export default function RideDetailsScreen() {
 
   const fetchRideDetails = async () => {
     setIsLoading(true);
+    console.log(`[DEBUG] fetchRideDetails called with rideId: ${rideId}`);
     try {
       const data = await getRideById(rideId);
+      console.log(`[DEBUG] getRideById result:`, data);
       setRide(data);
       if (data && user?.id === data.driverId) {
+        console.log(`[DEBUG] User is driver. Fetching passenger bookings...`);
         await fetchRideBookings(rideId);
       } else if (data && user?.id !== data.driverId && data.status === 'completed') {
         const confirmedBooking = passengerBookings?.find(
-          (b: any) => b.rideId === data.id && (b.status === 'confirmed' || b.status === 'completed')
+          (b: any) => b.rideId === data.id && ['confirmed', 'readyforboarding', 'boarded', 'inride', 'readyfordrop', 'completed'].includes((b.status || '').toLowerCase())
         );
+        console.log(`[DEBUG] User is passenger. Found confirmed/completed booking:`, confirmedBooking);
         if (confirmedBooking) {
           try {
             const rev = await reviewService.getByBookingId(confirmedBooking.id);
+            console.log(`[DEBUG] Fetched review for booking:`, rev);
             if (rev) setHasReviewedDriver(true);
           } catch (e) {
             setHasReviewedDriver(false);
@@ -529,22 +534,24 @@ export default function RideDetailsScreen() {
   };
 
   const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'active':
+    const s = (status || '').toLowerCase();
+    switch (s) {
       case 'published':
+      case 'scheduled':
       case 'confirmed':
-        return theme.colors.success;
-      case 'started':
-      case 'enroute':
-        return theme.colors.secondary;
-      case 'driverarrived':
-      case 'boarding':
-        return theme.colors.primary;
-      case 'dropcompleted':
       case 'completed':
-        return theme.colors.textSecondary;
+        return theme.colors.success;
+      case 'ridestarted':
+      case 'intransit':
+        return theme.colors.secondary;
+      case 'arrivedatpickup':
+      case 'boarding':
+      case 'arrivedatdrop':
+      case 'dropoff':
+        return theme.colors.primary;
       case 'cancelled':
         return theme.colors.error;
+      case 'draft':
       case 'pending':
         return theme.colors.warning;
       default:
@@ -935,7 +942,7 @@ export default function RideDetailsScreen() {
                         </View>
 
                         {/* Quick Contact shortcuts */}
-                        {(item.status === 'confirmed' || item.status === 'completed') && (
+                        {['confirmed', 'readyforboarding', 'boarded', 'inride', 'readyfordrop', 'completed'].includes((item.status || '').toLowerCase()) && (
                           <View style={styles.quickContactContainer}>
                             <TouchableOpacity 
                               style={[styles.contactIconBtn, { borderColor: theme.colors.border }]}
@@ -1001,7 +1008,7 @@ export default function RideDetailsScreen() {
                         </View>
                       )}
 
-                      {item.status === 'confirmed' && (
+                      {['confirmed', 'readyforboarding'].includes((item.status || '').toLowerCase()) && (
                         <View style={styles.bookingCardActions}>
                           <TouchableOpacity 
                             style={[styles.actionBtnOutline, { borderColor: theme.colors.error }]}
@@ -1050,7 +1057,7 @@ export default function RideDetailsScreen() {
         <View style={styles.actionButtons}>
           {isDriver ? (
             <View style={{ gap: 12 }}>
-              {['inprogress', 'started', 'enroute', 'driverarrived', 'boarding', 'dropcompleted'].includes(ride.status as any) ? (
+              {['ridestarted', 'arrivedatpickup', 'boarding', 'intransit', 'arrivedatdrop', 'dropoff'].includes((ride.status as string).toLowerCase()) ? (
                 <TouchableOpacity 
                   style={[styles.bookButton, { backgroundColor: theme.colors.primary, flexDirection: 'row' }]}
                   onPress={() => router.push(`/ride/command-center?id=${ride.id}`)}
@@ -1058,7 +1065,7 @@ export default function RideDetailsScreen() {
                   <Navigation size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
                   <Text style={styles.bookButtonText}>Resume Ride in Command Center</Text>
                 </TouchableOpacity>
-              ) : ['active', 'scheduled', 'published', 'confirmed', 'seatsbooked'].includes(ride.status as any) ? (
+              ) : ['published', 'scheduled'].includes((ride.status as string).toLowerCase()) ? (
                 <View style={{ gap: 12 }}>
                   <TouchableOpacity 
                     style={[styles.bookButton, { backgroundColor: theme.colors.primary, flexDirection: 'row' }]}
@@ -1093,7 +1100,7 @@ export default function RideDetailsScreen() {
             </View>
           ) : (
             <View style={{ gap: 12 }}>
-              {['active', 'published', 'scheduled'].includes(ride.status as any) && (
+              {['published', 'scheduled'].includes((ride.status as string).toLowerCase()) && (
                 <TouchableOpacity 
                   style={[styles.bookButton, { backgroundColor: theme.colors.primary }]}
                   onPress={handleBookRide}
@@ -1102,7 +1109,7 @@ export default function RideDetailsScreen() {
                 </TouchableOpacity>
               )}
 
-              {['confirmed', 'seatsbooked'].includes(ride.status as any) && (
+              {['confirmed', 'readyforboarding'].includes((ride.status as string).toLowerCase()) && (
                 <View style={[styles.passengerBanner, { backgroundColor: theme.colors.success + '15', borderColor: theme.colors.success }]}>
                   <ShieldCheck size={24} color={theme.colors.success} />
                   <View style={{ flex: 1 }}>
@@ -1112,7 +1119,7 @@ export default function RideDetailsScreen() {
                 </View>
               )}
 
-              {(ride.status as any) === 'driverarrived' && (
+              {((ride.status as string).toLowerCase() === 'arrivedatpickup') && (
                 <View style={[styles.passengerBanner, { backgroundColor: theme.colors.primary + '15', borderColor: theme.colors.primary }]}>
                   <MapPin size={24} color={theme.colors.primary} />
                   <View style={{ flex: 1 }}>
@@ -1122,7 +1129,7 @@ export default function RideDetailsScreen() {
                 </View>
               )}
 
-              {(ride.status as any) === 'boarding' && (
+              {((ride.status as string).toLowerCase() === 'boarding') && (
                 <View style={[styles.passengerBanner, { backgroundColor: theme.colors.primary + '10', borderColor: theme.colors.primary }]}>
                   <Users size={24} color={theme.colors.primary} />
                   <View style={{ flex: 1 }}>
@@ -1132,7 +1139,7 @@ export default function RideDetailsScreen() {
                 </View>
               )}
 
-              {['inprogress', 'started', 'enroute'].includes(ride.status as any) && (
+              {['ridestarted', 'intransit'].includes((ride.status as string).toLowerCase()) && (
                 <View style={{ gap: 12 }}>
                   <View style={[styles.passengerBanner, { backgroundColor: theme.colors.secondary + '15', borderColor: theme.colors.secondary }]}>
                     <Car size={24} color={theme.colors.secondary} />
@@ -1161,7 +1168,7 @@ export default function RideDetailsScreen() {
                 </View>
               )}
 
-              {(ride.status as any) === 'dropcompleted' && (
+              {['arrivedatdrop', 'dropoff'].includes((ride.status as string).toLowerCase()) && (
                 <View style={[styles.passengerBanner, { backgroundColor: theme.colors.success + '15', borderColor: theme.colors.success }]}>
                   <CheckCircle size={24} color={theme.colors.success} />
                   <View style={{ flex: 1 }}>

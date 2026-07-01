@@ -26,10 +26,21 @@ export function useMyRidesQuery() {
   return useQuery({
     queryKey: [CACHE_KEYS.rides, 'my-rides'],
     queryFn: async () => {
+      console.log('[DEBUG] useMyRidesQuery: fetching my rides from API');
       const myRides = await rideService.getMyRides();
-      return await Promise.all(myRides.map(mapRideData));
+      console.log('[DEBUG] useMyRidesQuery: raw API response count:', myRides?.length);
+      myRides?.forEach((r: any) => {
+        console.log(`[DEBUG]   Ride id=${r.id}, status=${r.status}`);
+      });
+      const mapped = await Promise.all(myRides.map(mapRideData));
+      console.log('[DEBUG] useMyRidesQuery: mapped rides count:', mapped?.length);
+      mapped?.forEach((r: any) => {
+        console.log(`[DEBUG]   Mapped id=${r.id}, status=${r.status}`);
+      });
+      return mapped;
     },
-    staleTime: CACHE_TTL.USER_PROFILE,
+    staleTime: 0,
+    refetchOnMount: 'always',
     enabled: !!user && (user.role === 'Driver' || user.role === 'Admin'),
   });
 }

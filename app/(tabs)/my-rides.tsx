@@ -10,9 +10,11 @@ import {
   ScrollView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRides } from '@/contexts/RideContext';
+import { CACHE_KEYS } from '@/cache/cacheKeys';
 import { Plus, Calendar, Clock, MapPin, Users, CreditCard as Edit, X } from 'lucide-react-native';
 import { mockRides } from '@/data/mockData';
 import { formatPrice } from '@/utils/validation';
@@ -21,32 +23,56 @@ export default function MyRidesScreen() {
   const { theme } = useTheme();
   const { user } = useAuth();
   const { myRides, cancelRide, isLoading, loadInitialData } = useRides();
+  const queryClient = useQueryClient();
   const router = useRouter();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<'active' | 'upcoming' | 'completed' | 'cancelled'>('active');
 
+  console.log('[DEBUG] MyRidesScreen Render:', {
+    userId: user?.id,
+    userFullName: user?.fullName,
+    userRole: user?.role,
+    myRidesCount: myRides?.length,
+    activeTab,
+    isLoading
+  });
+
   const getFilteredRides = () => {
-    return (myRides || []).filter(ride => {
+    console.log('[DEBUG] MyRides getFilteredRides called. Total raw rides:', myRides?.length);
+    const filtered = (myRides || []).filter(ride => {
       const status = (ride.status || '').toLowerCase();
+      console.log(`[DEBUG] Ride ID: ${ride.id}, Status: ${status}`);
       if (activeTab === 'active') {
-        return ['active', 'inprogress', 'started', 'driverarrived', 'boarding', 'enroute', 'dropcompleted'].includes(status);
+        const isActive = ['published', 'scheduled', 'ridestarted', 'arrivedatpickup', 'boarding', 'intransit', 'arrivedatdrop', 'dropoff'].includes(status);
+        console.log(`[DEBUG]   Is active? ${isActive}`);
+        return isActive;
       }
       if (activeTab === 'upcoming') {
-        return ['draft', 'scheduled', 'published', 'confirmed', 'seatsbooked'].includes(status);
+        const isUpcoming = ['scheduled', 'published'].includes(status); // 'draft' removed
+        console.log(`[DEBUG]   Is upcoming? ${isUpcoming}`);
+        return isUpcoming;
       }
       if (activeTab === 'completed') {
-        return status === 'completed';
+        const isCompleted = status === 'completed';
+        console.log(`[DEBUG]   Is completed? ${isCompleted}`);
+        return isCompleted;
       }
       if (activeTab === 'cancelled') {
-        return status === 'cancelled';
+        const isCancelled = status === 'cancelled';
+        console.log(`[DEBUG]   Is cancelled? ${isCancelled}`);
+        return isCancelled;
       }
       return false;
     });
+    console.log('[DEBUG] Filtered rides count:', filtered.length);
+    return filtered;
   };
 
   const onRefresh = async () => {
     setIsRefreshing(true);
-    await loadInitialData();
+    console.log('[DEBUG] MyRides onRefresh: invalidating and refetching my-rides cache');
+    await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides, 'my-rides'] });
+    await queryClient.refetchQueries({ queryKey: [CACHE_KEYS.rides, 'my-rides'] });
     setIsRefreshing(false);
   };
 
@@ -82,10 +108,12 @@ export default function MyRidesScreen() {
   const getStatusColor = (status: string) => {
     const s = (status || '').toLowerCase();
     switch (s) {
-      case 'active':
-      case 'inprogress':
-      case 'started':
-      case 'enroute':
+      case 'ridestarted':
+      case 'arrivedatpickup':
+      case 'boarding':
+      case 'intransit':
+      case 'arrivedatdrop':
+      case 'dropoff':
         return theme.colors.success;
       case 'completed': return theme.colors.textSecondary;
       case 'cancelled': return theme.colors.error;
@@ -105,7 +133,7 @@ export default function MyRidesScreen() {
           </Text>
         </View>
         
-        {['draft', 'published', 'scheduled', 'active'].includes(item.status) && (
+        {['published', 'scheduled'].includes(item.status.toLowerCase()) && (
           <View style={styles.actionButtons}>
             <TouchableOpacity 
               onPress={() => handleEditRide(item.id)}

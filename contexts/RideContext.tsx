@@ -40,6 +40,7 @@ interface RideContextType {
   arriveAtPickup: (rideId: string, lat?: number, lng?: number) => Promise<boolean>;
   startBoarding: (rideId: string) => Promise<boolean>;
   transitionEnRoute: (rideId: string) => Promise<boolean>;
+  arriveAtDrop: (rideId: string, lat?: number, lng?: number) => Promise<boolean>;
   completeDropoff: (rideId: string) => Promise<boolean>;
   completeRide: (rideId: string) => Promise<boolean>;
   bookRide: (rideId: string, seats: number, passengerData: any) => Promise<boolean>;
@@ -80,6 +81,17 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
   const bookings = bookingsQuery.data || [];
   const myRides = myRidesQuery.data || [];
   const isLoading = activeRidesQuery.isLoading || bookingsQuery.isLoading || myRidesQuery.isLoading;
+
+  console.log('[DEBUG] RideProvider state:', {
+    userRole: user?.role,
+    activeRidesCount: rides.length,
+    myRidesCount: myRides.length,
+    bookingsCount: bookings.length,
+    activeRidesLoading: activeRidesQuery.isLoading,
+    myRidesLoading: myRidesQuery.isLoading,
+    bookingsLoading: bookingsQuery.isLoading,
+    isLoading
+  });
 
   const loadInitialData = async () => {
     try {
@@ -256,6 +268,17 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
   const transitionEnRoute = async (rideId: string): Promise<boolean> => {
     try {
       await rideService.transitionEnRoute(rideId);
+      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] });
+      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] });
+      return true;
+    } catch (e) {
+      return false;
+    }
+  };
+
+  const arriveAtDrop = async (rideId: string, lat?: number, lng?: number): Promise<boolean> => {
+    try {
+      await rideService.arriveAtDrop(rideId, lat, lng);
       await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] });
       await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] });
       return true;
@@ -486,6 +509,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
         arriveAtPickup,
         startBoarding,
         transitionEnRoute,
+        arriveAtDrop,
         completeDropoff,
         completeRide,
         bookRide, 
