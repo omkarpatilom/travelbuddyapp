@@ -692,7 +692,7 @@ export default function JourneyCommandCenterScreen() {
     if (ride.status === 'published' || ride.status === 'scheduled') {
       // Per lifecycle doc: StartRide requires at least one Confirmed booking
       const confirmedBookings = bookings.filter(b =>
-        ['confirmed', 'accepted'].includes((b.status || '').toLowerCase())
+        ['confirmed', 'accepted', 'verified', 'boarded', 'inride'].includes((b.status || '').toLowerCase())
       );
       const hasConfirmedBookings = confirmedBookings.length > 0;
 
@@ -1151,7 +1151,7 @@ export default function JourneyCommandCenterScreen() {
                       {stop.bookings.map((booking) => {
                         const isPending = booking.status === 'pending';
                         const boardedStatus = (booking.status as string).toLowerCase();
-                        const boarded = ['boarded', 'inride', 'readyfordrop', 'completed'].includes(boardedStatus);
+                        const boarded = ['boarded', 'inride', 'readyfordrop', 'completed', 'verified'].includes(boardedStatus);
                         const dropped = ['completed'].includes(boardedStatus);
                         const initials = booking.passengerName.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2);
 
