@@ -1,23 +1,27 @@
 import { storage, StorageKeys } from './storage';
 
-export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.7:5000/api/v1';
+export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 
 if (!process.env.EXPO_PUBLIC_API_URL && process.env.NODE_ENV !== 'test') {
-  console.warn('EXPO_PUBLIC_API_URL is not defined in environment variables. Falling back to default URL.');
+  console.warn(
+    'EXPO_PUBLIC_API_URL is not defined in environment variables. Falling back to default URL.',
+  );
 }
 
 async function getAuthHeader(): Promise<Record<string, string>> {
   const token = await storage.getItem<string>(StorageKeys.AUTH_TOKEN);
   if (token) {
     console.log('Sending Token:', token.substring(0, 10) + '...');
-    return { 'Authorization': `Bearer ${token}` };
+    return { Authorization: `Bearer ${token}` };
   }
   console.log('No Token found in storage');
   return {};
 }
 
 // Helper to bundle standard headers and bypass ngrok warning pages in Expo Go
-async function getApiHeaders(isFormData = false): Promise<Record<string, string>> {
+async function getApiHeaders(
+  isFormData = false,
+): Promise<Record<string, string>> {
   const authHeader = await getAuthHeader();
   const headers: Record<string, string> = {
     'ngrok-skip-browser-warning': 'true',
@@ -75,8 +79,16 @@ async function handleRefreshToken(): Promise<string | null> {
 }
 
 // Safe response JSON parser
-async function handleResponse<T>(response: Response, endpoint: string, originalRequest?: () => Promise<T>): Promise<T> {
-  if (response.status === 401 && !endpoint.includes('/auth/login') && !endpoint.includes('/auth/refresh-token')) {
+async function handleResponse<T>(
+  response: Response,
+  endpoint: string,
+  originalRequest?: () => Promise<T>,
+): Promise<T> {
+  if (
+    response.status === 401 &&
+    !endpoint.includes('/auth/login') &&
+    !endpoint.includes('/auth/refresh-token')
+  ) {
     if (!isRefreshing) {
       isRefreshing = true;
       const newToken = await handleRefreshToken();
@@ -95,7 +107,7 @@ async function handleResponse<T>(response: Response, endpoint: string, originalR
   }
 
   const text = await response.text().catch(() => '');
-  
+
   if (!response.ok) {
     let errorMessage = `API Error: ${response.status} ${response.statusText}`;
     try {
@@ -158,7 +170,11 @@ export const api = {
         });
         clearTimeout(id);
         if (response.status === 404) return null;
-        return handleResponse<T>(response, endpoint, execute as () => Promise<T>);
+        return handleResponse<T>(
+          response,
+          endpoint,
+          execute as () => Promise<T>,
+        );
       } catch (e: any) {
         clearTimeout(id);
         if (e.name === 'AbortError') throw new Error('Request Timeout');
