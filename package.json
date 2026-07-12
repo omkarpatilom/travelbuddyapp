@@ -4,10 +4,10 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "EXPO_NO_TELEMETRY=1 expo start",
+    "dev": "cross-env EXPO_NO_TELEMETRY=1 expo start",
     "start:tunnel": "cross-env EXPO_NO_TELEMETRY=1 expo start --tunnel",
-    "test:local": "EXPO_PUBLIC_API_URL=http://localhost:5000/api/v1 expo start",
-    "test:android": "EXPO_PUBLIC_API_URL=http://10.0.2.2:5000/api/v1 expo start",
+    "test:local": "cross-env EXPO_PUBLIC_API_URL=http://localhost:5000/api/v1 expo start",
+    "test:android": "cross-env EXPO_PUBLIC_API_URL=http://10.0.2.2:5000/api/v1 expo start",
     "start:test": "cross-env NODE_ENV=test expo start",
     "build:web": "expo export --platform web",
     "lint": "expo lint",
