@@ -22,7 +22,7 @@ import { formatPrice } from '@/utils/validation';
 export default function MyRidesScreen() {
   const { theme } = useTheme();
   const { user } = useAuth();
-  const { myRides, cancelRide, isLoading, loadInitialData } = useRides();
+  const { myRides, cancelRide, isLoadingMyRides, loadInitialData } = useRides();
   const queryClient = useQueryClient();
   const router = useRouter();
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -34,7 +34,7 @@ export default function MyRidesScreen() {
     userRole: user?.role,
     myRidesCount: myRides?.length,
     activeTab,
-    isLoading
+    isLoadingMyRides
   });
 
   const getFilteredRides = () => {
@@ -43,7 +43,7 @@ export default function MyRidesScreen() {
       const status = (ride.status || '').toLowerCase();
       console.log(`[DEBUG] Ride ID: ${ride.id}, Status: ${status}`);
       if (activeTab === 'active') {
-        const isActive = ['published', 'scheduled', 'ridestarted', 'arrivedatpickup', 'boarding', 'intransit', 'arrivedatdrop', 'dropoff'].includes(status);
+        const isActive = ['published', 'scheduled', 'journeystarted', 'arrivedatpickup', 'boarding', 'intransit', 'arrivedatdestination', 'dropoff'].includes(status);
         console.log(`[DEBUG]   Is active? ${isActive}`);
         return isActive;
       }
@@ -108,11 +108,11 @@ export default function MyRidesScreen() {
   const getStatusColor = (status: string) => {
     const s = (status || '').toLowerCase();
     switch (s) {
-      case 'ridestarted':
+      case 'journeystarted':
       case 'arrivedatpickup':
       case 'boarding':
       case 'intransit':
-      case 'arrivedatdrop':
+      case 'arrivedatdestination':
       case 'dropoff':
         return theme.colors.success;
       case 'completed': return theme.colors.textSecondary;

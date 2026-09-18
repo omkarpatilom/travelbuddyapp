@@ -2,6 +2,17 @@ import { storage, StorageKeys } from './storage';
 
 export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 
+// The backend currently runs against a remote DB with real-world response
+// times of several seconds, sometimes 20s+, for legitimate requests (not a
+// hang - confirmed against live traffic). 10s was aborting requests that
+// were still going to succeed, e.g. ride search. Revisit downward once the
+// backend latency issue itself is fixed.
+const REQUEST_TIMEOUT_MS = 30000;
+// Writes carrying FormData (file/photo uploads) can legitimately take longer
+// than a plain JSON request on a slow connection - give them more room before
+// aborting instead of reusing the same bound as everything else.
+const UPLOAD_TIMEOUT_MS = 60000;
+
 if (!process.env.EXPO_PUBLIC_API_URL && process.env.NODE_ENV !== 'test') {
   console.warn(
     'EXPO_PUBLIC_API_URL is not defined in environment variables. Falling back to default URL.',
@@ -136,7 +147,7 @@ export const api = {
     const execute = async (): Promise<T> => {
       const headers = await getApiHeaders(false);
       const controller = new AbortController();
-      const id = setTimeout(() => controller.abort(), 10000);
+      const id = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
       try {
         const response = await fetch(`${API_BASE_URL}${endpoint}`, {
@@ -160,7 +171,7 @@ export const api = {
     const execute = async (): Promise<T | null> => {
       const headers = await getApiHeaders(false);
       const controller = new AbortController();
-      const id = setTimeout(() => controller.abort(), 10000);
+      const id = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
       try {
         const response = await fetch(`${API_BASE_URL}${endpoint}`, {
@@ -188,14 +199,23 @@ export const api = {
     const execute = async (): Promise<T> => {
       const isFormData = body instanceof FormData;
       const headers = await getApiHeaders(isFormData);
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), isFormData ? UPLOAD_TIMEOUT_MS : REQUEST_TIMEOUT_MS);
 
-      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-        method: 'POST',
-        headers,
-        body: isFormData ? body : JSON.stringify(body),
-      });
-
-      return handleResponse<T>(response, endpoint, execute);
+      try {
+        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+          method: 'POST',
+          headers,
+          body: isFormData ? body : JSON.stringify(body),
+          signal: controller.signal,
+        });
+        clearTimeout(id);
+        return handleResponse<T>(response, endpoint, execute);
+      } catch (e: any) {
+        clearTimeout(id);
+        if (e.name === 'AbortError') throw new Error('Request Timeout');
+        throw e;
+      }
     };
     return execute();
   },
@@ -204,14 +224,23 @@ export const api = {
     const execute = async (): Promise<T> => {
       const isFormData = body instanceof FormData;
       const headers = await getApiHeaders(isFormData);
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), isFormData ? UPLOAD_TIMEOUT_MS : REQUEST_TIMEOUT_MS);
 
-      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-        method: 'PUT',
-        headers,
-        body: isFormData ? body : JSON.stringify(body),
-      });
-
-      return handleResponse<T>(response, endpoint, execute);
+      try {
+        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+          method: 'PUT',
+          headers,
+          body: isFormData ? body : JSON.stringify(body),
+          signal: controller.signal,
+        });
+        clearTimeout(id);
+        return handleResponse<T>(response, endpoint, execute);
+      } catch (e: any) {
+        clearTimeout(id);
+        if (e.name === 'AbortError') throw new Error('Request Timeout');
+        throw e;
+      }
     };
     return execute();
   },
@@ -220,14 +249,23 @@ export const api = {
     const execute = async (): Promise<T> => {
       const isFormData = body instanceof FormData;
       const headers = await getApiHeaders(isFormData);
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), isFormData ? UPLOAD_TIMEOUT_MS : REQUEST_TIMEOUT_MS);
 
-      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-        method: 'PATCH',
-        headers,
-        body: isFormData ? body : JSON.stringify(body),
-      });
-
-      return handleResponse<T>(response, endpoint, execute);
+      try {
+        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+          method: 'PATCH',
+          headers,
+          body: isFormData ? body : JSON.stringify(body),
+          signal: controller.signal,
+        });
+        clearTimeout(id);
+        return handleResponse<T>(response, endpoint, execute);
+      } catch (e: any) {
+        clearTimeout(id);
+        if (e.name === 'AbortError') throw new Error('Request Timeout');
+        throw e;
+      }
     };
     return execute();
   },
@@ -235,13 +273,22 @@ export const api = {
   async delete<T>(endpoint: string): Promise<T> {
     const execute = async (): Promise<T> => {
       const headers = await getApiHeaders(false);
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
-      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-        method: 'DELETE',
-        headers,
-      });
-
-      return handleResponse<T>(response, endpoint, execute);
+      try {
+        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+          method: 'DELETE',
+          headers,
+          signal: controller.signal,
+        });
+        clearTimeout(id);
+        return handleResponse<T>(response, endpoint, execute);
+      } catch (e: any) {
+        clearTimeout(id);
+        if (e.name === 'AbortError') throw new Error('Request Timeout');
+        throw e;
+      }
     };
     return execute();
   },

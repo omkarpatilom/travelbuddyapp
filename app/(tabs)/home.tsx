@@ -53,6 +53,8 @@ const QUICK_ROUTES = [
 export default function HomeScreen() {
   const [fromLocation, setFromLocation] = useState('');
   const [toLocation, setToLocation] = useState('');
+  const [fromCoords, setFromCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [toCoords, setToCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const [selectedDate, setSelectedDate] = useState('');
   const [displayDate, setDisplayDate] = useState('');
   const [isDatePickerVisible, setDatePickerVisible] = useState(false);
@@ -144,6 +146,10 @@ export default function HomeScreen() {
       params: {
         from: fromLocation,
         to: toLocation,
+        fromLat: fromCoords?.latitude?.toString() || '',
+        fromLon: fromCoords?.longitude?.toString() || '',
+        toLat: toCoords?.latitude?.toString() || '',
+        toLon: toCoords?.longitude?.toString() || '',
         date: selectedDate,
         vehicleCategory: selectedCategory,
       },
@@ -155,9 +161,12 @@ export default function HomeScreen() {
   };
 
   const handleSwapLocations = () => {
-    const temp = fromLocation;
+    const tempLoc = fromLocation;
+    const tempCoords = fromCoords;
     setFromLocation(toLocation);
-    setToLocation(temp);
+    setFromCoords(toCoords);
+    setToLocation(tempLoc);
+    setToCoords(tempCoords);
   };
 
   const handleQuickRouteSelect = (route: typeof QUICK_ROUTES[0]) => {
@@ -293,7 +302,10 @@ export default function HomeScreen() {
               <View style={[styles.dotIndicator, { backgroundColor: theme.colors.secondary }]} />
               <LocationPicker
                 value={fromLocation}
-                onLocationChange={(loc) => setFromLocation(loc)}
+                onLocationChange={(loc, coords) => {
+                  setFromLocation(loc);
+                  if (coords) setFromCoords(coords);
+                }}
                 placeholder="Where from? (pickup)"
                 style={styles.locationInput}
                 showIcon={false}
@@ -317,7 +329,10 @@ export default function HomeScreen() {
               <View style={[styles.dotIndicator, { backgroundColor: theme.colors.error }]} />
               <LocationPicker
                 value={toLocation}
-                onLocationChange={(loc) => setToLocation(loc)}
+                onLocationChange={(loc, coords) => {
+                  setToLocation(loc);
+                  if (coords) setToCoords(coords);
+                }}
                 placeholder="Where to? (destination)"
                 style={styles.locationInput}
                 showIcon={false}

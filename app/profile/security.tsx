@@ -41,6 +41,9 @@ export default function SecurityScreen() {
   const [showPasswordChange, setShowPasswordChange] = useState(false);
   const [showGoogleModal, setShowGoogleModal] = useState(false);
   const [googleEmail, setGoogleEmail] = useState('');
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [revokingSessionId, setRevokingSessionId] = useState<string | null>(null);
+  const [isGoogleActionLoading, setIsGoogleActionLoading] = useState(false);
 
   const [passwordData, setPasswordData] = useState({
     currentPassword: '',
@@ -100,7 +103,7 @@ export default function SecurityScreen() {
     }
 
     try {
-      setIsLoading(true);
+      setIsChangingPassword(true);
       await api.post('/security/change-password', {
         currentPassword: passwordData.currentPassword,
         newPassword: passwordData.newPassword,
@@ -111,7 +114,7 @@ export default function SecurityScreen() {
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to change password');
     } finally {
-      setIsLoading(false);
+      setIsChangingPassword(false);
     }
   };
 
@@ -126,13 +129,13 @@ export default function SecurityScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              setIsLoading(true);
+              setRevokingSessionId(sessionId);
               await api.delete(`/security/sessions/${sessionId}`);
-              fetchSecurityData();
+              await fetchSecurityData();
             } catch (error: any) {
               Alert.alert('Error', error.message || 'Failed to revoke session');
             } finally {
-              setIsLoading(false);
+              setRevokingSessionId(null);
             }
           },
         },
@@ -161,10 +164,10 @@ export default function SecurityScreen() {
 
   const handleLinkGoogleMock = async (selectedEmail: string) => {
     if (!selectedEmail) return;
-    setIsLoading(true);
+    setIsGoogleActionLoading(true);
     const mockToken = `mock_${selectedEmail.trim().toLowerCase()}`;
     const success = await linkGoogle(mockToken);
-    setIsLoading(false);
+    setIsGoogleActionLoading(false);
     if (success) {
       Alert.alert('Success', 'Google account linked successfully!');
       fetchSecurityData();
@@ -175,23 +178,23 @@ export default function SecurityScreen() {
 
   const handleLinkGoogleReal = async () => {
     try {
-      setIsLoading(true);
+      setIsGoogleActionLoading(true);
       const token = await googleAuthHelper.startGoogleAuth();
-      setIsLoading(false);
-      
+
       if (token) {
-        setIsLoading(true);
         const success = await linkGoogle(token);
-        setIsLoading(false);
+        setIsGoogleActionLoading(false);
         if (success) {
           Alert.alert('Success', 'Google account linked successfully!');
           fetchSecurityData();
         } else {
           Alert.alert('Link Failed', 'Failed to link Google account.');
         }
+      } else {
+        setIsGoogleActionLoading(false);
       }
     } catch (error: any) {
-      setIsLoading(false);
+      setIsGoogleActionLoading(false);
       if (!error.message?.includes('cancelled') && !error.message?.includes('closed')) {
         Alert.alert('Google Link Error', error.message || 'An error occurred during Google linking.');
       }
@@ -208,9 +211,9 @@ export default function SecurityScreen() {
           text: 'Unlink',
           style: 'destructive',
           onPress: async () => {
-            setIsLoading(true);
+            setIsGoogleActionLoading(true);
             const success = await unlinkGoogle();
-            setIsLoading(false);
+            setIsGoogleActionLoading(false);
             if (success) {
               Alert.alert('Success', 'Google account unlinked successfully!');
               fetchSecurityData();
@@ -284,10 +287,15 @@ export default function SecurityScreen() {
                 secureTextEntry
               />
               <TouchableOpacity
-                style={[styles.changeButton, { backgroundColor: theme.colors.primary }]}
+                style={[styles.changeButton, { backgroundColor: theme.colors.primary, opacity: isChangingPassword ? 0.6 : 1 }]}
                 onPress={handlePasswordChange}
+                disabled={isChangingPassword}
               >
-                <Text style={styles.changeButtonText}>Update Password</Text>
+                {isChangingPassword ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.changeButtonText}>Update Password</Text>
+                )}
               </TouchableOpacity>
             </View>
           )}
@@ -320,9 +328,11 @@ export default function SecurityScreen() {
                 styles.linkActionButton,
                 {
                   borderColor: user?.isGoogleLinked ? theme.colors.border : theme.colors.primary,
-                  backgroundColor: user?.isGoogleLinked ? 'transparent' : theme.colors.primary + '10'
+                  backgroundColor: user?.isGoogleLinked ? 'transparent' : theme.colors.primary + '10',
+                  opacity: isGoogleActionLoading ? 0.6 : 1,
                 }
               ]}
+              disabled={isGoogleActionLoading}
               onPress={() => {
                 if (user?.isGoogleLinked) {
                   handleUnlinkGoogle();
@@ -335,14 +345,18 @@ export default function SecurityScreen() {
                 }
               }}
             >
-              <Text
-                style={[
-                  styles.linkActionText,
-                  { color: user?.isGoogleLinked ? theme.colors.textSecondary : theme.colors.primary }
-                ]}
-              >
-                {user?.isGoogleLinked ? 'Unlink' : 'Link'}
-              </Text>
+              {isGoogleActionLoading ? (
+                <ActivityIndicator size="small" color={user?.isGoogleLinked ? theme.colors.textSecondary : theme.colors.primary} />
+              ) : (
+                <Text
+                  style={[
+                    styles.linkActionText,
+                    { color: user?.isGoogleLinked ? theme.colors.textSecondary : theme.colors.primary }
+                  ]}
+                >
+                  {user?.isGoogleLinked ? 'Unlink' : 'Link'}
+                </Text>
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -370,8 +384,16 @@ export default function SecurityScreen() {
                   <Text style={[styles.sessionDetails, { color: theme.colors.textSecondary }]}>{session.location} • {new Date(session.lastActive).toLocaleString()}</Text>
                 </View>
                 {!session.isCurrent && (
-                  <TouchableOpacity onPress={() => handleRevokeSession(session.id)} style={styles.revokeButton}>
-                    <LogOut size={20} color={theme.colors.error} />
+                  <TouchableOpacity
+                    onPress={() => handleRevokeSession(session.id)}
+                    style={styles.revokeButton}
+                    disabled={revokingSessionId === session.id}
+                  >
+                    {revokingSessionId === session.id ? (
+                      <ActivityIndicator size="small" color={theme.colors.error} />
+                    ) : (
+                      <LogOut size={20} color={theme.colors.error} />
+                    )}
                   </TouchableOpacity>
                 )}
               </View>

@@ -2,6 +2,7 @@ import { userService } from '../services/user.service';
 import { vehicleService } from '../services/vehicle.service';
 import { rideService } from '../services/ride.service';
 import { RideDto, BookingResponseDto, ConversationLevel, RideSearchDto, RidePhase } from './types';
+import { RideStatusType, BookingStatusType } from './rideStatus';
 
 export interface Ride {
   id: string;
@@ -29,7 +30,7 @@ export interface Ride {
   isDriverVerified: boolean;
   isVehicleVerified: boolean;
   features: string[];
-  status: 'draft' | 'published' | 'scheduled' | 'ridestarted' | 'arrivedatpickup' | 'boarding' | 'intransit' | 'arrivedatdrop' | 'dropoff' | 'completed' | 'cancelled';
+  status: RideStatusType;
   distance: string;
   duration: string;
   pickupDistanceMeters?: number;
@@ -54,7 +55,7 @@ export interface Booking {
   ride: Ride;
   seats: number;
   totalPrice: number;
-  status: 'pending' | 'confirmed' | 'rejected' | 'cancelled' | 'readyforboarding' | 'boarded' | 'inride' | 'readyfordrop' | 'completed' | 'noshow';
+  status: BookingStatusType;
   bookingDate: string;
   passengerName: string;
   passengerPhone: string;
@@ -118,29 +119,28 @@ export const mapRideData = async (ride: RideDto | RideSearchDto): Promise<Ride> 
   }
 
   // Backend serializes enum as string name (e.g. "Published", "RideStarted") due to JsonStringEnumConverter
-  // Map both numeric and string variants (case-insensitive via toLowerCase)
   const statusMap: Record<string, string> = {
     // Numeric enum values
-    '0': 'draft',
     '1': 'published',
     '2': 'scheduled',
-    '3': 'ridestarted',
+    '3': 'journeystarted',
     '4': 'arrivedatpickup',
     '5': 'boarding',
     '6': 'intransit',
-    '7': 'arrivedatdrop',
+    '7': 'arrivedatdestination',
     '8': 'dropoff',
     '9': 'completed',
     '10': 'cancelled',
     // String enum name variants (from JsonStringEnumConverter)
-    'draft': 'draft',
     'published': 'published',
     'scheduled': 'scheduled',
-    'ridestarted': 'ridestarted',
+    'journeystarted': 'journeystarted',
+    'ridestarted': 'journeystarted',
     'arrivedatpickup': 'arrivedatpickup',
     'boarding': 'boarding',
     'intransit': 'intransit',
-    'arrivedatdrop': 'arrivedatdrop',
+    'arrivedatdestination': 'arrivedatdestination',
+    'arrivedatdrop': 'arrivedatdestination',
     'dropoff': 'dropoff',
     'completed': 'completed',
     'cancelled': 'cancelled',
@@ -271,13 +271,12 @@ export const mapBookingData = async (booking: BookingResponseDto): Promise<Booki
   // Normalize to consistent lowercase
   const bookingStatusMap: Record<string, string> = {
     // Numeric
-    '0': 'pending',
-    '1': 'confirmed',
-    '2': 'rejected',
-    '3': 'cancelled',
-    '4': 'readyforboarding',
-    '5': 'boarded',
-    '6': 'inride',
+    '1': 'pending',
+    '2': 'confirmed',
+    '3': 'rejected',
+    '4': 'cancelled',
+    '5': 'readyforboarding',
+    '6': 'boarded',
     '7': 'readyfordrop',
     '8': 'completed',
     '9': 'noshow',
@@ -288,11 +287,11 @@ export const mapBookingData = async (booking: BookingResponseDto): Promise<Booki
     'cancelled': 'cancelled',
     'readyforboarding': 'readyforboarding',
     'boarded': 'boarded',
-    'inride': 'inride',
     'readyfordrop': 'readyfordrop',
     'completed': 'completed',
     'noshow': 'noshow',
-    // Legacy/alias
+    // Legacy/alias (InRide mapped to boarded)
+    'inride': 'boarded',
     'requested': 'pending',
     'accepted': 'confirmed',
     'expired': 'cancelled',

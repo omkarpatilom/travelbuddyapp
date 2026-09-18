@@ -24,6 +24,17 @@ import { safetyService } from '@/services/safety.service';
 import { formatPrice } from '@/utils/validation';
 import { reviewService } from '@/services/review.service';
 import RatingModal from '@/components/RatingModal';
+import {
+  RIDE_STATUS,
+  BOOKING_STATUS,
+  ACTIVE_RIDE_STATUSES,
+  isRideActive,
+  isRidePreStart,
+  isRideTerminal,
+  getBookingDisplayLabel,
+  RIDE_STATUS_LABEL,
+  BOOKING_STATUS_LABEL,
+} from '@/utils/rideStatus';
 
 
 
@@ -48,8 +59,12 @@ export default function RideDetailsScreen() {
   const [hasReviewedDriver, setHasReviewedDriver] = useState(false);
 
   const isDriver = user?.id === ride?.driverId;
+  // A passenger has a meaningful booking if it's confirmed or further in the lifecycle
   const passengerConfirmedBooking = ride && passengerBookings?.find(
-    (b: any) => b.rideId === ride.id && ['confirmed', 'readyforboarding', 'boarded', 'inride', 'readyfordrop', 'completed'].includes((b.status || '').toLowerCase())
+    (b: any) => b.rideId === ride.id &&
+      [BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.READY_FOR_BOARDING,
+      BOOKING_STATUS.BOARDED, BOOKING_STATUS.READY_FOR_DROP,
+      BOOKING_STATUS.COMPLETED].includes((b.status || '').toLowerCase())
   );
 
   const parsePassengerLocations = (bookingItem: any) => {
@@ -76,7 +91,7 @@ export default function RideDetailsScreen() {
     let pollingIntervalId: any = null;
 
     const startLiveTracking = async () => {
-      if (!ride || !['ridestarted', 'arrivedatpickup', 'boarding', 'intransit', 'arrivedatdrop', 'dropoff'].includes((ride.status as string).toLowerCase())) {
+      if (!ride || !isRideActive((ride.status as string).toLowerCase())) {
         setDriverLocation(null);
         return;
       }
@@ -186,9 +201,12 @@ export default function RideDetailsScreen() {
       if (data && user?.id === data.driverId) {
         console.log(`[DEBUG] User is driver. Fetching passenger bookings...`);
         await fetchRideBookings(rideId);
-      } else if (data && user?.id !== data.driverId && data.status === 'completed') {
+      } else if (data && user?.id !== data.driverId && data.status === RIDE_STATUS.COMPLETED) {
         const confirmedBooking = passengerBookings?.find(
-          (b: any) => b.rideId === data.id && ['confirmed', 'readyforboarding', 'boarded', 'inride', 'readyfordrop', 'completed'].includes((b.status || '').toLowerCase())
+          (b: any) => b.rideId === data.id &&
+            [BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.READY_FOR_BOARDING,
+            BOOKING_STATUS.BOARDED, BOOKING_STATUS.READY_FOR_DROP,
+            BOOKING_STATUS.COMPLETED].includes((b.status || '').toLowerCase())
         );
         console.log(`[DEBUG] User is passenger. Found confirmed/completed booking:`, confirmedBooking);
         if (confirmedBooking) {
@@ -504,8 +522,8 @@ export default function RideDetailsScreen() {
   const handleCancelRide = () => {
     Alert.alert('Cancel Ride', 'Are you sure you want to cancel this ride?', [
       { text: 'No', style: 'cancel' },
-      { 
-        text: 'Yes, Cancel', 
+      {
+        text: 'Yes, Cancel',
         style: 'destructive',
         onPress: async () => {
           setIsActionLoading(true);
@@ -522,6 +540,47 @@ export default function RideDetailsScreen() {
     ]);
   };
 
+  const handleStartJourney = async () => {
+    if (!ride) return;
+    // Per spec §6: driver can start journey when ride is Scheduled or Published.
+    // Bookings must be at least Confirmed (ReadyForBoarding/Boarded are also valid).
+    const confirmedBookings = bookings.filter(b =>
+      [BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.READY_FOR_BOARDING,
+      BOOKING_STATUS.BOARDED].includes((b.status || '').toLowerCase())
+    );
+    if (confirmedBookings.length === 0) {
+      Alert.alert(
+        'Cannot Start Ride',
+        'You need at least one confirmed booking before starting the journey. Please accept a pending booking first.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    setIsActionLoading(true);
+    try {
+      const ok = await startRide(ride.id);
+      if (ok) {
+        router.push(`/ride/command-center?id=${ride.id}`);
+      } else {
+        Alert.alert(
+          'Failed to Start Ride',
+          'The ride could not be started. Ensure at least one booking is confirmed and try again.'
+        );
+      }
+    } catch (e: any) {
+      console.error('[DEBUG] Start ride error from Details:', e);
+      const msg = e?.message || 'An unexpected error occurred.';
+      if (msg.toLowerCase().includes('booking')) {
+        Alert.alert('Cannot Start Ride', 'At least one booking must be confirmed before starting the ride.');
+      } else {
+        Alert.alert('Error', msg);
+      }
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
   const handleCallDriver = () => {
     Alert.alert('Call Driver', `Would you like to call ${ride.driverName}?`, [
       { text: 'Cancel', style: 'cancel' },
@@ -536,673 +595,743 @@ export default function RideDetailsScreen() {
   const getStatusColor = (status: string) => {
     const s = (status || '').toLowerCase();
     switch (s) {
-      case 'published':
-      case 'scheduled':
-      case 'confirmed':
-      case 'completed':
+      case RIDE_STATUS.PUBLISHED:
+      case RIDE_STATUS.SCHEDULED:
+      case BOOKING_STATUS.CONFIRMED:
+      case BOOKING_STATUS.COMPLETED:
+      case BOOKING_STATUS.BOARDED:
         return theme.colors.success;
-      case 'ridestarted':
-      case 'intransit':
+      case RIDE_STATUS.JOURNEY_STARTED:
+      case RIDE_STATUS.IN_TRANSIT:
         return theme.colors.secondary;
-      case 'arrivedatpickup':
-      case 'boarding':
-      case 'arrivedatdrop':
-      case 'dropoff':
+      case RIDE_STATUS.ARRIVED_AT_PICKUP:
+      case RIDE_STATUS.BOARDING:
+      case RIDE_STATUS.ARRIVED_AT_DESTINATION:
+      case RIDE_STATUS.DROP_OFF:
+      case BOOKING_STATUS.READY_FOR_BOARDING:
+      case BOOKING_STATUS.READY_FOR_DROP:
         return theme.colors.primary;
-      case 'cancelled':
+      case RIDE_STATUS.CANCELLED:
+      case BOOKING_STATUS.REJECTED:
+      case BOOKING_STATUS.CANCELLED:
+      case BOOKING_STATUS.NO_SHOW:
         return theme.colors.error;
-      case 'draft':
-      case 'pending':
+      case BOOKING_STATUS.PENDING:
         return theme.colors.warning;
       default:
         return theme.colors.textSecondary;
     }
   };
 
+  const getBookingDisplayStatus = (bookingStatus: string, rideStatus: string) =>
+    getBookingDisplayLabel(bookingStatus, rideStatus);
+
+
   return (
     <>
       <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]}>
         {/* Header */}
-      <View style={[styles.header, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <ArrowLeft size={24} color={theme.colors.text} />
-        </TouchableOpacity>
-        <Text style={[styles.title, { color: theme.colors.text }]}>Ride Details</Text>
-        <View style={styles.placeholder} />
-      </View>
-
-      {/* RouteMap Section */}
-      <View style={styles.mapContainer}>
-        <RouteMap
-          from={ride.from}
-          to={ride.to}
-          distance={ride.distance}
-          duration={ride.duration}
-          driverLocation={driverLocation}
-        />
-      </View>
-
-      <View style={styles.content}>
-        {/* Route Information */}
-        <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Route</Text>
-          
-          <View style={styles.routeContainer}>
-            <View style={styles.locationRow}>
-              <View style={[styles.locationDot, { backgroundColor: theme.colors.secondary }]} />
-              <View style={styles.locationInfo}>
-                <Text style={[styles.locationLabel, { color: theme.colors.textSecondary }]}>From</Text>
-                <Text style={[styles.locationText, { color: theme.colors.text }]}>{ride.from.address}</Text>
-              </View>
-            </View>
-            
-            <View style={[styles.routeLine, { backgroundColor: theme.colors.border }]} />
-            
-            <View style={styles.locationRow}>
-              <View style={[styles.locationDot, { backgroundColor: theme.colors.error }]} />
-              <View style={styles.locationInfo}>
-                <Text style={[styles.locationLabel, { color: theme.colors.textSecondary }]}>To</Text>
-                <Text style={[styles.locationText, { color: theme.colors.text }]}>{ride.to.address}</Text>
-              </View>
-            </View>
-          </View>
-
-          <View style={styles.tripInfo}>
-            <View style={styles.tripItem}>
-              <Text style={[styles.tripLabel, { color: theme.colors.textSecondary }]}>Distance</Text>
-              <Text style={[styles.tripValue, { color: theme.colors.text }]}>{ride.distance}</Text>
-            </View>
-            <View style={styles.tripItem}>
-              <Text style={[styles.tripLabel, { color: theme.colors.textSecondary }]}>Duration</Text>
-              <Text style={[styles.tripValue, { color: theme.colors.text }]}>{ride.duration}</Text>
-            </View>
-          </View>
+        <View style={[styles.header, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <ArrowLeft size={24} color={theme.colors.text} />
+          </TouchableOpacity>
+          <Text style={[styles.title, { color: theme.colors.text }]}>Ride Details</Text>
+          <View style={styles.placeholder} />
         </View>
 
-        {/* Ride Information */}
-        <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Ride Information</Text>
-          
-          <View style={styles.rideInfoGrid}>
-            <View style={styles.infoItem}>
-              <Calendar size={20} color={theme.colors.primary} />
-              <View style={styles.infoContent}>
-                <Text style={[styles.infoLabel, { color: theme.colors.textSecondary }]}>Date</Text>
-                <Text style={[styles.infoValue, { color: theme.colors.text }]}>{ride.date}</Text>
-              </View>
-            </View>
-
-            <View style={styles.infoItem}>
-              <Clock size={20} color={theme.colors.primary} />
-              <View style={styles.infoContent}>
-                <Text style={[styles.infoLabel, { color: theme.colors.textSecondary }]}>Time</Text>
-                <Text style={[styles.infoValue, { color: theme.colors.text }]}>{ride.time}</Text>
-              </View>
-            </View>
-
-            <View style={styles.infoItem}>
-              <Users size={20} color={theme.colors.primary} />
-              <View style={styles.infoContent}>
-                <Text style={[styles.infoLabel, { color: theme.colors.textSecondary }]}>Available Seats</Text>
-                <Text style={[styles.infoValue, { color: theme.colors.text }]}>{ride.availableSeats}/{ride.totalSeats}</Text>
-              </View>
-            </View>
-
-            <View style={styles.infoItem}>
-              <Car size={20} color={theme.colors.primary} />
-              <View style={styles.infoContent}>
-                <Text style={[styles.infoLabel, { color: theme.colors.textSecondary }]}>Vehicle</Text>
-                <Text style={[styles.infoValue, { color: theme.colors.text }]}>{ride.carModel}</Text>
-              </View>
-            </View>
-          </View>
-
-          <View style={styles.priceSection}>
-            <Text style={[styles.priceLabel, { color: theme.colors.textSecondary }]}>Price per seat</Text>
-            <Text style={[styles.price, { color: theme.colors.primary }]}>{formatPrice(ride.price)}</Text>
-          </View>
+        {/* RouteMap Section */}
+        <View style={styles.mapContainer}>
+          <RouteMap
+            from={ride.from}
+            to={ride.to}
+            distance={ride.distance}
+            duration={ride.duration}
+            driverLocation={driverLocation}
+          />
         </View>
 
-        {/* Vehicle Details Card */}
-        <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Vehicle Information</Text>
-            {ride.isVehicleVerified && (
-              <View style={[styles.verifiedBadge, { backgroundColor: theme.colors.success + '15' }]}>
-                <ShieldCheck size={16} color={theme.colors.success} style={{ marginRight: 4 }} />
-                <Text style={[styles.verifiedText, { color: theme.colors.success }]}>Verified Vehicle</Text>
-              </View>
-            )}
-          </View>
-          
-          <View style={styles.vehicleDetailContainer}>
-            <Image 
-              source={{ uri: getVehicleImageUrl(ride.vehicleCategory) }} 
-              style={styles.vehicleImage} 
-              resizeMode="cover"
-            />
-            
-            <View style={styles.vehicleInfoRow}>
-              <View style={styles.vehicleDetailItem}>
-                <Text style={[styles.vehicleDetailLabel, { color: theme.colors.textSecondary }]}>Category</Text>
-                <Text style={[styles.vehicleDetailValue, { color: theme.colors.text }]}>
-                  {getCategoryEmoji(ride.vehicleCategory)} {ride.vehicleCategory}
-                </Text>
-              </View>
-              <View style={styles.vehicleDetailItem}>
-                <Text style={[styles.vehicleDetailLabel, { color: theme.colors.textSecondary }]}>Model</Text>
-                <Text style={[styles.vehicleDetailValue, { color: theme.colors.text }]}>{ride.carModel || 'Unknown'}</Text>
-              </View>
-            </View>
-
-            <View style={styles.vehicleInfoRow}>
-              <View style={styles.vehicleDetailItem}>
-                <Text style={[styles.vehicleDetailLabel, { color: theme.colors.textSecondary }]}>Color</Text>
-                <Text style={[styles.vehicleDetailValue, { color: theme.colors.text }]}>{ride.carColor || 'Unknown'}</Text>
-              </View>
-              <View style={styles.vehicleDetailItem}>
-                <Text style={[styles.vehicleDetailLabel, { color: theme.colors.textSecondary }]}>Total Seats</Text>
-                <Text style={[styles.vehicleDetailValue, { color: theme.colors.text }]}>{ride.totalSeats} Seats</Text>
-              </View>
-            </View>
-
-            <View style={[styles.vehiclePlateCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-              <Text style={[styles.plateLabel, { color: theme.colors.textSecondary }]}>LICENSE PLATE</Text>
-              <Text style={[styles.plateValue, { color: theme.colors.text }]}>
-                {ride.carPlate ? ride.carPlate.toUpperCase() : 'NOT VERIFIED'}
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Vehicle Features (Layer 2) */}
-        <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Vehicle Features</Text>
-          {ride.features && ride.features.length > 0 ? (
-            <View style={styles.featuresListTagsRow}>
-              {ride.features.map((featureId) => {
-                const label = FEATURE_LABELS[featureId] || featureId;
-                return (
-                  <View key={featureId} style={[styles.featureBulletTag, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-                    <Text style={[styles.checkMark, { color: theme.colors.success }]}>✓</Text>
-                    <Text style={[styles.featureBulletTagText, { color: theme.colors.text }]}>{label}</Text>
-                  </View>
-                );
-              })}
-            </View>
-          ) : (
-            <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>
-              Standard vehicle setup with no additional features listed.
-            </Text>
-          )}
-        </View>
-
-        {/* Safety Section */}
-        <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Safety & Trust Checklist</Text>
-          
-          <View style={styles.safetyCheckList}>
-            <View style={styles.safetyCheckRow}>
-              <View style={[styles.safetyCheckIconCircle, { backgroundColor: ride.isDriverVerified ? theme.colors.success + '20' : theme.colors.warning + '20' }]}>
-                {ride.isDriverVerified ? (
-                  <ShieldCheck size={16} color={theme.colors.success} />
-                ) : (
-                  <XCircle size={16} color={theme.colors.warning} />
-                )}
-              </View>
-              <Text style={[styles.safetyCheckText, { color: theme.colors.text }]}>
-                {ride.isDriverVerified ? 'Verified Driver' : 'Driver Verification Pending'}
-              </Text>
-            </View>
-
-            <View style={styles.safetyCheckRow}>
-              <View style={[styles.safetyCheckIconCircle, { backgroundColor: ride.isVehicleVerified ? theme.colors.success + '20' : theme.colors.warning + '20' }]}>
-                {ride.isVehicleVerified ? (
-                  <ShieldCheck size={16} color={theme.colors.success} />
-                ) : (
-                  <XCircle size={16} color={theme.colors.warning} />
-                )}
-              </View>
-              <Text style={[styles.safetyCheckText, { color: theme.colors.text }]}>
-                {ride.isVehicleVerified ? 'Verified Vehicle' : 'Vehicle Verification Pending'}
-              </Text>
-            </View>
-
-            <View style={styles.safetyCheckRow}>
-              <View style={[styles.safetyCheckIconCircle, { backgroundColor: theme.colors.success + '20' }]}>
-                <ShieldCheck size={16} color={theme.colors.success} />
-              </View>
-              <Text style={[styles.safetyCheckText, { color: theme.colors.text }]}>
-                SOS Button & Safety Alerts Enabled
-              </Text>
-            </View>
-
-            <View style={styles.safetyCheckRow}>
-              <View style={[styles.safetyCheckIconCircle, { backgroundColor: theme.colors.success + '20' }]}>
-                <ShieldCheck size={16} color={theme.colors.success} />
-              </View>
-              <Text style={[styles.safetyCheckText, { color: theme.colors.text }]}>
-                Real-Time Journey Share Available
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Ride Preferences Section */}
-        {ride && ride.preferences && (
+        <View style={styles.content}>
+          {/* Route Information */}
           <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
-            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Ride Preferences</Text>
-            <View style={styles.preferencesContainer}>
-              <View style={[styles.preferenceTag, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-                <MessageCircle size={16} color={theme.colors.primary} />
-                <Text style={[styles.preferenceText, { color: theme.colors.text }]}>
-                  Chat: {ride.preferences.conversationLevel.charAt(0).toUpperCase() + ride.preferences.conversationLevel.slice(1)}
-                </Text>
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Route</Text>
+
+            <View style={styles.routeContainer}>
+              <View style={styles.locationRow}>
+                <View style={[styles.locationDot, { backgroundColor: theme.colors.secondary }]} />
+                <View style={styles.locationInfo}>
+                  <Text style={[styles.locationLabel, { color: theme.colors.textSecondary }]}>From</Text>
+                  <Text style={[styles.locationText, { color: theme.colors.text }]}>{ride.from.address}</Text>
+                </View>
               </View>
 
-              <View style={[styles.preferenceTag, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-                <Music size={16} color={theme.colors.secondary} />
-                <Text style={[styles.preferenceText, { color: theme.colors.text }]}>
-                  {ride.preferences.musicAllowed ? 'Music Allowed' : 'No Music'}
-                </Text>
+              <View style={[styles.routeLine, { backgroundColor: theme.colors.border }]} />
+
+              <View style={styles.locationRow}>
+                <View style={[styles.locationDot, { backgroundColor: theme.colors.error }]} />
+                <View style={styles.locationInfo}>
+                  <Text style={[styles.locationLabel, { color: theme.colors.textSecondary }]}>To</Text>
+                  <Text style={[styles.locationText, { color: theme.colors.text }]}>{ride.to.address}</Text>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.tripInfo}>
+              <View style={styles.tripItem}>
+                <Text style={[styles.tripLabel, { color: theme.colors.textSecondary }]}>Distance</Text>
+                <Text style={[styles.tripValue, { color: theme.colors.text }]}>{ride.distance}</Text>
+              </View>
+              <View style={styles.tripItem}>
+                <Text style={[styles.tripLabel, { color: theme.colors.textSecondary }]}>Duration</Text>
+                <Text style={[styles.tripValue, { color: theme.colors.text }]}>{ride.duration}</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Ride Information */}
+          <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Ride Information</Text>
+
+            <View style={styles.rideInfoGrid}>
+              <View style={styles.infoItem}>
+                <Calendar size={20} color={theme.colors.primary} />
+                <View style={styles.infoContent}>
+                  <Text style={[styles.infoLabel, { color: theme.colors.textSecondary }]}>Date</Text>
+                  <Text style={[styles.infoValue, { color: theme.colors.text }]}>{ride.date}</Text>
+                </View>
               </View>
 
-              <View style={[styles.preferenceTag, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-                <Cigarette size={16} color={theme.colors.error} />
-                <Text style={[styles.preferenceText, { color: theme.colors.text }]}>
-                  {ride.preferences.nonSmoking ? 'Non-Smoking' : 'Smoking Allowed'}
-                </Text>
+              <View style={styles.infoItem}>
+                <Clock size={20} color={theme.colors.primary} />
+                <View style={styles.infoContent}>
+                  <Text style={[styles.infoLabel, { color: theme.colors.textSecondary }]}>Time</Text>
+                  <Text style={[styles.infoValue, { color: theme.colors.text }]}>{ride.time}</Text>
+                </View>
               </View>
 
-              <View style={[styles.preferenceTag, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-                <Heart size={16} color={theme.colors.accent} />
-                <Text style={[styles.preferenceText, { color: theme.colors.text }]}>
-                  {ride.preferences.petsAllowed ? 'Pet Friendly' : 'No Pets'}
-                </Text>
+              <View style={styles.infoItem}>
+                <Users size={20} color={theme.colors.primary} />
+                <View style={styles.infoContent}>
+                  <Text style={[styles.infoLabel, { color: theme.colors.textSecondary }]}>Available Seats</Text>
+                  <Text style={[styles.infoValue, { color: theme.colors.text }]}>{ride.availableSeats}/{ride.totalSeats}</Text>
+                </View>
               </View>
 
-              {ride.preferences.airConditioning && (
-                <View style={[styles.preferenceTag, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-                  <Wind size={16} color={theme.colors.primary} />
-                  <Text style={[styles.preferenceText, { color: theme.colors.text }]}>AC Available</Text>
+              <View style={styles.infoItem}>
+                <Car size={20} color={theme.colors.primary} />
+                <View style={styles.infoContent}>
+                  <Text style={[styles.infoLabel, { color: theme.colors.textSecondary }]}>Vehicle</Text>
+                  <Text style={[styles.infoValue, { color: theme.colors.text }]}>{ride.carModel}</Text>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.priceSection}>
+              <Text style={[styles.priceLabel, { color: theme.colors.textSecondary }]}>Price per seat</Text>
+              <Text style={[styles.price, { color: theme.colors.primary }]}>{formatPrice(ride.price)}</Text>
+            </View>
+          </View>
+
+          {/* Vehicle Details Card */}
+          <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Vehicle Information</Text>
+              {ride.isVehicleVerified && (
+                <View style={[styles.verifiedBadge, { backgroundColor: theme.colors.success + '15' }]}>
+                  <ShieldCheck size={16} color={theme.colors.success} style={{ marginRight: 4 }} />
+                  <Text style={[styles.verifiedText, { color: theme.colors.success }]}>Verified Vehicle</Text>
                 </View>
               )}
             </View>
-          </View>
-        )}
 
-        {/* Preference Match Section */}
-        {matchedItems.length > 0 && (
-          <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
-            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Matches Your Preferences</Text>
-            <View style={styles.preferenceMatchesContainer}>
-              {matchedItems.map((item, idx) => (
-                <View key={idx} style={styles.preferenceMatchRow}>
-                  <Text style={[styles.preferenceMatchCheck, { color: theme.colors.success }]}>✓</Text>
-                  <Text style={[styles.preferenceMatchText, { color: theme.colors.text }]}>{item}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        )}
+            <View style={styles.vehicleDetailContainer}>
+              <Image
+                source={{ uri: getVehicleImageUrl(ride.vehicleCategory) }}
+                style={styles.vehicleImage}
+                resizeMode="cover"
+              />
 
-        {/* Driver Card */}
-        {!isDriver && (
-          <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
-            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Driver</Text>
-            
-            <View style={styles.driverCard}>
-              <Image source={{ uri: ride.driverAvatar }} style={styles.driverAvatar} />
-              <View style={styles.driverInfo}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                  <Text style={[styles.driverName, { color: theme.colors.text }]}>{ride.driverName}</Text>
-                  {ride.isDriverVerified && (
-                    <View style={[styles.verifiedBadgeMini, { backgroundColor: theme.colors.primary + '15', borderColor: theme.colors.primary + '30' }]}>
-                      <ShieldCheck size={12} color={theme.colors.primary} />
-                      <Text style={[styles.verifiedTextMini, { color: theme.colors.primary }]}>Verified</Text>
-                    </View>
-                  )}
+              <View style={styles.vehicleInfoRow}>
+                <View style={styles.vehicleDetailItem}>
+                  <Text style={[styles.vehicleDetailLabel, { color: theme.colors.textSecondary }]}>Category</Text>
+                  <Text style={[styles.vehicleDetailValue, { color: theme.colors.text }]}>
+                    {getCategoryEmoji(ride.vehicleCategory)} {ride.vehicleCategory}
+                  </Text>
                 </View>
-                <View style={styles.ratingContainer}>
-                  <Star size={14} color={theme.colors.warning} fill={theme.colors.warning} />
-                  <Text style={[styles.rating, { color: theme.colors.textSecondary }]}>{ride.driverRating}</Text>
-                  <Text style={[styles.ratingCount, { color: theme.colors.textSecondary }]}>(25 reviews)</Text>
-                  <Text style={[styles.bulletDivider, { color: theme.colors.textSecondary }]}>•</Text>
-                  <Text style={[styles.tripsCount, { color: theme.colors.textSecondary }]}>48 trips</Text>
+                <View style={styles.vehicleDetailItem}>
+                  <Text style={[styles.vehicleDetailLabel, { color: theme.colors.textSecondary }]}>Model</Text>
+                  <Text style={[styles.vehicleDetailValue, { color: theme.colors.text }]}>{ride.carModel || 'Unknown'}</Text>
                 </View>
-                <Text style={[styles.phoneNumber, { color: theme.colors.textSecondary }]}>+1 (555) ***-**90</Text>
               </View>
-              {passengerConfirmedBooking && (
-                <View style={styles.contactButtons}>
-                  <TouchableOpacity 
-                    style={[styles.contactButton, { backgroundColor: theme.colors.secondary }]}
-                    onPress={handleCallDriver}
-                  >
-                    <Phone size={18} color="#FFFFFF" />
-                  </TouchableOpacity>
-                  <TouchableOpacity 
-                    style={[styles.contactButton, { backgroundColor: theme.colors.primary }]}
-                    onPress={handleChatDriver}
-                  >
-                    <MessageCircle size={18} color="#FFFFFF" />
-                  </TouchableOpacity>
+
+              <View style={styles.vehicleInfoRow}>
+                <View style={styles.vehicleDetailItem}>
+                  <Text style={[styles.vehicleDetailLabel, { color: theme.colors.textSecondary }]}>Color</Text>
+                  <Text style={[styles.vehicleDetailValue, { color: theme.colors.text }]}>{ride.carColor || 'Unknown'}</Text>
                 </View>
-              )}
+                <View style={styles.vehicleDetailItem}>
+                  <Text style={[styles.vehicleDetailLabel, { color: theme.colors.textSecondary }]}>Total Seats</Text>
+                  <Text style={[styles.vehicleDetailValue, { color: theme.colors.text }]}>{ride.totalSeats} Seats</Text>
+                </View>
+              </View>
+
+              <View style={[styles.vehiclePlateCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+                <Text style={[styles.plateLabel, { color: theme.colors.textSecondary }]}>LICENSE PLATE</Text>
+                <Text style={[styles.plateValue, { color: theme.colors.text }]}>
+                  {ride.carPlate ? ride.carPlate.toUpperCase() : 'NOT VERIFIED'}
+                </Text>
+              </View>
             </View>
           </View>
-        )}
 
-        {/* Passenger Bookings Section */}
-        {isDriver && (
+          {/* Vehicle Features (Layer 2) */}
           <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
-            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Passenger Bookings</Text>
-            
-            {isBookingsLoading ? (
-              <ActivityIndicator size="small" color={theme.colors.primary} />
-            ) : bookings.length === 0 ? (
-              <Text style={[styles.emptyBookingsText, { color: theme.colors.textSecondary }]}>
-                No bookings for this ride yet.
-              </Text>
-            ) : (
-              <View style={styles.bookingsListContainer}>
-                {bookings.map((item) => {
-                  const initials = item.passengerName
-                    ? item.passengerName.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)
-                    : 'P';
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Vehicle Features</Text>
+            {ride.features && ride.features.length > 0 ? (
+              <View style={styles.featuresListTagsRow}>
+                {ride.features.map((featureId) => {
+                  const label = FEATURE_LABELS[featureId] || featureId;
                   return (
-                    <View key={item.id} style={[styles.bookingItemCard, { borderColor: theme.colors.border, backgroundColor: theme.colors.surface }]}>
-                      {/* Booking Item Header */}
-                      <View style={styles.bookingItemHeader}>
-                        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) + '20' }]}>
-                          <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>
-                            {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
-                          </Text>
-                        </View>
-                        <Text style={[styles.bookingIdText, { color: theme.colors.textSecondary }]}>
-                          Booking #{item.id.slice(-6).toUpperCase()}
-                        </Text>
-                      </View>
-
-                      {/* Passenger Details Info */}
-                      <View style={styles.passengerDetailRow}>
-                        <View style={[styles.avatarCircle, { backgroundColor: theme.colors.primary + '15' }]}>
-                          <Text style={[styles.avatarText, { color: theme.colors.primary }]}>{initials}</Text>
-                        </View>
-                        
-                        <View style={styles.passengerInfoBlock}>
-                          <Text style={[styles.passengerName, { color: theme.colors.text }]}>
-                            {item.passengerName}
-                          </Text>
-                          <Text style={[styles.passengerSeats, { color: theme.colors.textSecondary }]}>
-                            {item.seats} Seat{item.seats > 1 ? 's' : ''} requested
-                          </Text>
-                          <Text style={[styles.bookingPayoutText, { color: theme.colors.textSecondary }]}>
-                            Payout: <Text style={{ fontWeight: 'bold', color: theme.colors.success }}>{formatPrice(item.totalPrice)}</Text>
-                          </Text>
-                        </View>
-
-                        {/* Quick Contact shortcuts */}
-                        {['confirmed', 'readyforboarding', 'boarded', 'inride', 'readyfordrop', 'completed'].includes((item.status || '').toLowerCase()) && (
-                          <View style={styles.quickContactContainer}>
-                            <TouchableOpacity 
-                              style={[styles.contactIconBtn, { borderColor: theme.colors.border }]}
-                              onPress={() => Linking.openURL(`tel:${item.passengerPhone}`).catch(() => Alert.alert('Error', 'Cannot dial number.'))}
-                            >
-                              <Phone size={14} color={theme.colors.text} />
-                            </TouchableOpacity>
-                            <TouchableOpacity 
-                              style={[styles.contactIconBtn, { borderColor: theme.colors.border }]}
-                              onPress={() => Linking.openURL(`sms:${item.passengerPhone}`).catch(() => Alert.alert('Error', 'Cannot send SMS.'))}
-                            >
-                              <MessageCircle size={14} color={theme.colors.text} />
-                            </TouchableOpacity>
-                          </View>
-                        )}
-                      </View>
-
-                      {/* Requested Locations */}
-                      {(() => {
-                        const { pickup, dropoff, notes } = parsePassengerLocations(item);
-                        return (
-                          <View style={[styles.bookingLocationsSection, { borderTopColor: theme.colors.border }]}>
-                            <View style={styles.bookingLocationRow}>
-                              <MapPin size={14} color={theme.colors.secondary} style={{ marginRight: 6 }} />
-                              <Text style={[styles.bookingLocationText, { color: theme.colors.textSecondary }]} numberOfLines={1}>
-                                From: <Text style={{ color: theme.colors.text, fontWeight: '500' }}>{pickup}</Text>
-                              </Text>
-                            </View>
-                            <View style={[styles.bookingLocationRow, { marginTop: 4 }]}>
-                              <MapPin size={14} color={theme.colors.error} style={{ marginRight: 6 }} />
-                              <Text style={[styles.bookingLocationText, { color: theme.colors.textSecondary }]} numberOfLines={1}>
-                                To: <Text style={{ color: theme.colors.text, fontWeight: '500' }}>{dropoff}</Text>
-                              </Text>
-                            </View>
-                            {notes ? (
-                              <View style={[styles.bookingNotesRow, { marginTop: 6, backgroundColor: theme.colors.background + '40', borderRadius: 8, padding: 8 }]}>
-                                <Text style={[styles.bookingNotesText, { color: theme.colors.textSecondary, fontSize: 12 }]} numberOfLines={2}>
-                                  Note: <Text style={{ fontStyle: 'italic', color: theme.colors.text }}>"{notes}"</Text>
-                                </Text>
-                              </View>
-                            ) : null}
-                          </View>
-                        );
-                      })()}
-
-                      {/* Actions for each booking */}
-                      {item.status === 'pending' && (
-                        <View style={styles.bookingCardActions}>
-                          <TouchableOpacity 
-                            style={[styles.actionBtnSuccess, { backgroundColor: theme.colors.success }]}
-                            onPress={() => handleAcceptBooking(item.id, item.passengerName)}
-                          >
-                            <CheckCircle size={16} color="#FFFFFF" />
-                            <Text style={styles.actionBtnText}>Accept Request</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity 
-                            style={[styles.actionBtnDanger, { backgroundColor: theme.colors.error }]}
-                            onPress={() => handleDeclineBooking(item.id, item.passengerName)}
-                          >
-                            <XCircle size={16} color="#FFFFFF" />
-                            <Text style={styles.actionBtnText}>Decline</Text>
-                          </TouchableOpacity>
-                        </View>
-                      )}
-
-                      {['confirmed', 'readyforboarding'].includes((item.status || '').toLowerCase()) && (
-                        <View style={styles.bookingCardActions}>
-                          <TouchableOpacity 
-                            style={[styles.actionBtnOutline, { borderColor: theme.colors.error }]}
-                            onPress={() => handleDeclineBooking(item.id, item.passengerName)}
-                          >
-                            <XCircle size={16} color={theme.colors.error} />
-                            <Text style={[styles.actionBtnOutlineText, { color: theme.colors.error }]}>Cancel Booking</Text>
-                          </TouchableOpacity>
-                        </View>
-                      )}
-
-                      {item.status === 'completed' && (
-                        <View style={styles.bookingCardActions}>
-                          <TouchableOpacity 
-                            style={[
-                              styles.actionBtnOutline, 
-                              { borderColor: item.hasReviewedPassenger ? theme.colors.border : theme.colors.primary }
-                            ]}
-                            onPress={() => {
-                              if (!item.hasReviewedPassenger) {
-                                setSelectedBookingForRating(item);
-                                setShowRatingModal(true);
-                              }
-                            }}
-                            disabled={item.hasReviewedPassenger}
-                          >
-                            <Star size={16} color={item.hasReviewedPassenger ? theme.colors.textSecondary : theme.colors.primary} />
-                            <Text style={[
-                              styles.actionBtnOutlineText, 
-                              { color: item.hasReviewedPassenger ? theme.colors.textSecondary : theme.colors.primary }
-                            ]}>
-                              {item.hasReviewedPassenger ? 'Passenger Rated' : 'Rate Passenger'}
-                            </Text>
-                          </TouchableOpacity>
-                        </View>
-                      )}
+                    <View key={featureId} style={[styles.featureBulletTag, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+                      <Text style={[styles.checkMark, { color: theme.colors.success }]}>✓</Text>
+                      <Text style={[styles.featureBulletTagText, { color: theme.colors.text }]}>{label}</Text>
                     </View>
                   );
                 })}
               </View>
+            ) : (
+              <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>
+                Standard vehicle setup with no additional features listed.
+              </Text>
             )}
           </View>
-        )}
 
-        {/* Action Buttons */}
-        <View style={styles.actionButtons}>
-          {isDriver ? (
-            <View style={{ gap: 12 }}>
-              {['ridestarted', 'arrivedatpickup', 'boarding', 'intransit', 'arrivedatdrop', 'dropoff'].includes((ride.status as string).toLowerCase()) ? (
-                <TouchableOpacity 
-                  style={[styles.bookButton, { backgroundColor: theme.colors.primary, flexDirection: 'row' }]}
-                  onPress={() => router.push(`/ride/command-center?id=${ride.id}`)}
-                >
-                  <Navigation size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
-                  <Text style={styles.bookButtonText}>Resume Ride in Command Center</Text>
-                </TouchableOpacity>
-              ) : ['published', 'scheduled'].includes((ride.status as string).toLowerCase()) ? (
-                <View style={{ gap: 12 }}>
-                  <TouchableOpacity 
-                    style={[styles.bookButton, { backgroundColor: theme.colors.primary, flexDirection: 'row' }]}
-                    onPress={() => router.push(`/ride/command-center?id=${ride.id}`)}
-                  >
-                    <Play size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
-                    <Text style={styles.bookButtonText}>Open Journey Command Center</Text>
-                  </TouchableOpacity>
+          {/* Safety Section */}
+          <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Safety & Trust Checklist</Text>
 
-                  <TouchableOpacity 
-                    style={[styles.bookButton, { backgroundColor: theme.colors.error, flexDirection: 'row' }]}
-                    onPress={handleCancelRide}
-                    disabled={isActionLoading}
-                  >
-                    <XCircle size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
-                    <Text style={styles.bookButtonText}>Cancel Ride</Text>
-                  </TouchableOpacity>
+            <View style={styles.safetyCheckList}>
+              <View style={styles.safetyCheckRow}>
+                <View style={[styles.safetyCheckIconCircle, { backgroundColor: ride.isDriverVerified ? theme.colors.success + '20' : theme.colors.warning + '20' }]}>
+                  {ride.isDriverVerified ? (
+                    <ShieldCheck size={16} color={theme.colors.success} />
+                  ) : (
+                    <XCircle size={16} color={theme.colors.warning} />
+                  )}
                 </View>
-              ) : (
-                <View style={[styles.passengerBanner, { backgroundColor: theme.colors.textSecondary + '15', borderColor: theme.colors.textSecondary }]}>
-                  <CheckCircle size={24} color={theme.colors.textSecondary} style={{ marginRight: 8 }} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.bannerTitle, { color: theme.colors.textSecondary }]}>
-                      Ride {ride.status.charAt(0).toUpperCase() + ride.status.slice(1)}
-                    </Text>
-                    <Text style={[styles.bannerText, { color: theme.colors.text }]}>
-                      This offered ride is {ride.status}.
-                    </Text>
-                  </View>
+                <Text style={[styles.safetyCheckText, { color: theme.colors.text }]}>
+                  {ride.isDriverVerified ? 'Verified Driver' : 'Driver Verification Pending'}
+                </Text>
+              </View>
+
+              <View style={styles.safetyCheckRow}>
+                <View style={[styles.safetyCheckIconCircle, { backgroundColor: ride.isVehicleVerified ? theme.colors.success + '20' : theme.colors.warning + '20' }]}>
+                  {ride.isVehicleVerified ? (
+                    <ShieldCheck size={16} color={theme.colors.success} />
+                  ) : (
+                    <XCircle size={16} color={theme.colors.warning} />
+                  )}
                 </View>
-              )}
+                <Text style={[styles.safetyCheckText, { color: theme.colors.text }]}>
+                  {ride.isVehicleVerified ? 'Verified Vehicle' : 'Vehicle Verification Pending'}
+                </Text>
+              </View>
+
+              <View style={styles.safetyCheckRow}>
+                <View style={[styles.safetyCheckIconCircle, { backgroundColor: theme.colors.success + '20' }]}>
+                  <ShieldCheck size={16} color={theme.colors.success} />
+                </View>
+                <Text style={[styles.safetyCheckText, { color: theme.colors.text }]}>
+                  SOS Button & Safety Alerts Enabled
+                </Text>
+              </View>
+
+              <View style={styles.safetyCheckRow}>
+                <View style={[styles.safetyCheckIconCircle, { backgroundColor: theme.colors.success + '20' }]}>
+                  <ShieldCheck size={16} color={theme.colors.success} />
+                </View>
+                <Text style={[styles.safetyCheckText, { color: theme.colors.text }]}>
+                  Real-Time Journey Share Available
+                </Text>
+              </View>
             </View>
-          ) : (
-            <View style={{ gap: 12 }}>
-              {['published', 'scheduled'].includes((ride.status as string).toLowerCase()) && (
-                <TouchableOpacity 
-                  style={[styles.bookButton, { backgroundColor: theme.colors.primary }]}
-                  onPress={handleBookRide}
-                >
-                  <Text style={styles.bookButtonText}>Book This Ride</Text>
-                </TouchableOpacity>
-              )}
+          </View>
 
-              {['confirmed', 'readyforboarding'].includes((ride.status as string).toLowerCase()) && (
-                <View style={[styles.passengerBanner, { backgroundColor: theme.colors.success + '15', borderColor: theme.colors.success }]}>
-                  <ShieldCheck size={24} color={theme.colors.success} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.bannerTitle, { color: theme.colors.success }]}>Ride Confirmed</Text>
-                    <Text style={[styles.bannerText, { color: theme.colors.text }]}>Your driver {ride.driverName} will begin the journey shortly.</Text>
-                  </View>
+          {/* Ride Preferences Section */}
+          {ride && ride.preferences && (
+            <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+              <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Ride Preferences</Text>
+              <View style={styles.preferencesContainer}>
+                <View style={[styles.preferenceTag, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+                  <MessageCircle size={16} color={theme.colors.primary} />
+                  <Text style={[styles.preferenceText, { color: theme.colors.text }]}>
+                    Chat: {ride.preferences.conversationLevel.charAt(0).toUpperCase() + ride.preferences.conversationLevel.slice(1)}
+                  </Text>
                 </View>
-              )}
 
-              {((ride.status as string).toLowerCase() === 'arrivedatpickup') && (
-                <View style={[styles.passengerBanner, { backgroundColor: theme.colors.primary + '15', borderColor: theme.colors.primary }]}>
-                  <MapPin size={24} color={theme.colors.primary} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.bannerTitle, { color: theme.colors.primary }]}>Driver Has Arrived!</Text>
-                    <Text style={[styles.bannerText, { color: theme.colors.text }]}>{ride.driverName} has arrived at the pickup location. Please head to the vehicle.</Text>
-                  </View>
+                <View style={[styles.preferenceTag, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+                  <Music size={16} color={theme.colors.secondary} />
+                  <Text style={[styles.preferenceText, { color: theme.colors.text }]}>
+                    {ride.preferences.musicAllowed ? 'Music Allowed' : 'No Music'}
+                  </Text>
                 </View>
-              )}
 
-              {((ride.status as string).toLowerCase() === 'boarding') && (
-                <View style={[styles.passengerBanner, { backgroundColor: theme.colors.primary + '10', borderColor: theme.colors.primary }]}>
-                  <Users size={24} color={theme.colors.primary} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.bannerTitle, { color: theme.colors.primary }]}>Boarding Active</Text>
-                    <Text style={[styles.bannerText, { color: theme.colors.text }]}>Passenger boarding is currently active. Please proceed with check-in.</Text>
-                  </View>
+                <View style={[styles.preferenceTag, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+                  <Cigarette size={16} color={theme.colors.error} />
+                  <Text style={[styles.preferenceText, { color: theme.colors.text }]}>
+                    {ride.preferences.nonSmoking ? 'Non-Smoking' : 'Smoking Allowed'}
+                  </Text>
                 </View>
-              )}
 
-              {['ridestarted', 'intransit'].includes((ride.status as string).toLowerCase()) && (
-                <View style={{ gap: 12 }}>
-                  <View style={[styles.passengerBanner, { backgroundColor: theme.colors.secondary + '15', borderColor: theme.colors.secondary }]}>
-                    <Car size={24} color={theme.colors.secondary} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.bannerTitle, { color: theme.colors.secondary }]}>Trip En Route</Text>
-                      <Text style={[styles.bannerText, { color: theme.colors.text }]}>You are on your way! Real-time location tracking and safety monitoring are active.</Text>
-                    </View>
+                <View style={[styles.preferenceTag, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+                  <Heart size={16} color={theme.colors.accent} />
+                  <Text style={[styles.preferenceText, { color: theme.colors.text }]}>
+                    {ride.preferences.petsAllowed ? 'Pet Friendly' : 'No Pets'}
+                  </Text>
+                </View>
+
+                {ride.preferences.airConditioning && (
+                  <View style={[styles.preferenceTag, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+                    <Wind size={16} color={theme.colors.primary} />
+                    <Text style={[styles.preferenceText, { color: theme.colors.text }]}>AC Available</Text>
                   </View>
-                  
-                  {/* Floating emergency SOS trigger card */}
-                  <View style={[styles.sosCard, { backgroundColor: theme.colors.error + '10', borderColor: theme.colors.error }]}>
-                    <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
-                      <ShieldCheck size={22} color={theme.colors.error} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.sosCardTitle, { color: theme.colors.error }]}>Safety SOS System Active</Text>
-                        <Text style={[styles.sosCardText, { color: theme.colors.text }]}>Need assistance? Trigger local SOS or alert your primary emergency contacts.</Text>
+                )}
+              </View>
+            </View>
+          )}
+
+          {/* Preference Match Section */}
+          {matchedItems.length > 0 && (
+            <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+              <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Matches Your Preferences</Text>
+              <View style={styles.preferenceMatchesContainer}>
+                {matchedItems.map((item, idx) => (
+                  <View key={idx} style={styles.preferenceMatchRow}>
+                    <Text style={[styles.preferenceMatchCheck, { color: theme.colors.success }]}>✓</Text>
+                    <Text style={[styles.preferenceMatchText, { color: theme.colors.text }]}>{item}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* Driver Card */}
+          {!isDriver && (
+            <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+              <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Driver</Text>
+
+              <View style={styles.driverCard}>
+                <Image source={{ uri: ride.driverAvatar }} style={styles.driverAvatar} />
+                <View style={styles.driverInfo}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <Text style={[styles.driverName, { color: theme.colors.text }]}>{ride.driverName}</Text>
+                    {ride.isDriverVerified && (
+                      <View style={[styles.verifiedBadgeMini, { backgroundColor: theme.colors.primary + '15', borderColor: theme.colors.primary + '30' }]}>
+                        <ShieldCheck size={12} color={theme.colors.primary} />
+                        <Text style={[styles.verifiedTextMini, { color: theme.colors.primary }]}>Verified</Text>
                       </View>
-                    </View>
-                    <TouchableOpacity 
-                      style={[styles.sosButton, { backgroundColor: theme.colors.error }]}
-                      onPress={() => Alert.alert('SOS Triggered', 'Emergency services and your emergency contacts have been notified. Stay calm.')}
+                    )}
+                  </View>
+                  <View style={styles.ratingContainer}>
+                    <Star size={14} color={theme.colors.warning} fill={theme.colors.warning} />
+                    <Text style={[styles.rating, { color: theme.colors.textSecondary }]}>{ride.driverRating}</Text>
+                    <Text style={[styles.ratingCount, { color: theme.colors.textSecondary }]}>(25 reviews)</Text>
+                    <Text style={[styles.bulletDivider, { color: theme.colors.textSecondary }]}>•</Text>
+                    <Text style={[styles.tripsCount, { color: theme.colors.textSecondary }]}>48 trips</Text>
+                  </View>
+                  <Text style={[styles.phoneNumber, { color: theme.colors.textSecondary }]}>+1 (555) ***-**90</Text>
+                </View>
+                {passengerConfirmedBooking && (
+                  <View style={styles.contactButtons}>
+                    <TouchableOpacity
+                      style={[styles.contactButton, { backgroundColor: theme.colors.secondary }]}
+                      onPress={handleCallDriver}
                     >
-                      <Text style={styles.sosButtonText}>Emergency SOS Trigger</Text>
+                      <Phone size={18} color="#FFFFFF" />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.contactButton, { backgroundColor: theme.colors.primary }]}
+                      onPress={handleChatDriver}
+                    >
+                      <MessageCircle size={18} color="#FFFFFF" />
                     </TouchableOpacity>
                   </View>
-                </View>
-              )}
+                )}
+              </View>
+            </View>
+          )}
 
-              {['arrivedatdrop', 'dropoff'].includes((ride.status as string).toLowerCase()) && (
-                <View style={[styles.passengerBanner, { backgroundColor: theme.colors.success + '15', borderColor: theme.colors.success }]}>
-                  <CheckCircle size={24} color={theme.colors.success} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.bannerTitle, { color: theme.colors.success }]}>Arrived at Destination</Text>
-                    <Text style={[styles.bannerText, { color: theme.colors.text }]}>Your drop-off is complete. Remember to check for all your personal items!</Text>
-                  </View>
-                </View>
-              )}
+          {/* Passenger Bookings Section */}
+          {isDriver && (
+            <View style={[styles.section, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+              <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Passenger Bookings</Text>
 
-              {ride.status === 'completed' && (
-                <View style={[styles.passengerBanner, { backgroundColor: theme.colors.textSecondary + '15', borderColor: theme.colors.textSecondary }]}>
-                  <CheckCircle size={24} color={theme.colors.textSecondary} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.bannerTitle, { color: theme.colors.textSecondary }]}>Ride Completed</Text>
-                    <Text style={[styles.bannerText, { color: theme.colors.text }]}>Thank you for riding with TravelBuddy! Rate your experience below.</Text>
-                    {!hasReviewedDriver && passengerConfirmedBooking && (
-                      <TouchableOpacity
-                        style={[styles.rateDriverButton, { backgroundColor: theme.colors.primary, marginTop: 8 }]}
-                        onPress={() => setShowRatingModal(true)}
-                      >
-                        <Text style={styles.rateDriverButtonText}>Rate This Ride</Text>
-                      </TouchableOpacity>
-                    )}
-                    {hasReviewedDriver && (
-                      <Text style={{ color: theme.colors.success, fontWeight: 'bold', marginTop: 8 }}>✓ Review Submitted</Text>
-                    )}
-                  </View>
+              {isBookingsLoading ? (
+                <ActivityIndicator size="small" color={theme.colors.primary} />
+              ) : bookings.length === 0 ? (
+                <Text style={[styles.emptyBookingsText, { color: theme.colors.textSecondary }]}>
+                  No bookings for this ride yet.
+                </Text>
+              ) : (
+                <View style={styles.bookingsListContainer}>
+                  {bookings.map((item) => {
+                    const initials = item.passengerName
+                      ? item.passengerName.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)
+                      : 'P';
+                    return (
+                      <View key={item.id} style={[styles.bookingItemCard, { borderColor: theme.colors.border, backgroundColor: theme.colors.surface }]}>
+                        {/* Booking Item Header */}
+                        <View style={styles.bookingItemHeader}>
+                          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) + '20' }]}>
+                            <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>
+                              {getBookingDisplayStatus(item.status, ride.status)}
+                            </Text>
+                          </View>
+                          <Text style={[styles.bookingIdText, { color: theme.colors.textSecondary }]}>
+                            Booking #{item.id.slice(-6).toUpperCase()}
+                          </Text>
+                        </View>
+
+                        {/* Passenger Details Info */}
+                        <View style={styles.passengerDetailRow}>
+                          <View style={[styles.avatarCircle, { backgroundColor: theme.colors.primary + '15' }]}>
+                            <Text style={[styles.avatarText, { color: theme.colors.primary }]}>{initials}</Text>
+                          </View>
+
+                          <View style={styles.passengerInfoBlock}>
+                            <Text style={[styles.passengerName, { color: theme.colors.text }]}>
+                              {item.passengerName}
+                            </Text>
+                            <Text style={[styles.passengerSeats, { color: theme.colors.textSecondary }]}>
+                              {item.seats} Seat{item.seats > 1 ? 's' : ''} requested
+                            </Text>
+                            <Text style={[styles.bookingPayoutText, { color: theme.colors.textSecondary }]}>
+                              Payout: <Text style={{ fontWeight: 'bold', color: theme.colors.success }}>{formatPrice(item.totalPrice)}</Text>
+                            </Text>
+                          </View>
+
+                          {/* Quick Contact shortcuts */}
+                          {['confirmed', 'readyforboarding', 'boarded', 'inride', 'readyfordrop', 'completed'].includes((item.status || '').toLowerCase()) && (
+                            <View style={styles.quickContactContainer}>
+                              <TouchableOpacity
+                                style={[styles.contactIconBtn, { borderColor: theme.colors.border }]}
+                                onPress={() => Linking.openURL(`tel:${item.passengerPhone}`).catch(() => Alert.alert('Error', 'Cannot dial number.'))}
+                              >
+                                <Phone size={14} color={theme.colors.text} />
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                style={[styles.contactIconBtn, { borderColor: theme.colors.border }]}
+                                onPress={() => Linking.openURL(`sms:${item.passengerPhone}`).catch(() => Alert.alert('Error', 'Cannot send SMS.'))}
+                              >
+                                <MessageCircle size={14} color={theme.colors.text} />
+                              </TouchableOpacity>
+                            </View>
+                          )}
+                        </View>
+
+                        {/* Requested Locations */}
+                        {(() => {
+                          const { pickup, dropoff, notes } = parsePassengerLocations(item);
+                          return (
+                            <View style={[styles.bookingLocationsSection, { borderTopColor: theme.colors.border }]}>
+                              <View style={styles.bookingLocationRow}>
+                                <MapPin size={14} color={theme.colors.secondary} style={{ marginRight: 6 }} />
+                                <Text style={[styles.bookingLocationText, { color: theme.colors.textSecondary }]} numberOfLines={1}>
+                                  From: <Text style={{ color: theme.colors.text, fontWeight: '500' }}>{pickup}</Text>
+                                </Text>
+                              </View>
+                              <View style={[styles.bookingLocationRow, { marginTop: 4 }]}>
+                                <MapPin size={14} color={theme.colors.error} style={{ marginRight: 6 }} />
+                                <Text style={[styles.bookingLocationText, { color: theme.colors.textSecondary }]} numberOfLines={1}>
+                                  To: <Text style={{ color: theme.colors.text, fontWeight: '500' }}>{dropoff}</Text>
+                                </Text>
+                              </View>
+                              {notes ? (
+                                <View style={[styles.bookingNotesRow, { marginTop: 6, backgroundColor: theme.colors.background + '40', borderRadius: 8, padding: 8 }]}>
+                                  <Text style={[styles.bookingNotesText, { color: theme.colors.textSecondary, fontSize: 12 }]} numberOfLines={2}>
+                                    Note: <Text style={{ fontStyle: 'italic', color: theme.colors.text }}>"{notes}"</Text>
+                                  </Text>
+                                </View>
+                              ) : null}
+                            </View>
+                          );
+                        })()}
+
+                        {/* Actions for each booking */}
+                        {item.status === 'pending' && (
+                          <View style={styles.bookingCardActions}>
+                            <TouchableOpacity
+                              style={[styles.actionBtnSuccess, { backgroundColor: theme.colors.success }]}
+                              onPress={() => handleAcceptBooking(item.id, item.passengerName)}
+                            >
+                              <CheckCircle size={16} color="#FFFFFF" />
+                              <Text style={styles.actionBtnText}>Accept Request</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[styles.actionBtnDanger, { backgroundColor: theme.colors.error }]}
+                              onPress={() => handleDeclineBooking(item.id, item.passengerName)}
+                            >
+                              <XCircle size={16} color="#FFFFFF" />
+                              <Text style={styles.actionBtnText}>Decline</Text>
+                            </TouchableOpacity>
+                          </View>
+                        )}
+
+                        {['confirmed', 'readyforboarding'].includes((item.status || '').toLowerCase()) && (
+                          <View style={styles.bookingCardActions}>
+                            <TouchableOpacity
+                              style={[styles.actionBtnOutline, { borderColor: theme.colors.error }]}
+                              onPress={() => handleDeclineBooking(item.id, item.passengerName)}
+                            >
+                              <XCircle size={16} color={theme.colors.error} />
+                              <Text style={[styles.actionBtnOutlineText, { color: theme.colors.error }]}>Cancel Booking</Text>
+                            </TouchableOpacity>
+                          </View>
+                        )}
+
+                        {item.status === 'completed' && (
+                          <View style={styles.bookingCardActions}>
+                            <TouchableOpacity
+                              style={[
+                                styles.actionBtnOutline,
+                                { borderColor: item.hasReviewedPassenger ? theme.colors.border : theme.colors.primary }
+                              ]}
+                              onPress={() => {
+                                if (!item.hasReviewedPassenger) {
+                                  setSelectedBookingForRating(item);
+                                  setShowRatingModal(true);
+                                }
+                              }}
+                              disabled={item.hasReviewedPassenger}
+                            >
+                              <Star size={16} color={item.hasReviewedPassenger ? theme.colors.textSecondary : theme.colors.primary} />
+                              <Text style={[
+                                styles.actionBtnOutlineText,
+                                { color: item.hasReviewedPassenger ? theme.colors.textSecondary : theme.colors.primary }
+                              ]}>
+                                {item.hasReviewedPassenger ? 'Passenger Rated' : 'Rate Passenger'}
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
+                        )}
+                      </View>
+                    );
+                  })}
                 </View>
               )}
             </View>
           )}
+
+          {/* Driver Action Buttons — state-driven per lifecycle spec */}
+          <View style={styles.actionButtons}>
+            {isDriver ? (
+              <View style={{ gap: 12 }}>
+                {/* Published / Scheduled state CTA rendering */}
+                {(() => {
+                  const statusLower = (ride.status as string).toLowerCase();
+                  console.log(ride.status);
+
+                  const hasConfirmedBookings = bookings.some(b =>
+                    [BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.READY_FOR_BOARDING, BOOKING_STATUS.BOARDED].includes((b.status || '').toLowerCase() as any)
+                  );
+
+                  // Case A: Published and no confirmed bookings yet -> Only Cancel Ride
+                  if (statusLower === RIDE_STATUS.PUBLISHED && !hasConfirmedBookings) {
+                    return (
+                      <View style={{ gap: 12 }}>
+                        <View style={[styles.passengerBanner, { backgroundColor: theme.colors.primary + '15', borderColor: theme.colors.primary }]}>
+                          <Navigation size={24} color={theme.colors.primary} style={{ marginRight: 8 }} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.bannerTitle, { color: theme.colors.primary }]}>Ride Published</Text>
+                            <Text style={[styles.bannerText, { color: theme.colors.text }]}>Your ride is live and visible to passengers. Accept bookings to start your journey.</Text>
+                          </View>
+                        </View>
+                        <TouchableOpacity
+                          style={[styles.bookButton, { backgroundColor: theme.colors.error, flexDirection: 'row' }]}
+                          onPress={handleCancelRide}
+                          disabled={isActionLoading}
+                        >
+                          <XCircle size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+                          <Text style={styles.bookButtonText}>Cancel Ride</Text>
+                        </TouchableOpacity>
+                      </View>
+                    );
+                  }
+
+                  // Case B: Scheduled, or Published with confirmed bookings -> Start Journey + Cancel Ride
+                  if (statusLower === RIDE_STATUS.SCHEDULED || (statusLower === RIDE_STATUS.PUBLISHED || statusLower === RIDE_STATUS.JOURNEY_STARTED && hasConfirmedBookings)) {
+                    return (
+                      <View style={{ gap: 12 }}>
+                        <TouchableOpacity
+                          style={[styles.bookButton, { backgroundColor: theme.colors.primary, flexDirection: 'row' }]}
+                          onPress={handleStartJourney}
+                          disabled={isActionLoading}
+                        >
+                          <Play size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+                          <Text style={styles.bookButtonText}>Start Journey</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.bookButton, { backgroundColor: theme.colors.error, flexDirection: 'row' }]}
+                          onPress={handleCancelRide}
+                          disabled={isActionLoading}
+                        >
+                          <XCircle size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+                          <Text style={styles.bookButtonText}>Cancel Ride</Text>
+                        </TouchableOpacity>
+                      </View>
+                    );
+                  }
+
+                  return null;
+                })()}
+
+                {/* Active ride states: Resume in Command Center (per spec §18) */}
+                {isRideActive((ride.status as string).toLowerCase()) && (
+                  <TouchableOpacity
+                    style={[styles.bookButton, { backgroundColor: theme.colors.primary, flexDirection: 'row' }]}
+                    onPress={() => router.push(`/ride/command-center?id=${ride.id}`)}
+                  >
+                    <Navigation size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+                    <Text style={styles.bookButtonText}>Resume Ride in Command Center</Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* Terminal states: Read-only banner */}
+                {isRideTerminal((ride.status as string).toLowerCase()) && (
+                  <View style={[styles.passengerBanner, { backgroundColor: theme.colors.textSecondary + '15', borderColor: theme.colors.textSecondary }]}>
+                    <CheckCircle size={24} color={theme.colors.textSecondary} style={{ marginRight: 8 }} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.bannerTitle, { color: theme.colors.textSecondary }]}>
+                        Ride {ride.status.charAt(0).toUpperCase() + ride.status.slice(1)}
+                      </Text>
+                      <Text style={[styles.bannerText, { color: theme.colors.text }]}>
+                        This ride has ended.
+                      </Text>
+                    </View>
+                  </View>
+                )}
+              </View>
+            ) : (
+              <View style={{ gap: 12 }}>
+                {/* Passenger: Book ride (Published or Scheduled) */}
+                {isRidePreStart((ride.status as string).toLowerCase()) && (
+                  <TouchableOpacity
+                    style={[styles.bookButton, { backgroundColor: theme.colors.primary }]}
+                    onPress={handleBookRide}
+                  >
+                    <Text style={styles.bookButtonText}>Book This Ride</Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* Passenger: Confirmed — driver will start soon */}
+                {[BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.READY_FOR_BOARDING].includes(
+                  (passengerConfirmedBooking?.status || '').toLowerCase() as any
+                ) && [RIDE_STATUS.PUBLISHED, RIDE_STATUS.SCHEDULED].includes(
+                  (ride.status as string).toLowerCase() as any
+                ) && (
+                    <View style={[styles.passengerBanner, { backgroundColor: theme.colors.success + '15', borderColor: theme.colors.success }]}>
+                      <ShieldCheck size={24} color={theme.colors.success} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.bannerTitle, { color: theme.colors.success }]}>Ride Confirmed</Text>
+                        <Text style={[styles.bannerText, { color: theme.colors.text }]}>Your driver {ride.driverName} will begin the journey shortly.</Text>
+                      </View>
+                    </View>
+                  )}
+
+                {((ride.status as string).toLowerCase() === RIDE_STATUS.ARRIVED_AT_PICKUP) && (
+                  <View style={[styles.passengerBanner, { backgroundColor: theme.colors.primary + '15', borderColor: theme.colors.primary }]}>
+                    <MapPin size={24} color={theme.colors.primary} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.bannerTitle, { color: theme.colors.primary }]}>Driver Has Arrived!</Text>
+                      <Text style={[styles.bannerText, { color: theme.colors.text }]}>{ride.driverName} has arrived at the pickup location. Please head to the vehicle.</Text>
+                    </View>
+                  </View>
+                )}
+
+                {((ride.status as string).toLowerCase() === RIDE_STATUS.BOARDING) && (
+                  <View style={[styles.passengerBanner, { backgroundColor: theme.colors.primary + '10', borderColor: theme.colors.primary }]}>
+                    <Users size={24} color={theme.colors.primary} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.bannerTitle, { color: theme.colors.primary }]}>Boarding Active</Text>
+                      <Text style={[styles.bannerText, { color: theme.colors.text }]}>Passenger boarding is currently active. Please proceed with check-in.</Text>
+                    </View>
+                  </View>
+                )}
+
+                {/* Passenger: JourneyStarted — driver en-route to pickup */}
+                {(ride.status as string).toLowerCase() === RIDE_STATUS.JOURNEY_STARTED && (
+                  <View style={[styles.passengerBanner, { backgroundColor: theme.colors.primary + '15', borderColor: theme.colors.primary }]}>
+                    <Navigation size={24} color={theme.colors.primary} style={{ marginRight: 8 }} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.bannerTitle, { color: theme.colors.primary }]}>Driver En Route</Text>
+                      <Text style={[styles.bannerText, { color: theme.colors.text }]}>Your driver {ride.driverName} has started the journey and is heading to the pickup location.</Text>
+                    </View>
+                  </View>
+                )}
+
+                {/* Passenger: InTransit — ride in progress */}
+                {(ride.status as string).toLowerCase() === RIDE_STATUS.IN_TRANSIT && (
+                  <View style={{ gap: 12 }}>
+                    <View style={[styles.passengerBanner, { backgroundColor: theme.colors.secondary + '15', borderColor: theme.colors.secondary }]}>
+                      <Car size={24} color={theme.colors.secondary} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.bannerTitle, { color: theme.colors.secondary }]}>Trip In Progress</Text>
+                        <Text style={[styles.bannerText, { color: theme.colors.text }]}>You are on your way! Real-time location tracking and safety monitoring are active.</Text>
+                      </View>
+                    </View>
+                    {/* Floating emergency SOS trigger card */}
+                    <View style={[styles.sosCard, { backgroundColor: theme.colors.error + '10', borderColor: theme.colors.error }]}>
+                      <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+                        <ShieldCheck size={22} color={theme.colors.error} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.sosCardTitle, { color: theme.colors.error }]}>Safety SOS System Active</Text>
+                          <Text style={[styles.sosCardText, { color: theme.colors.text }]}>Need assistance? Trigger local SOS or alert your primary emergency contacts.</Text>
+                        </View>
+                      </View>
+                      <TouchableOpacity
+                        style={[styles.sosButton, { backgroundColor: theme.colors.error }]}
+                        onPress={() => Alert.alert('SOS Triggered', 'Emergency services and your emergency contacts have been notified. Stay calm.')}
+                      >
+                        <Text style={styles.sosButtonText}>Emergency SOS Trigger</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+
+                {[RIDE_STATUS.ARRIVED_AT_DESTINATION, RIDE_STATUS.DROP_OFF].includes((ride.status as string).toLowerCase() as any) && (
+                  <View style={[styles.passengerBanner, { backgroundColor: theme.colors.success + '15', borderColor: theme.colors.success }]}>
+                    <CheckCircle size={24} color={theme.colors.success} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.bannerTitle, { color: theme.colors.success }]}>Arrived at Destination</Text>
+                      <Text style={[styles.bannerText, { color: theme.colors.text }]}>Your drop-off is complete. Remember to check for all your personal items!</Text>
+                    </View>
+                  </View>
+                )}
+
+                {ride.status === RIDE_STATUS.COMPLETED && (
+                  <View style={[styles.passengerBanner, { backgroundColor: theme.colors.textSecondary + '15', borderColor: theme.colors.textSecondary }]}>
+                    <CheckCircle size={24} color={theme.colors.textSecondary} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.bannerTitle, { color: theme.colors.textSecondary }]}>Ride Completed</Text>
+                      <Text style={[styles.bannerText, { color: theme.colors.text }]}>Thank you for riding with TravelBuddy! Rate your experience below.</Text>
+                      {!hasReviewedDriver && passengerConfirmedBooking && (
+                        <TouchableOpacity
+                          style={[styles.rateDriverButton, { backgroundColor: theme.colors.primary, marginTop: 8 }]}
+                          onPress={() => setShowRatingModal(true)}
+                        >
+                          <Text style={styles.rateDriverButtonText}>Rate This Ride</Text>
+                        </TouchableOpacity>
+                      )}
+                      {hasReviewedDriver && (
+                        <Text style={{ color: theme.colors.success, fontWeight: 'bold', marginTop: 8 }}>✓ Review Submitted</Text>
+                      )}
+                    </View>
+                  </View>
+                )}
+              </View>
+            )}
+          </View>
         </View>
-      </View>
-    </ScrollView>
+      </ScrollView>
 
       {selectedBookingForRating && (
         <RatingModal

@@ -141,4 +141,9 @@ export const rideService = {
   async completeStop(id: string, stopId: string) {
     return api.post<boolean>(`/rides/${id}/stops/${stopId}/complete`, {});
   },
+
+  async overrideTransition(id: string, targetStatus: number, reason: string) {
+    const encodedReason = encodeURIComponent(reason);
+    return api.post<void>(`/rides/${id}/override?targetStatus=${targetStatus}&reason=${encodedReason}`, {});
+  },
 };

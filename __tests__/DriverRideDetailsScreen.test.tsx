@@ -247,24 +247,23 @@ describe('DriverRideDetailsScreen', () => {
     alertSpy.mockRestore();
   });
 
-  it('renders CTA to open the Journey Command Center', async () => {
+  it('renders Cancel Ride CTA for a published ride', async () => {
     const { getByText } = render(<RideDetailsScreen />);
 
     await waitFor(() => {
-      expect(getByText('Open Journey Command Center')).toBeTruthy();
+      expect(getByText('Cancel Ride')).toBeTruthy();
     });
 
-    // Tap CTA
-    fireEvent.press(getByText('Open Journey Command Center'));
-
-    // Verify it navigates to command center
-    expect(mockPush).toHaveBeenCalledWith('/ride/command-center?id=r1');
+    // Should NOT show Start Journey or command center CTA for a published ride
+    // (per lifecycle spec §18: published state only shows Cancel Ride)
+    expect(() => getByText('Start Journey')).toThrow();
+    expect(() => getByText('Resume Ride in Command Center')).toThrow();
   });
 
   it('renders CTA to resume the ride if ride status is already started', async () => {
     mockGetRideById.mockResolvedValue({
       ...mockRide,
-      status: 'ridestarted',
+      status: 'journeystarted',
     });
 
     const { getByText } = render(<RideDetailsScreen />);
@@ -279,4 +278,40 @@ describe('DriverRideDetailsScreen', () => {
     // Verify it navigates to command center
     expect(mockPush).toHaveBeenCalledWith('/ride/command-center?id=r1');
   });
+
+  it('renders Start Journey and Cancel Ride for a scheduled ride with a confirmed booking', async () => {
+    mockGetRideById.mockResolvedValue({
+      ...mockRide,
+      status: 'scheduled',
+    });
+    // Add a confirmed booking so starting ride is permitted
+    const confirmedBookings = [
+      {
+        id: 'b1',
+        rideId: 'r1',
+        userId: 'p1',
+        passengerName: 'Bob Smith',
+        passengerPhone: '+1234567890',
+        seats: 1,
+        totalPrice: 25,
+        status: 'confirmed',
+      }
+    ];
+    (bookingService.getRideBookings as jest.Mock).mockResolvedValue(confirmedBookings);
+
+    const { getByText } = render(<RideDetailsScreen />);
+
+    await waitFor(() => {
+      expect(getByText('Start Journey')).toBeTruthy();
+      expect(getByText('Cancel Ride')).toBeTruthy();
+    });
+
+    // Press Start Journey
+    fireEvent.press(getByText('Start Journey'));
+
+    await waitFor(() => {
+      expect(mockPush).toHaveBeenCalledWith('/ride/command-center?id=r1');
+    });
+  });
 });
+

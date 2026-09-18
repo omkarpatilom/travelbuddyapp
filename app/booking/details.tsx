@@ -42,6 +42,7 @@ export default function BookingDetailsScreen() {
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [booking, setBooking] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isActionLoading, setIsActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [qrLoadError, setQrLoadError] = useState(false);
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
@@ -104,16 +105,21 @@ export default function BookingDetailsScreen() {
       [
         { text: 'No', style: 'cancel' },
         { 
-          text: 'Yes, Cancel', 
+          text: 'Yes, Cancel',
           style: 'destructive',
           onPress: async () => {
-            const success = await cancelBooking(booking.id);
-            if (success) {
-              Alert.alert('Success', 'Your booking has been cancelled', [
-                { text: 'OK', onPress: () => router.back() }
-              ]);
-            } else {
-              Alert.alert('Error', 'Failed to cancel booking. Please try again.');
+            setIsActionLoading(true);
+            try {
+              const success = await cancelBooking(booking.id);
+              if (success) {
+                Alert.alert('Success', 'Your booking has been cancelled', [
+                  { text: 'OK', onPress: () => router.back() }
+                ]);
+              } else {
+                Alert.alert('Error', 'Failed to cancel booking. Please try again.');
+              }
+            } finally {
+              setIsActionLoading(false);
             }
           }
         },
@@ -136,7 +142,7 @@ export default function BookingDetailsScreen() {
         {
           text: 'Confirm',
           onPress: async () => {
-            setIsLoading(true);
+            setIsActionLoading(true);
             try {
               const success = await confirmBooking(booking.id);
               if (success) {
@@ -150,7 +156,7 @@ export default function BookingDetailsScreen() {
               console.error('Failed to confirm booking:', e);
               Alert.alert('Error', e.message || 'Failed to confirm booking.');
             } finally {
-              setIsLoading(false);
+              setIsActionLoading(false);
             }
           }
         }
@@ -752,33 +758,54 @@ export default function BookingDetailsScreen() {
           <View style={styles.actionButtons}>
             {booking.status === 'pending' && (
               <View style={styles.pendingActionsContainer}>
-                <TouchableOpacity 
-                  style={[styles.confirmButton, { backgroundColor: theme.colors.success }]}
+                <TouchableOpacity
+                  style={[styles.confirmButton, { backgroundColor: theme.colors.success, opacity: isActionLoading ? 0.6 : 1 }]}
                   onPress={handleConfirmBooking}
+                  disabled={isActionLoading}
                 >
-                  <CheckCircle size={20} color="#FFFFFF" />
-                  <Text style={styles.confirmButtonText}>
-                    {isDriver ? 'Accept & Confirm Booking' : 'Confirm Booking (Demo)'}
-                  </Text>
+                  {isActionLoading ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <CheckCircle size={20} color="#FFFFFF" />
+                      <Text style={styles.confirmButtonText}>
+                        {isDriver ? 'Accept & Confirm Booking' : 'Confirm Booking (Demo)'}
+                      </Text>
+                    </>
+                  )}
                 </TouchableOpacity>
-                
-                <TouchableOpacity 
-                  style={[styles.cancelButton, { backgroundColor: theme.colors.error }]}
+
+                <TouchableOpacity
+                  style={[styles.cancelButton, { backgroundColor: theme.colors.error, opacity: isActionLoading ? 0.6 : 1 }]}
                   onPress={handleCancelBooking}
+                  disabled={isActionLoading}
                 >
-                  <X size={20} color="#FFFFFF" />
-                  <Text style={styles.cancelButtonText}>Cancel Booking</Text>
+                  {isActionLoading ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <X size={20} color="#FFFFFF" />
+                      <Text style={styles.cancelButtonText}>Cancel Booking</Text>
+                    </>
+                  )}
                 </TouchableOpacity>
               </View>
             )}
 
             {booking.status === 'confirmed' && (
-              <TouchableOpacity 
-                style={[styles.cancelButton, { backgroundColor: theme.colors.error }]}
+              <TouchableOpacity
+                style={[styles.cancelButton, { backgroundColor: theme.colors.error, opacity: isActionLoading ? 0.6 : 1 }]}
                 onPress={handleCancelBooking}
+                disabled={isActionLoading}
               >
-                <X size={20} color="#FFFFFF" />
-                <Text style={styles.cancelButtonText}>Cancel Booking</Text>
+                {isActionLoading ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <X size={20} color="#FFFFFF" />
+                    <Text style={styles.cancelButtonText}>Cancel Booking</Text>
+                  </>
+                )}
               </TouchableOpacity>
             )}
 

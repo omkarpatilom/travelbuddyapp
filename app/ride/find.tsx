@@ -195,20 +195,42 @@ export default function FindRideScreen() {
         hasToCoords = true;
       }
 
+      const geocodeWithFallback = async (locName: string): Promise<{ latitude: number, longitude: number } | undefined> => {
+        try {
+          const data = await api.get<any>(`/places/geocode?q=${encodeURIComponent(locName)}`);
+          if (data && data.lat) {
+            return { latitude: data.lat, longitude: data.lon };
+          }
+        } catch (e) {
+          console.warn(`Initial geocode failed for "${locName}", trying autocomplete fallback...`);
+          const firstSegment = locName.split(',')[0].trim();
+          if (firstSegment) {
+            try {
+              const suggestions = await api.get<any[]>(`/places/autocomplete?q=${encodeURIComponent(firstSegment)}`);
+              if (suggestions && suggestions.length > 0) {
+                const first = suggestions[0];
+                if (first.lat !== undefined && first.lon !== undefined) {
+                  return { latitude: first.lat, longitude: first.lon };
+                }
+              }
+            } catch (err) {
+              console.warn(`Autocomplete fallback failed for "${firstSegment}"`, err);
+            }
+          }
+        }
+        return undefined;
+      };
+
       if (from && !hasFromCoords) {
         const decodedFrom = decodeURIComponent(from as string);
-        try {
-          const data = await api.get<any>(`/places/geocode?q=${encodeURIComponent(decodedFrom)}`);
-          if (data && data.lat) setFromCoords({ latitude: data.lat, longitude: data.lon });
-        } catch (e) { console.warn('Failed to geocode from location'); }
+        const resolved = await geocodeWithFallback(decodedFrom);
+        if (resolved) setFromCoords(resolved);
       }
       
       if (to && !hasToCoords) {
         const decodedTo = decodeURIComponent(to as string);
-        try {
-          const data = await api.get<any>(`/places/geocode?q=${encodeURIComponent(decodedTo)}`);
-          if (data && data.lat) setToCoords({ latitude: data.lat, longitude: data.lon });
-        } catch (e) { console.warn('Failed to geocode to location'); }
+        const resolved = await geocodeWithFallback(decodedTo);
+        if (resolved) setToCoords(resolved);
       }
       
       if (date) setSelectedDate(new Date(date as string));
@@ -243,13 +265,37 @@ export default function FindRideScreen() {
             let fCoords = fromCoords;
             let tCoords = toCoords;
             
+            const geocodeWithFallback = async (locName: string): Promise<{ latitude: number, longitude: number } | undefined> => {
+              try {
+                const data = await api.get<any>(`/places/geocode?q=${encodeURIComponent(locName)}`);
+                if (data && data.lat) {
+                  return { latitude: data.lat, longitude: data.lon };
+                }
+              } catch (e) {
+                console.warn(`Geocode failed for "${locName}", trying autocomplete fallback...`);
+                const firstSegment = locName.split(',')[0].trim();
+                if (firstSegment) {
+                  try {
+                    const suggestions = await api.get<any[]>(`/places/autocomplete?q=${encodeURIComponent(firstSegment)}`);
+                    if (suggestions && suggestions.length > 0) {
+                      const first = suggestions[0];
+                      if (first.lat !== undefined && first.lon !== undefined) {
+                        return { latitude: first.lat, longitude: first.lon };
+                      }
+                    }
+                  } catch (err) {
+                    console.warn(`Autocomplete fallback failed for "${firstSegment}"`, err);
+                  }
+                }
+              }
+              return undefined;
+            };
+
             if (!fCoords) {
-                const data = await api.get<any>(`/places/geocode?q=${encodeURIComponent(fromLocation)}`);
-                if (data && data.lat) fCoords = { latitude: data.lat, longitude: data.lon };
+                fCoords = await geocodeWithFallback(fromLocation);
             }
             if (!tCoords) {
-                const data = await api.get<any>(`/places/geocode?q=${encodeURIComponent(toLocation)}`);
-                if (data && data.lat) tCoords = { latitude: data.lat, longitude: data.lon };
+                tCoords = await geocodeWithFallback(toLocation);
             }
             
             if (!fCoords || !tCoords) {
@@ -582,12 +628,19 @@ export default function FindRideScreen() {
             </View>
           </View>
 
-          <TouchableOpacity 
-            style={[styles.mainSearchBtn, { backgroundColor: theme.colors.primary }]}
+          <TouchableOpacity
+            style={[styles.mainSearchBtn, { backgroundColor: theme.colors.primary, opacity: isLoading ? 0.6 : 1 }]}
             onPress={performSearch}
+            disabled={isLoading}
           >
-            <Search size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
-            <Text style={styles.mainSearchBtnText}>Search Rides</Text>
+            {isLoading ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <>
+                <Search size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
+                <Text style={styles.mainSearchBtnText}>Search Rides</Text>
+              </>
+            )}
           </TouchableOpacity>
         </View>
       </View>

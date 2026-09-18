@@ -1,7 +1,11 @@
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
-import * as Notifications from 'expo-notifications';
 import { Alert, Linking, Platform } from 'react-native';
+
+let Notifications: any = null;
+try {
+  Notifications = require('expo-notifications');
+} catch (e) {}
 
 export interface PermissionResult {
   granted: boolean;
@@ -86,13 +90,21 @@ export const requestMediaLibraryPermission = async (): Promise<PermissionResult>
 
 export const requestNotificationPermission = async (): Promise<PermissionResult> => {
   try {
-    if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('default', {
-        name: 'default',
-        importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#2563EB',
-      });
+    if (!Notifications || typeof Notifications.requestPermissionsAsync !== 'function') {
+      return { granted: false, canAskAgain: false, status: 'unavailable' };
+    }
+
+    if (Platform.OS === 'android' && typeof Notifications.setNotificationChannelAsync === 'function') {
+      try {
+        await Notifications.setNotificationChannelAsync('default', {
+          name: 'default',
+          importance: Notifications.AndroidImportance?.MAX || 5,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#2563EB',
+        });
+      } catch (channelErr) {
+        console.warn('Error setting notification channel:', channelErr);
+      }
     }
 
     const { status, canAskAgain } = await Notifications.requestPermissionsAsync();
@@ -150,6 +162,7 @@ export const checkMediaLibraryPermission = async (): Promise<boolean> => {
 
 export const checkNotificationPermission = async (): Promise<boolean> => {
   try {
+    if (!Notifications || typeof Notifications.getPermissionsAsync !== 'function') return false;
     const { status } = await Notifications.getPermissionsAsync();
     return status === 'granted';
   } catch (error) {

@@ -18,7 +18,13 @@ interface RideContextType {
   rides: Ride[];
   bookings: Booking[];
   myRides: Ride[];
+  // Combined OR of all three queries below - kept for existing consumers.
+  // Prefer the per-query flags for a screen that only cares about one list,
+  // so a slow unrelated query elsewhere doesn't visually stall it.
   isLoading: boolean;
+  isLoadingActiveRides: boolean;
+  isLoadingMyRides: boolean;
+  isLoadingBookings: boolean;
   searchRides: (
     params: {
         from: string;
@@ -48,6 +54,7 @@ interface RideContextType {
   completeBooking: (bookingId: string) => Promise<boolean>;
   verifyBooking: (bookingId: string, data: { verificationType: 'OTP' | 'QR'; otp?: string; qrToken?: string }) => Promise<boolean>;
   completeStop: (rideId: string, stopId: string) => Promise<boolean>;
+  overrideTransition: (rideId: string, targetStatus: number, reason: string) => Promise<boolean>;
   cancelBooking: (bookingId: string, reason?: string) => Promise<boolean>;
   rateRide: (
     rideId: string,
@@ -199,8 +206,10 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
   const updateRide = async (rideId: string, rideData: Partial<Ride>): Promise<boolean> => {
     try {
       await rideService.updateRide(rideId, rideData);
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] });
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] }),
+        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] }),
+      ]);
       return true;
     } catch (error) {
       console.error('Error updating ride:', error);
@@ -211,9 +220,11 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
   const cancelRide = async (rideId: string, reason: string): Promise<boolean> => {
     try {
       await rideService.cancelRide(rideId, reason);
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] });
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] });
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.bookings] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] }),
+        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] }),
+        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.bookings] }),
+      ]);
       return true;
     } catch (error) {
       console.error('Error cancelling ride:', error);
@@ -224,8 +235,10 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
   const publishRide = async (rideId: string): Promise<boolean> => {
     try {
       await rideService.publishRide(rideId);
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] });
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] }),
+        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] }),
+      ]);
       return true;
     } catch (e) {
       return false;
@@ -235,8 +248,10 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
   const startRide = async (rideId: string): Promise<boolean> => {
     try {
       await rideService.startRide(rideId);
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] });
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] }),
+        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] }),
+      ]);
       return true;
     } catch (e) {
       return false;
@@ -246,8 +261,10 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
   const arriveAtPickup = async (rideId: string, lat?: number, lng?: number): Promise<boolean> => {
     try {
       await rideService.arriveAtPickup(rideId, lat, lng);
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] });
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] }),
+        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] }),
+      ]);
       return true;
     } catch (e) {
       return false;
@@ -257,8 +274,10 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
   const startBoarding = async (rideId: string): Promise<boolean> => {
     try {
       await rideService.startBoarding(rideId);
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] });
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] }),
+        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] }),
+      ]);
       return true;
     } catch (e) {
       return false;
@@ -268,8 +287,10 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
   const transitionEnRoute = async (rideId: string): Promise<boolean> => {
     try {
       await rideService.transitionEnRoute(rideId);
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] });
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] }),
+        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] }),
+      ]);
       return true;
     } catch (e) {
       return false;
@@ -279,8 +300,10 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
   const arriveAtDrop = async (rideId: string, lat?: number, lng?: number): Promise<boolean> => {
     try {
       await rideService.arriveAtDrop(rideId, lat, lng);
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] });
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] }),
+        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] }),
+      ]);
       return true;
     } catch (e) {
       return false;
@@ -290,8 +313,10 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
   const completeDropoff = async (rideId: string): Promise<boolean> => {
     try {
       await rideService.completeDropoff(rideId);
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] });
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] }),
+        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] }),
+      ]);
       return true;
     } catch (e) {
       return false;
@@ -301,10 +326,25 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
   const completeRide = async (rideId: string): Promise<boolean> => {
     try {
       await rideService.completeRide(rideId);
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] });
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.activeRide] });
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] });
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.bookings] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] }),
+        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.activeRide] }),
+        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] }),
+        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.bookings] }),
+      ]);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  };
+
+  const overrideTransition = async (rideId: string, targetStatus: number, reason: string): Promise<boolean> => {
+    try {
+      await rideService.overrideTransition(rideId, targetStatus, reason);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] }),
+        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] }),
+      ]);
       return true;
     } catch (e) {
       return false;
@@ -322,9 +362,11 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
         acceptTerms: true
       });
       // Invalidate bookings & rides
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.bookings] });
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] });
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.bookings] }),
+        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] }),
+        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] }),
+      ]);
       return true;
     } catch (error) {
       console.error('Error booking ride:', error);
@@ -335,8 +377,10 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
   const confirmBooking = async (bookingId: string): Promise<boolean> => {
     try {
       await bookingService.confirmBooking(bookingId);
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.bookings] });
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.bookings] }),
+        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] }),
+      ]);
       return true;
     } catch (e) {
       console.error('Error confirming booking:', e);
@@ -347,8 +391,10 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
   const completeBooking = async (bookingId: string): Promise<boolean> => {
     try {
       await bookingService.completeBooking(bookingId);
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.bookings] });
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.bookings] }),
+        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] }),
+      ]);
       return true;
     } catch (e) {
       console.error('Error completing booking:', e);
@@ -359,8 +405,10 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
   const verifyBooking = async (bookingId: string, data: { verificationType: 'OTP' | 'QR'; otp?: string; qrToken?: string }): Promise<boolean> => {
     try {
       await bookingService.verifyBooking(bookingId, data);
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.bookings] });
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.bookings] }),
+        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] }),
+      ]);
       return true;
     } catch (e) {
       console.error('Error verifying booking:', e);
@@ -371,8 +419,10 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
   const completeStop = async (rideId: string, stopId: string): Promise<boolean> => {
     try {
       await rideService.completeStop(rideId, stopId);
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] });
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] }),
+        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] }),
+      ]);
       return true;
     } catch (e) {
       console.error('Error completing stop:', e);
@@ -383,8 +433,10 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
   const cancelBooking = async (bookingId: string, reason: string = 'User cancelled'): Promise<boolean> => {
     try {
       await bookingService.cancelBooking(bookingId, reason);
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.bookings] });
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.bookings] }),
+        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] }),
+      ]);
       return true;
     } catch (error) {
       console.error('Error cancelling booking:', error);
@@ -495,12 +547,15 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <RideContext.Provider 
-      value={{ 
-        rides, 
-        bookings, 
-        myRides, 
-        isLoading, 
-        searchRides, 
+      value={{
+        rides,
+        bookings,
+        myRides,
+        isLoading,
+        isLoadingActiveRides: activeRidesQuery.isLoading,
+        isLoadingMyRides: myRidesQuery.isLoading,
+        isLoadingBookings: bookingsQuery.isLoading,
+        searchRides,
         createRide, 
         updateRide,
         publishRide,
@@ -517,6 +572,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
         completeBooking,
         verifyBooking,
         completeStop,
+        overrideTransition,
         cancelBooking, 
         rateRide,
         updateTracking,

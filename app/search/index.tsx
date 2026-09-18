@@ -113,7 +113,34 @@ export default function SearchScreen() {
 
     setLoading(true);
     try {
-      const data = await api.get<any>(`/places/geocode?q=${encodeURIComponent(selectedName)}`);
+      let data: any;
+      try {
+        data = await api.get<any>(`/places/geocode?q=${encodeURIComponent(selectedName)}`);
+      } catch (geocodeErr) {
+        console.warn(`Geocode failed for "${selectedName}" in search screen, trying autocomplete fallback...`, geocodeErr);
+        const firstSegment = selectedName.split(',')[0].trim();
+        if (firstSegment) {
+          try {
+            const suggestions = await api.get<any[]>(`/places/autocomplete?q=${encodeURIComponent(firstSegment)}`);
+            if (suggestions && suggestions.length > 0) {
+              const first = suggestions[0];
+              data = {
+                name: first.name || selectedName,
+                address: first.description || selectedName,
+                lat: first.lat,
+                lon: first.lon
+              };
+            } else {
+              throw geocodeErr;
+            }
+          } catch (fallbackErr) {
+            throw geocodeErr;
+          }
+        } else {
+          throw geocodeErr;
+        }
+      }
+
       if (focusedInput === 'pickup') {
           setPickupPlace(data);
       } else {
@@ -219,11 +246,16 @@ export default function SearchScreen() {
             />
           </View>
           
-          <TouchableOpacity 
-            style={[styles.searchButton, { backgroundColor: theme.colors.primary }]} 
+          <TouchableOpacity
+            style={[styles.searchButton, { backgroundColor: theme.colors.primary, opacity: loading ? 0.6 : 1 }]}
             onPress={handleSearchRides}
+            disabled={loading}
           >
-            <Text style={styles.searchButtonText}>Find Rides</Text>
+            {loading ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Text style={styles.searchButtonText}>Find Rides</Text>
+            )}
           </TouchableOpacity>
         </View>
 

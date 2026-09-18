@@ -63,7 +63,10 @@
       ],
       "@react-native-community/datetimepicker",
       "expo-secure-store",
-      "expo-sqlite"
+      "expo-sqlite",
+      "expo-splash-screen",
+      "expo-status-bar",
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true

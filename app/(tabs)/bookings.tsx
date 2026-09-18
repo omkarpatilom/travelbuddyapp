@@ -23,7 +23,7 @@ export default function BookingsScreen() {
   
   const { theme } = useTheme();
   const { user } = useAuth();
-  const { bookings, cancelBooking, isLoading, loadInitialData } = useRides();
+  const { bookings, cancelBooking, isLoadingBookings, loadInitialData } = useRides();
   const router = useRouter();
 
   console.log('[DEBUG] BookingsScreen Render:', {
@@ -31,7 +31,7 @@ export default function BookingsScreen() {
     userFullName: user?.fullName,
     bookingsCount: bookings?.length,
     activeTab,
-    isLoading
+    isLoadingBookings
   });
 
   const onRefresh = useCallback(async () => {
@@ -233,7 +233,7 @@ export default function BookingsScreen() {
     );
   };
 
-  if (isLoading && (!bookings || bookings.length === 0) && !isRefreshing) {
+  if (isLoadingBookings && (!bookings || bookings.length === 0) && !isRefreshing) {
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background, justifyContent: 'center', alignItems: 'center' }]}>
         <ActivityIndicator size="large" color={theme.colors.primary} testID="loading-indicator" />

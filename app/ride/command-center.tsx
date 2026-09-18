@@ -44,6 +44,16 @@ import {
 import * as Location from 'expo-location';
 import { checkLocationPermission, requestLocationPermission } from '@/utils/permissions';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import {
+  RIDE_STATUS,
+  BOOKING_STATUS,
+  ACTIVE_RIDE_STATUSES,
+  isRideActive,
+  isRidePreStart,
+  isRideTerminal,
+  getBookingDisplayLabel,
+  RIDE_STATUS_LABEL,
+} from '@/utils/rideStatus';
 
 const { width, height } = Dimensions.get('window');
 
@@ -63,8 +73,7 @@ interface Stop {
 const isValidUUID = (id: string): boolean =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
-// Active ride statuses where polling and live tracking should run
-const ACTIVE_RIDE_STATUSES = ['ridestarted', 'arrivedatpickup', 'boarding', 'intransit', 'arrivedatdrop', 'dropoff'];
+// Active ride statuses are imported from rideStatus.ts (ACTIVE_RIDE_STATUSES)
 
 export default function JourneyCommandCenterScreen() {
   const { theme, isDark } = useTheme();
@@ -73,8 +82,6 @@ export default function JourneyCommandCenterScreen() {
     getRideById,
     startRide,
     arriveAtPickup,
-    startBoarding,
-    transitionEnRoute,
     arriveAtDrop,
     completeDropoff,
     completeRide,
@@ -83,8 +90,9 @@ export default function JourneyCommandCenterScreen() {
     confirmBooking,
     cancelRide,
     updateTracking,
+    overrideTransition,
   } = useRides();
-  
+
   const router = useRouter();
   const params = useLocalSearchParams();
   const rideId = params.id as string;
@@ -98,7 +106,7 @@ export default function JourneyCommandCenterScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [driverLocation, setDriverLocation] = useState<{ latitude: number; longitude: number } | null>(null);
-  
+
   // Developer Proximity States
   const [simulatedDistance, setSimulatedDistance] = useState(1200); // meters to next stop
 
@@ -106,7 +114,7 @@ export default function JourneyCommandCenterScreen() {
   const [isConsoleOpen, setIsConsoleOpen] = useState(false);
   const [isVerificationOpen, setIsVerificationOpen] = useState(false);
   const [isIncidentOpen, setIsIncidentOpen] = useState(false);
-  
+
   // Passenger states
   const [selectedPassenger, setSelectedPassenger] = useState<Booking | null>(null);
   const [otpValue, setOtpValue] = useState('');
@@ -123,6 +131,17 @@ export default function JourneyCommandCenterScreen() {
 
   // Watch position reference
   const locationSubscriptionRef = useRef<any>(null);
+  // Guards against firing a new tracking POST while a previous one (which can
+  // take several seconds when it also triggers a geofence transition) is
+  // still in flight - overlapping requests were colliding on the ride row.
+  const trackingInFlightRef = useRef(false);
+  // Monotonic counter: each loadData() call claims the next value before its
+  // awaits, and only commits state if it's still the most-recently-claimed
+  // call by the time its network responses land. Prevents an older, slower
+  // loadData() response (e.g. a 5s poll tick already in flight) from
+  // overwriting state with stale data after a newer call - or an optimistic
+  // update - has already set fresher state.
+  const loadDataSeqRef = useRef(0);
 
   const addLog = (message: string) => {
     const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -159,12 +178,10 @@ export default function JourneyCommandCenterScreen() {
 
   // BG coordinates syncing
   useEffect(() => {
+    let cancelled = false;
+
     const setupLiveTracking = async () => {
       if (!ride || !ACTIVE_RIDE_STATUSES.includes(ride.status)) {
-        if (locationSubscriptionRef.current) {
-          locationSubscriptionRef.current.remove();
-          locationSubscriptionRef.current = null;
-        }
         return;
       }
 
@@ -179,7 +196,7 @@ export default function JourneyCommandCenterScreen() {
         }
 
         addLog('🗺️ Location tracker active.');
-        locationSubscriptionRef.current = await Location.watchPositionAsync(
+        const subscription = await Location.watchPositionAsync(
           {
             accuracy: Location.Accuracy.High,
             timeInterval: 10000,
@@ -187,55 +204,103 @@ export default function JourneyCommandCenterScreen() {
           },
           (location) => {
             const { latitude, longitude } = location.coords;
-            updateTracking(ride.id, latitude, longitude);
             setDriverLocation({ latitude, longitude });
             addLog(`📍 GPS coordinate shared: ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`);
+
+            // Skip this ping rather than send it on top of a request that's
+            // still in flight - that overlap was the actual cause of the
+            // persistent "Confirm Drop-Off" 400s (concurrent writes to the
+            // same ride row). The next ping picks up the latest position
+            // anyway, so nothing meaningful is lost by skipping one.
+            if (trackingInFlightRef.current) return;
+            trackingInFlightRef.current = true;
+            updateTracking(ride.id, latitude, longitude).finally(() => {
+              trackingInFlightRef.current = false;
+            });
           }
         );
+
+        // This effect can re-run (new ride.status) before the async setup
+        // above resolves - if a newer run already started, or this ride is
+        // no longer active, discard the subscription we just created instead
+        // of leaking it on top of whatever the newer run installed.
+        if (cancelled || !ride || !ACTIVE_RIDE_STATUSES.includes(ride.status)) {
+          subscription.remove();
+          return;
+        }
+
+        locationSubscriptionRef.current = subscription;
       } catch (err) {
         console.error(err);
       }
     };
 
     setupLiveTracking();
+
+    return () => {
+      cancelled = true;
+      if (locationSubscriptionRef.current) {
+        locationSubscriptionRef.current.remove();
+        locationSubscriptionRef.current = null;
+      }
+    };
   }, [ride?.status]);
 
   const loadData = async () => {
+    const mySeq = ++loadDataSeqRef.current;
     console.log(`[DEBUG] CommandCenter loadData called with rideId: ${rideId}`);
     try {
       const rideData = await getRideById(rideId);
       console.log(`[DEBUG] CommandCenter fetched rideData:`, rideData);
       if (rideData) {
+        if (mySeq !== loadDataSeqRef.current) return;
         setRide(rideData);
-        
+
         const bookingsList = await bookingService.getRideBookings(rideId);
         const normalizedBookings = (bookingsList || []).map((b: any) => ({
           ...b,
           id: b.bookingId || b.id,
           status: (b.status || '').toLowerCase()
         }));
+        if (mySeq !== loadDataSeqRef.current) return;
         setBookings(normalizedBookings as any);
 
         const generatedStops = (rideData.stops && rideData.stops.length > 0)
           ? rideData.stops.map((s: any) => {
-              const stopBookings = normalizedBookings.filter((b: any) => 
-                (b.id || '').toLowerCase() === (s.bookingId || '').toLowerCase() || 
-                ((b.bookingId || '') as string).toLowerCase() === (s.bookingId || '').toLowerCase()
-              );
-              const stopType = s.type === 0 ? 'pickup' : 'drop';
-              return {
-                id: s.id,
-                name: s.stopName,
-                type: stopType as 'pickup' | 'drop',
-                address: s.address,
-                coordinates: { latitude: s.latitude, longitude: s.longitude },
-                passengerCount: stopBookings.length,
-                seatsCount: stopBookings.reduce((sum, b) => sum + b.seats, 0),
-                bookings: stopBookings,
-                status: (s.status === 3 ? 'completed' : (s.status === 1 || s.status === 2 ? 'current' : 'pending')) as 'completed' | 'current' | 'pending',
-                sequence: s.sequence
-              };
-            })
+            const stopBookings = normalizedBookings.filter((b: any) =>
+              (b.id || '').toLowerCase() === (s.bookingId || '').toLowerCase() ||
+              ((b.bookingId || '') as string).toLowerCase() === (s.bookingId || '').toLowerCase()
+            );
+
+            // Handle both integer (0) and string ("Pickup" / "pickup") enum serializations
+            const isPickup = s.type === 0 ||
+              s.type === 'Pickup' ||
+              (typeof s.type === 'string' && s.type.toLowerCase() === 'pickup');
+            const stopType = isPickup ? 'pickup' : 'drop';
+
+            // Handle both integer (3 = Completed, 1 = Navigating, 2 = Arrived) and string enums
+            const isCompleted = s.status === 3 ||
+              s.status === 'Completed' ||
+              (typeof s.status === 'string' && s.status.toLowerCase() === 'completed');
+            const isCurrent = s.status === 1 || s.status === 2 ||
+              s.status === 'Navigating' || s.status === 'Arrived' ||
+              (typeof s.status === 'string' &&
+                (s.status.toLowerCase() === 'navigating' || s.status.toLowerCase() === 'arrived'));
+            const stopStatus = isCompleted ? 'completed' : (isCurrent ? 'current' : 'pending');
+
+            return {
+              id: s.id,
+              name: s.stopName,
+              type: stopType as 'pickup' | 'drop',
+              address: s.address,
+              coordinates: { latitude: s.latitude, longitude: s.longitude },
+              passengerCount: stopBookings.length,
+              seatsCount: stopBookings.reduce((sum, b) => sum + b.seats, 0),
+              bookings: stopBookings,
+              status: stopStatus as 'completed' | 'current' | 'pending',
+              sequence: s.sequence
+            };
+          })
           : calculateStops(rideData, normalizedBookings);
 
         setStops(generatedStops);
@@ -290,7 +355,7 @@ export default function JourneyCommandCenterScreen() {
 
       const offsetLat = rideObj.from.coordinates.latitude + (rideObj.to.coordinates.latitude - rideObj.from.coordinates.latitude) * 0.35;
       const offsetLng = rideObj.from.coordinates.longitude + (rideObj.to.coordinates.longitude - rideObj.from.coordinates.longitude) * 0.35;
-      
+
       stopsList.push({
         id: 'pickup_2',
         name: 'Katraj Bypass Pickup',
@@ -319,41 +384,6 @@ export default function JourneyCommandCenterScreen() {
     return stopsList;
   };
 
-  const handleStartBoarding = async () => {
-    if (!ride) return;
-    setIsActionLoading(true);
-    try {
-      const ok = await startBoarding(ride.id);
-      if (ok) {
-        addLog('⚡ Manual Override: Boarding phase initiated!');
-        await loadData();
-      } else {
-        Alert.alert('Error', 'Failed to start boarding.');
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setIsActionLoading(false);
-    }
-  };
-
-  const handleTransitionEnRoute = async () => {
-    if (!ride) return;
-    setIsActionLoading(true);
-    try {
-      const ok = await transitionEnRoute(ride.id);
-      if (ok) {
-        addLog('⚡ Manual Override: En Route phase initiated!');
-        await loadData();
-      } else {
-        Alert.alert('Error', 'Failed to transition en route.');
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setIsActionLoading(false);
-    }
-  };
 
   const handleCompleteDropoff = async () => {
     if (!ride) return;
@@ -373,45 +403,101 @@ export default function JourneyCommandCenterScreen() {
     }
   };
 
-  const handleArriveAtPickupOverride = async () => {
+  const handleArriveAtPickupOverride = () => {
     if (!ride) return;
-    setIsActionLoading(true);
-    try {
-      const ok = await arriveAtPickup(ride.id);
-      if (ok) {
-        addLog('⚡ Manual Override: Driver arrived at pickup geofence!');
-        await loadData();
-      } else {
-        Alert.alert('Error', 'Failed to trigger arrival at pickup.');
+
+    const performOverride = async (reason: string) => {
+      setIsActionLoading(true);
+      try {
+        const ok = await overrideTransition(ride.id, 4, reason);
+        if (ok) {
+          addLog(`⚡ Manual Override: Driver arrived at pickup. Reason: ${reason}`);
+          await loadData();
+        } else {
+          Alert.alert('Error', 'Failed to trigger arrival at pickup override.');
+        }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setIsActionLoading(false);
       }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setIsActionLoading(false);
+    };
+
+    if (Platform.OS === 'ios') {
+      Alert.prompt(
+        'Manual Arrive Override',
+        'Enter reason for overriding GPS pickup arrival:',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Submit', onPress: (text?: string) => performOverride(text || 'Manual override by driver') }
+        ],
+        'plain-text'
+      );
+    } else {
+      Alert.alert(
+        'Manual Arrive Override',
+        'Select or enter reason for overriding GPS pickup arrival:',
+        [
+          { text: 'GPS Blocker/Tunnel', onPress: () => performOverride('GPS signals blocked/delayed') },
+          { text: 'Road detour', onPress: () => performOverride('Road closure detour') },
+          { text: 'Other reason', onPress: () => performOverride('Manual driver bypass requested') },
+          { text: 'Cancel', style: 'cancel' }
+        ]
+      );
     }
   };
 
-  const handleArriveAtDropOverride = async () => {
+  const handleArriveAtDropOverride = () => {
     if (!ride) return;
-    setIsActionLoading(true);
-    try {
-      const ok = await arriveAtDrop(ride.id);
-      if (ok) {
-        addLog('⚡ Manual Override: Driver arrived at drop geofence!');
-        await loadData();
-      } else {
-        Alert.alert('Error', 'Failed to trigger arrival at drop-off.');
+
+    const performOverride = async (reason: string) => {
+      setIsActionLoading(true);
+      try {
+        const ok = await overrideTransition(ride.id, 7, reason);
+        if (ok) {
+          addLog(`⚡ Manual Override: Driver arrived at drop-off. Reason: ${reason}`);
+          await loadData();
+        } else {
+          Alert.alert('Error', 'Failed to trigger arrival at drop-off override.');
+        }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setIsActionLoading(false);
       }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setIsActionLoading(false);
+    };
+
+    if (Platform.OS === 'ios') {
+      Alert.prompt(
+        'Manual Arrive Override',
+        'Enter reason for overriding GPS drop-off arrival:',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Submit', onPress: (text?: string) => performOverride(text || 'Manual override by driver') }
+        ],
+        'plain-text'
+      );
+    } else {
+      Alert.alert(
+        'Manual Arrive Override',
+        'Select or enter reason for overriding GPS drop-off arrival:',
+        [
+          { text: 'GPS Blocker/Tunnel', onPress: () => performOverride('GPS signals blocked/delayed') },
+          { text: 'Road detour', onPress: () => performOverride('Road closure detour') },
+          { text: 'Other reason', onPress: () => performOverride('Manual driver bypass requested') },
+          { text: 'Cancel', style: 'cancel' }
+        ]
+      );
     }
   };
 
-  const simulateLocationUpdate = async (type: 'far' | 'arrived') => {
+  const simulateLocationUpdate = async (type: 'far' | 'arrived', targetStop?: Stop) => {
     if (!ride) return;
-    const activeStop = stops[currentStopIndex];
+    // Prefer the explicit stop the caller is looking at (e.g. the pickup stop
+    // shown on screen during JourneyStarted, or the drop stop during InTransit)
+    // over `currentStopIndex`, which is just "first non-completed stop" and can
+    // point at a different passenger's stop on multi-passenger rides.
+    const activeStop = targetStop ?? stops[currentStopIndex];
     if (!activeStop) return;
 
     setIsActionLoading(true);
@@ -438,20 +524,10 @@ export default function JourneyCommandCenterScreen() {
     }
   };
 
-  const getBookingOtp = (id: string) => {
-    let hash = 0;
-    const normalizedId = (id || '').toLowerCase();
-    for (let i = 0; i < normalizedId.length; i++) {
-      hash = normalizedId.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    const code = Math.abs(hash % 9000) + 1000;
-    return code.toString();
-  };
-
-  const handleVerifyPassenger = async (method: 'otp' | 'qr' | 'manual', scannedToken?: string) => {
+  const handleVerifyPassenger = async (method: 'otp' | 'qr', scannedToken?: string) => {
     const passengerToVerify = selectedPassenger || bookings.find(
-      b => (b.id || '').toLowerCase() === (ride?.currentPassengerId || '').toLowerCase() || 
-           ((b as any).bookingId || '').toLowerCase() === (ride?.currentPassengerId || '').toLowerCase()
+      b => (b.id || '').toLowerCase() === (ride?.currentPassengerId || '').toLowerCase() ||
+        ((b as any).bookingId || '').toLowerCase() === (ride?.currentPassengerId || '').toLowerCase()
     );
     if (!passengerToVerify || !ride) {
       Alert.alert('Verification Error', 'No passenger selected for verification.');
@@ -482,28 +558,27 @@ export default function JourneyCommandCenterScreen() {
           verificationType: 'QR',
           qrToken: scannedToken
         });
-      } else if (method === 'manual') {
-        const expectedOtp = getBookingOtp(passengerToVerify.id);
-        success = await verifyBooking(passengerToVerify.id, {
-          verificationType: 'OTP',
-          otp: expectedOtp
-        });
       }
 
       if (success) {
-        // Update local booking status to verified for immediate UI refresh
-        setBookings(prev => prev.map(b => 
-          b.id === passengerToVerify.id 
-            ? { ...b, status: 'verified' as any }
+        // Invalidate any older loadData() call still in flight (e.g. a 5s poll
+        // tick that started before this verification completed) so its stale
+        // response can't land after this optimistic update and revert it.
+        loadDataSeqRef.current += 1;
+
+        // Update local booking status to 'boarded' for immediate UI feedback
+        setBookings(prev => prev.map(b =>
+          b.id === passengerToVerify.id
+            ? { ...b, status: BOOKING_STATUS.BOARDED as any }
             : b
         ));
         setStops(prev => prev.map(stop => ({
           ...stop,
-          bookings: stop.bookings.map(b => 
-            b.id === passengerToVerify.id ? { ...b, status: 'verified' as any } : b
+          bookings: stop.bookings.map(b =>
+            b.id === passengerToVerify.id ? { ...b, status: BOOKING_STATUS.BOARDED as any } : b
           )
         })));
-        setSelectedPassenger(prev => prev ? { ...prev, status: 'verified' as any } : prev);
+        setSelectedPassenger(prev => prev ? { ...prev, status: BOOKING_STATUS.BOARDED as any } : prev);
 
         addLog(`✓ Passenger verified: ${passengerToVerify.passengerName}`);
 
@@ -674,76 +749,35 @@ export default function JourneyCommandCenterScreen() {
   const renderHUDContent = () => {
     if (!ride) return null;
 
-    const initials = currentPassengerBooking ? currentPassengerBooking.passengerName.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2) : '';
+    const rideStatus = ride.status.toLowerCase();
 
-    if (ride.status === 'published' || ride.status === 'scheduled') {
-      // Per lifecycle doc: StartRide requires at least one Confirmed booking
-      const confirmedBookings = bookings.filter(b =>
-        ['confirmed', 'accepted', 'verified', 'boarded', 'inride'].includes((b.status || '').toLowerCase())
-      );
-      const hasConfirmedBookings = confirmedBookings.length > 0;
-
+    // ── Pre-start ────────────────────────────────────────────────────────────
+    if (rideStatus === RIDE_STATUS.PUBLISHED || rideStatus === RIDE_STATUS.SCHEDULED) {
       return (
         <View style={styles.hudCardBody}>
-          <Text style={styles.hudTitle}>Ready to Depart</Text>
-          {hasConfirmedBookings ? (
-            <Text style={styles.hudSubtitle}>
-              {confirmedBookings.length} confirmed booking(s). Start the ride to initiate stops routing & tracking.
-            </Text>
-          ) : (
-            <Text style={[styles.hudSubtitle, { color: '#F59E0B' }]}>
-              ⚠ No confirmed bookings yet. You need at least 1 confirmed booking before starting the ride.
-            </Text>
-          )}
+          <Text style={styles.hudTitle}>Journey Not Started</Text>
+          <Text style={styles.hudSubtitle}>
+            {rideStatus === RIDE_STATUS.SCHEDULED
+              ? 'Ride is scheduled. Return to Ride Details and tap "Start Journey" to begin.'
+              : 'Accept bookings from Ride Details, then tap "Start Journey" to begin.'}
+          </Text>
           <TouchableOpacity
-            style={[styles.hudPrimaryBtn, { backgroundColor: hasConfirmedBookings ? '#10B981' : '#6B7280' }]}
-            onPress={async () => {
-              if (!hasConfirmedBookings) {
-                Alert.alert(
-                  'Cannot Start Ride',
-                  'You need at least one confirmed booking before starting the ride. Please accept a pending booking first.',
-                  [{ text: 'OK' }]
-                );
-                return;
-              }
-              setIsActionLoading(true);
-              try {
-                const ok = await startRide(ride.id);
-                if (ok) {
-                  addLog('🏁 Ride started successfully!');
-                  await loadData();
-                } else {
-                  Alert.alert(
-                    'Failed to Start Ride',
-                    'The ride could not be started. Ensure at least one booking is confirmed and try again.'
-                  );
-                }
-              } catch (e: any) {
-                console.error('[DEBUG] Start ride error:', e);
-                const msg = e?.message || 'An unexpected error occurred.';
-                if (msg.toLowerCase().includes('booking')) {
-                  Alert.alert('Cannot Start Ride', 'At least one booking must be confirmed before starting the ride.');
-                } else {
-                  Alert.alert('Error', msg);
-                }
-              } finally {
-                setIsActionLoading(false);
-              }
-            }}
-            disabled={isActionLoading}
+            style={[styles.hudPrimaryBtn, { backgroundColor: '#4F46E5' }]}
+            onPress={() => router.back()}
           >
-            <Play size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-            <Text style={styles.hudBtnText}>{hasConfirmedBookings ? 'Start Journey' : 'Waiting for Bookings'}</Text>
+            <ArrowLeft size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+            <Text style={styles.hudBtnText}>Go to Ride Details</Text>
           </TouchableOpacity>
         </View>
       );
     }
 
-    if (ride.status === 'completed') {
+    // ── Completed ────────────────────────────────────────────────────────────
+    if (rideStatus === RIDE_STATUS.COMPLETED) {
       return (
         <View style={styles.hudCardBody}>
-          <Text style={styles.hudTitle}>Journey Finished</Text>
-          <Text style={styles.hudSubtitle}>You completed all drop-offs. Thank you for riding with TravelBuddy!</Text>
+          <Text style={styles.hudTitle}>Journey Finished ✓</Text>
+          <Text style={styles.hudSubtitle}>All drop-offs completed. Thank you for riding with TravelBuddy!</Text>
           <TouchableOpacity
             style={[styles.hudPrimaryBtn, { backgroundColor: '#4F46E5' }]}
             onPress={() => router.back()}
@@ -755,255 +789,258 @@ export default function JourneyCommandCenterScreen() {
       );
     }
 
-    if (['ridestarted', 'arrivedatpickup', 'boarding', 'intransit', 'arrivedatdrop', 'dropoff'].includes(ride.status.toLowerCase())) {
-      switch (ride.status.toLowerCase()) {
-        case 'ridestarted':
-          return (
-            <View style={styles.hudCardBody}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                <View style={{ flex: 1, marginRight: 8 }}>
-                  <Text style={styles.hudTitle}>En Route to Pickup</Text>
-                  <Text style={styles.hudAddress} numberOfLines={1}>
-                    {activeStop ? activeStop.name : 'Next stop'}
-                  </Text>
-                  <Text style={{ fontSize: 10, color: '#94A3B8', marginTop: 1 }} numberOfLines={1}>
-                    {activeStop?.address}
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  style={[styles.hudMiniNavBtn, { backgroundColor: '#4F46E5' }]}
-                  onPress={launchExternalMaps}
-                >
-                  <Navigation size={12} color="#FFFFFF" />
-                  <Text style={{ color: '#FFFFFF', fontSize: 10, fontWeight: 'bold', marginLeft: 4 }}>Navigate</Text>
-                </TouchableOpacity>
-              </View>
-              <Text style={{ fontSize: 10, color: '#94A3B8', marginTop: 6 }}>
-                GPS will auto-detect arrival. Use manual override if needed.
-              </Text>
-              <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
-                <TouchableOpacity
-                  style={[styles.hudSecondaryBtn, { flex: 1 }]}
-                  onPress={() => simulateLocationUpdate('arrived')}
-                >
-                  <Compass size={14} color="#94A3B8" style={{ marginRight: 6 }} />
-                  <Text style={[styles.hudBtnTextSecondary, { color: '#FFFFFF' }]}>Simulate Arrived (0m)</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.hudSecondaryBtn, { flex: 1, backgroundColor: '#F59E0B' }]}
-                  onPress={handleArriveAtPickupOverride}
-                >
-                  <MapPin size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
-                  <Text style={[styles.hudBtnTextSecondary, { color: '#FFFFFF' }]}>Manual Arrive Override</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          );
-        case 'arrivedatpickup': {
-          const waitingPassengers = stops[currentStopIndex]?.bookings ?? [];
-          return (
-            <View style={styles.hudCardBody}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-                <CheckCircle size={18} color="#10B981" style={{ marginRight: 8 }} />
-                <Text style={[styles.hudTitle, { color: '#10B981' }]}>Arrived at Pickup</Text>
-              </View>
-              <Text style={styles.hudAddress} numberOfLines={1}>
-                {activeStop ? activeStop.name : 'Pickup stop'}
-              </Text>
-              <Text style={{ fontSize: 10, color: '#94A3B8', marginTop: 1, marginBottom: 8 }} numberOfLines={1}>
-                {activeStop?.address}
-              </Text>
-              <Text style={styles.hudSubtitle}>
-                {waitingPassengers.length > 0
-                  ? `${waitingPassengers.length} passenger(s) ready to board. Tap Begin Boarding to start check-in.`
-                  : 'Waiting for passengers. Tap Begin Boarding when ready.'}
-              </Text>
-              <TouchableOpacity
-                style={[styles.hudPrimaryBtn, { marginTop: 10, backgroundColor: '#4F46E5' }]}
-                onPress={handleStartBoarding}
-                disabled={isActionLoading}
-              >
-                <Users size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-                <Text style={styles.hudBtnText}>Begin Boarding</Text>
-              </TouchableOpacity>
-            </View>
-          );
-        }
-        case 'boarding':
-          return (
-            <View style={styles.hudCardBody}>
-              <Text style={styles.hudTitle}>Passenger Boarding Check-In</Text>
-              {currentPassengerBooking ? (
-                <View style={styles.passengerVerifyBox}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                    <View style={styles.avatarCircleSmall}>
-                      <Text style={styles.avatarTextSmall}>{initials}</Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.verifyPassengerName}>{currentPassengerBooking.passengerName}</Text>
-                      <Text style={styles.verifyPassengerSeats}>{currentPassengerBooking.seats} Seats • {currentPassengerBooking.status.toUpperCase()}</Text>
-                    </View>
-                  </View>
-
-                  {['pending', 'confirmed', 'readyforboarding'].includes(currentPassengerBooking.status.toLowerCase()) ? (
-                    <>
-                      <View style={styles.verifyFormRow}>
-                        <TextInput
-                          style={[styles.hudOtpInput, { color: '#FFFFFF', borderColor: '#334155' }]}
-                          maxLength={4}
-                          keyboardType="numeric"
-                          placeholder="Enter OTP"
-                          placeholderTextColor="#64748B"
-                          value={otpValue}
-                          onChangeText={setOtpValue}
-                        />
-                        <TouchableOpacity
-                          style={[styles.hudVerifyBtn, { backgroundColor: '#10B981' }]}
-                          onPress={() => {
-                            setSelectedPassenger(currentPassengerBooking);
-                            handleVerifyPassenger('otp');
-                          }}
-                          disabled={isActionLoading}
-                        >
-                          <Text style={styles.hudBtnText}>Verify</Text>
-                        </TouchableOpacity>
-                      </View>
-
-                      <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
-                        <TouchableOpacity
-                          style={[styles.hudActionOutlineBtn, { flex: 1, borderColor: '#4F46E5' }]}
-                          onPress={() => startQrScanner(currentPassengerBooking)}
-                        >
-                          <Camera size={14} color="#818CF8" />
-                          <Text style={{ fontSize: 11, color: '#818CF8', fontWeight: 'bold', marginLeft: 4 }}>Scan QR</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={[styles.hudActionOutlineBtn, { flex: 1, borderColor: '#10B981' }]}
-                          onPress={() => {
-                            setSelectedPassenger(currentPassengerBooking);
-                            handleVerifyPassenger('manual');
-                          }}
-                        >
-                          <CheckCircle size={14} color="#34D399" />
-                          <Text style={{ fontSize: 11, color: '#34D399', fontWeight: 'bold', marginLeft: 4 }}>Bypass</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </>
-                  ) : (
-                    <Text style={{ color: '#10B981', fontWeight: 'bold', marginVertical: 8 }}>✓ Boarded / Checked In</Text>
-                  )}
-                </View>
-              ) : (
-                <Text style={styles.hudSubtitle}>No boarding passenger selected by route sequence.</Text>
-              )}
-              
-              <TouchableOpacity
-                style={[styles.hudPrimaryBtn, { marginTop: 12, backgroundColor: '#10B981' }]}
-                onPress={handleTransitionEnRoute}
-                disabled={isActionLoading}
-              >
-                <Text style={styles.hudBtnText}>Depart Stop (Transition En Route)</Text>
-              </TouchableOpacity>
-            </View>
-          );
-        case 'intransit':
-          return (
-            <View style={styles.hudCardBody}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                <View style={{ flex: 1, marginRight: 8 }}>
-                  <Text style={styles.hudTitle}>En Route to Drop-off</Text>
-                  <Text style={styles.hudAddress} numberOfLines={1}>
-                    {activeStop ? activeStop.name : 'Drop-off stop'}
-                  </Text>
-                  <Text style={{ fontSize: 10, color: '#94A3B8', marginTop: 1 }} numberOfLines={1}>
-                    {activeStop?.address}
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  style={[styles.hudMiniNavBtn, { backgroundColor: '#4F46E5' }]}
-                  onPress={launchExternalMaps}
-                >
-                  <Navigation size={12} color="#FFFFFF" />
-                  <Text style={{ color: '#FFFFFF', fontSize: 10, fontWeight: 'bold', marginLeft: 4 }}>Navigate</Text>
-                </TouchableOpacity>
-              </View>
-              <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
-                <TouchableOpacity
-                  style={[styles.hudSecondaryBtn, { flex: 1 }]}
-                  onPress={() => simulateLocationUpdate('arrived')}
-                >
-                  <Compass size={14} color="#94A3B8" style={{ marginRight: 6 }} />
-                  <Text style={[styles.hudBtnTextSecondary, { color: '#FFFFFF' }]}>Simulate Arrived (0m)</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.hudSecondaryBtn, { flex: 1, backgroundColor: '#F59E0B' }]}
-                  onPress={handleArriveAtDropOverride}
-                >
-                  <Compass size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
-                  <Text style={[styles.hudBtnTextSecondary, { color: '#FFFFFF' }]}>Arrive Override</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          );
-        case 'arrivedatdrop':
-          return (
-            <View style={styles.hudCardBody}>
-              <Text style={styles.hudTitle}>Arrived at Destination</Text>
-              <Text style={styles.hudSubtitle}>Tap Begin Drop-Off to verify passenger checkout.</Text>
-              <TouchableOpacity
-                style={[styles.hudPrimaryBtn, { marginTop: 8, backgroundColor: '#4F46E5' }]}
-                onPress={handleCompleteDropoff}
-                disabled={isActionLoading}
-              >
-                <Text style={styles.hudBtnText}>Begin Drop-Off</Text>
-              </TouchableOpacity>
-            </View>
-          );
-        case 'dropoff':
-          return (
-            <View style={styles.hudCardBody}>
-              <Text style={styles.hudTitle}>Passenger Drop-Off Verification</Text>
-              {currentPassengerBooking ? (
-                <View style={styles.passengerVerifyBox}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                    <View style={styles.avatarCircleSmall}>
-                      <Text style={styles.avatarTextSmall}>{initials}</Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.verifyPassengerName}>{currentPassengerBooking.passengerName}</Text>
-                      <Text style={styles.verifyPassengerSeats}>{currentPassengerBooking.seats} Seats dropped • {currentPassengerBooking.status.toUpperCase()}</Text>
-                    </View>
-                  </View>
-                  {currentPassengerBooking.status.toLowerCase() !== 'completed' ? (
-                    <TouchableOpacity
-                      style={[styles.hudPrimaryBtn, { backgroundColor: '#F59E0B' }]}
-                      onPress={() => openVerificationModal(currentPassengerBooking || undefined, 'dropoff')}
-                      disabled={isActionLoading}
-                    >
-                      <CheckCircle size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-                      <Text style={styles.hudBtnText}>Confirm Passenger Dropped</Text>
-                    </TouchableOpacity>
-                  ) : (
-                    <Text style={{ color: '#10B981', fontWeight: 'bold', marginVertical: 8 }}>✓ Dropped / Completed</Text>
-                  )}
-                </View>
-              ) : (
-                <Text style={styles.hudSubtitle}>No dropoff passenger details found.</Text>
-              )}
-            </View>
-          );
-        default:
-          return (
-            <View style={styles.hudCardBody}>
-              <Text style={styles.hudTitle}>Driving In Progress</Text>
-              <Text style={styles.hudSubtitle}>Please focus on road safety.</Text>
-            </View>
-          );
-      }
+    // ── Cancelled ────────────────────────────────────────────────────────────
+    if (rideStatus === RIDE_STATUS.CANCELLED) {
+      return (
+        <View style={styles.hudCardBody}>
+          <Text style={[styles.hudTitle, { color: '#EF4444' }]}>Ride Cancelled</Text>
+          <Text style={styles.hudSubtitle}>This ride has been cancelled.</Text>
+          <TouchableOpacity
+            style={[styles.hudPrimaryBtn, { backgroundColor: '#4F46E5' }]}
+            onPress={() => router.back()}
+          >
+            <ArrowLeft size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+            <Text style={styles.hudBtnText}>Back to Dashboard</Text>
+          </TouchableOpacity>
+        </View>
+      );
     }
 
-    return null;
+    // ── Active ride statuses ─────────────────────────────────────────────────
+    switch (rideStatus) {
+
+      // ── JourneyStarted: driver en route to pickup ─────────────────────────
+      case RIDE_STATUS.JOURNEY_STARTED: {
+        const pickupStop = stops.find(s => s.type === 'pickup') ?? stops[currentStopIndex];
+        return (
+          <View style={styles.hudCardBody}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <View style={{ flex: 1, marginRight: 8 }}>
+                <Text style={styles.hudTitle}>En Route to Pickup</Text>
+                <Text style={styles.hudAddress} numberOfLines={1}>
+                  {pickupStop ? pickupStop.name : ride.from.address}
+                </Text>
+                <Text style={{ fontSize: 10, color: '#94A3B8', marginTop: 1 }} numberOfLines={1}>
+                  {pickupStop?.address ?? ride.from.address}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.hudMiniNavBtn, { backgroundColor: '#4F46E5' }]}
+                onPress={launchExternalMaps}
+              >
+                <Navigation size={12} color="#FFFFFF" />
+                <Text style={{ color: '#FFFFFF', fontSize: 10, fontWeight: 'bold', marginLeft: 4 }}>Navigate</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={{ fontSize: 10, color: '#94A3B8', marginTop: 6 }}>
+              GPS will auto-detect arrival at pickup. Use manual override if GPS fails.
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
+              {__DEV__ && (
+                <TouchableOpacity
+                  style={[styles.hudSecondaryBtn, { flex: 1 }]}
+                  onPress={() => simulateLocationUpdate('arrived', pickupStop)}
+                >
+                  <Compass size={14} color="#94A3B8" style={{ marginRight: 6 }} />
+                  <Text style={[styles.hudBtnTextSecondary, { color: '#FFFFFF' }]}>Simulate Arrived (Dev)</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                style={[styles.hudSecondaryBtn, { flex: 1, backgroundColor: '#F59E0B' }]}
+                onPress={handleArriveAtPickupOverride}
+              >
+                <MapPin size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={[styles.hudBtnTextSecondary, { color: '#FFFFFF' }]}>Manual Override</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        );
+      }
+
+      // ── ArrivedAtPickup / Boarding: status only. Both the Arrived→Boarding
+      // and Boarding→EnRoute transitions are automatic once the geofence
+      // fires / all confirmed passengers are verified. The driver's one
+      // action here — Verify OTP/QR — lives in the passenger queue below,
+      // not duplicated here (this card is status/info only, not a second
+      // action surface).
+      case RIDE_STATUS.ARRIVED_AT_PICKUP:
+      case RIDE_STATUS.BOARDING: {
+        const pendingBoarding = bookings.filter(b =>
+          [BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.READY_FOR_BOARDING].includes(b.status.toLowerCase() as any)
+        );
+        const alreadyBoarded = bookings.filter(b =>
+          [BOOKING_STATUS.BOARDED, BOOKING_STATUS.READY_FOR_DROP, BOOKING_STATUS.COMPLETED].includes(b.status.toLowerCase() as any)
+        );
+        const totalPassengers = bookings.filter(b => b.status.toLowerCase() !== BOOKING_STATUS.CANCELLED && b.status.toLowerCase() !== BOOKING_STATUS.REJECTED);
+
+        return (
+          <View style={styles.hudCardBody}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+              <Users size={18} color="#4F46E5" style={{ marginRight: 8 }} />
+              <Text style={styles.hudTitle}>Passenger Boarding</Text>
+            </View>
+            <Text style={{ fontSize: 10, color: '#94A3B8', marginTop: 1 }} numberOfLines={1}>
+              {activeStop?.address ?? ride.from.address}
+            </Text>
+            <Text style={{ fontSize: 11, color: '#94A3B8', marginTop: 4, marginBottom: 8 }}>
+              {alreadyBoarded.length}/{totalPassengers.length} boarded
+              {pendingBoarding.length > 0 ? ` · ${pendingBoarding.length} pending` : ' · All boarded!'}
+            </Text>
+
+            {pendingBoarding.length > 0 ? (
+              <Text style={styles.hudSubtitle}>
+                Verify each passenger's OTP/QR in the passenger list below.
+              </Text>
+            ) : (
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                <CheckCircle size={16} color="#10B981" style={{ marginRight: 6 }} />
+                <Text style={{ color: '#10B981', fontWeight: 'bold' }}>All passengers verified!</Text>
+              </View>
+            )}
+
+            <Text style={{ fontSize: 9, color: '#64748B', marginTop: 4, textAlign: 'center' }}>
+              {pendingBoarding.length > 0
+                ? 'Ride departs automatically once every passenger is verified. Unverified passengers are marked No Show on departure.'
+                : 'All passengers verified — departing automatically.'}
+            </Text>
+          </View>
+        );
+      }
+
+      // ── InTransit: en route to destination ───────────────────────────────
+      case RIDE_STATUS.IN_TRANSIT: {
+        const dropStop = stops.find(s => s.type === 'drop') ?? stops[stops.length - 1];
+        return (
+          <View style={styles.hudCardBody}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <View style={{ flex: 1, marginRight: 8 }}>
+                <Text style={styles.hudTitle}>En Route to Destination</Text>
+                <Text style={styles.hudAddress} numberOfLines={1}>
+                  {dropStop ? dropStop.name : ride.to.address}
+                </Text>
+                <Text style={{ fontSize: 10, color: '#94A3B8', marginTop: 1 }} numberOfLines={1}>
+                  {dropStop?.address ?? ride.to.address}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.hudMiniNavBtn, { backgroundColor: '#4F46E5' }]}
+                onPress={launchExternalMaps}
+              >
+                <Navigation size={12} color="#FFFFFF" />
+                <Text style={{ color: '#FFFFFF', fontSize: 10, fontWeight: 'bold', marginLeft: 4 }}>Navigate</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={{ fontSize: 10, color: '#94A3B8', marginTop: 6 }}>
+              GPS will auto-detect arrival at destination. Use manual override if GPS fails.
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
+              {__DEV__ && (
+                <TouchableOpacity
+                  style={[styles.hudSecondaryBtn, { flex: 1 }]}
+                  onPress={() => simulateLocationUpdate('arrived', dropStop)}
+                >
+                  <Compass size={14} color="#94A3B8" style={{ marginRight: 6 }} />
+                  <Text style={[styles.hudBtnTextSecondary, { color: '#FFFFFF' }]}>Simulate Arrived (Dev)</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                style={[styles.hudSecondaryBtn, { flex: 1, backgroundColor: '#F59E0B' }]}
+                onPress={handleArriveAtDropOverride}
+              >
+                <Compass size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={[styles.hudBtnTextSecondary, { color: '#FFFFFF' }]}>Manual Override</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        );
+      }
+
+      // ── ArrivedAtDestination: driver at destination, tap Begin Drop-Off ───
+      case RIDE_STATUS.ARRIVED_AT_DESTINATION: {
+        const readyForDrop = bookings.filter(b =>
+          b.status.toLowerCase() === BOOKING_STATUS.READY_FOR_DROP
+        );
+        return (
+          <View style={styles.hudCardBody}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+              <CheckCircle size={18} color="#10B981" style={{ marginRight: 8 }} />
+              <Text style={[styles.hudTitle, { color: '#10B981' }]}>Arrived at Destination ✓</Text>
+            </View>
+            <Text style={styles.hudAddress} numberOfLines={1}>{ride.to.address}</Text>
+            <Text style={{ fontSize: 10, color: '#94A3B8', marginTop: 1, marginBottom: 8 }}>
+              {readyForDrop.length} passenger(s) ready for drop-off verification.
+            </Text>
+            <Text style={styles.hudSubtitle}>
+              Tap "Begin Drop-Off" to start passenger drop-off verification.
+            </Text>
+            {/* Primary action: Begin Drop-Off (driver manual action §4) */}
+            <TouchableOpacity
+              style={[styles.hudPrimaryBtn, { marginTop: 10, backgroundColor: '#4F46E5' }]}
+              onPress={handleCompleteDropoff}
+              disabled={isActionLoading}
+            >
+              <CheckCircle size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+              <Text style={styles.hudBtnText}>Begin Drop-Off</Text>
+            </TouchableOpacity>
+          </View>
+        );
+      }
+
+      // ── DropOff: verify each ReadyForDrop passenger ───────────────────────
+      // ── DropOff: status only, same reasoning as the boarding card above —
+      // "Confirm" for each passenger lives in the passenger queue below,
+      // not duplicated here.
+      case RIDE_STATUS.DROP_OFF: {
+        const pendingDrop = bookings.filter(b =>
+          b.status.toLowerCase() === BOOKING_STATUS.READY_FOR_DROP
+        );
+        const completedDrop = bookings.filter(b =>
+          b.status.toLowerCase() === BOOKING_STATUS.COMPLETED
+        );
+        const totalActive = bookings.filter(b =>
+          ![BOOKING_STATUS.CANCELLED, BOOKING_STATUS.REJECTED, BOOKING_STATUS.NO_SHOW].includes(b.status.toLowerCase() as any)
+        );
+
+        return (
+          <View style={styles.hudCardBody}>
+            <Text style={styles.hudTitle}>Passenger Drop-Off</Text>
+            <Text style={{ fontSize: 11, color: '#94A3B8', marginBottom: 8 }}>
+              {completedDrop.length}/{totalActive.length} dropped off
+              {pendingDrop.length > 0 ? ` · ${pendingDrop.length} remaining` : ' · All done!'}
+            </Text>
+
+            {pendingDrop.length > 0 ? (
+              <Text style={styles.hudSubtitle}>
+                Confirm each passenger's drop-off in the passenger list below.
+              </Text>
+            ) : (
+              <View style={{ flexDirection: 'row', alignItems: 'center', padding: 12, backgroundColor: '#0F2A1A', borderRadius: 8 }}>
+                <CheckCircle size={20} color="#10B981" style={{ marginRight: 8 }} />
+                <Text style={{ color: '#10B981', fontWeight: 'bold' }}>All passengers dropped off! Ride will complete automatically.</Text>
+              </View>
+            )}
+
+            {/* Already completed summary */}
+            {completedDrop.length > 0 && pendingDrop.length > 0 && (
+              <Text style={{ fontSize: 10, color: '#64748B', marginTop: 8 }}>
+                ✓ Completed: {completedDrop.map(b => b.passengerName.split(' ')[0]).join(', ')}
+              </Text>
+            )}
+          </View>
+        );
+      }
+
+      default:
+        return (
+          <View style={styles.hudCardBody}>
+            <Text style={styles.hudTitle}>Ride In Progress</Text>
+            <Text style={styles.hudSubtitle}>Please focus on road safety.</Text>
+          </View>
+        );
+    }
   };
+
+
 
   if (isLoading || !ride) {
     return (
@@ -1032,14 +1069,14 @@ export default function JourneyCommandCenterScreen() {
       <View style={styles.navigationHUD}>
         <View style={{ width: '100%' }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-            <TouchableOpacity 
-              onPress={() => router.back()} 
+            <TouchableOpacity
+              onPress={() => router.back()}
               style={styles.hudBackBtn}
             >
               <ArrowLeft size={20} color="#FFFFFF" />
             </TouchableOpacity>
 
-            <TouchableOpacity 
+            <TouchableOpacity
               activeOpacity={0.8}
               onLongPress={() => {
                 setIsConsoleOpen(true);
@@ -1052,8 +1089,8 @@ export default function JourneyCommandCenterScreen() {
               </Text>
             </TouchableOpacity>
 
-            <TouchableOpacity 
-              onPress={triggerSosAlert} 
+            <TouchableOpacity
+              onPress={triggerSosAlert}
               style={styles.hudSosBtn}
             >
               <ShieldAlert size={20} color="#FFFFFF" />
@@ -1099,10 +1136,10 @@ export default function JourneyCommandCenterScreen() {
               <View key={stop.id} style={styles.itineraryItemContainer}>
                 {/* Left Timeline vertical tracker line */}
                 <View style={styles.timelineColumn}>
-                  <View 
+                  <View
                     style={[
-                      styles.timelineDot, 
-                      { 
+                      styles.timelineDot,
+                      {
                         backgroundColor: isCompleted ? '#10B981' : isCurrent ? '#4F46E5' : theme.colors.surface,
                         borderColor: isCompleted ? '#10B981' : isCurrent ? '#4F46E5' : theme.colors.border,
                       }
@@ -1115,17 +1152,17 @@ export default function JourneyCommandCenterScreen() {
                     ) : null}
                   </View>
                   {!isLast && (
-                    <View 
+                    <View
                       style={[
-                        styles.timelineConnectorLine, 
+                        styles.timelineConnectorLine,
                         { backgroundColor: isCompleted ? '#10B981' : theme.colors.border }
-                      ]} 
+                      ]}
                     />
                   )}
                 </View>
 
                 {/* Right Stop Milestone content */}
-                <TouchableOpacity 
+                <TouchableOpacity
                   activeOpacity={0.8}
                   onPress={() => setExpandedStopIndex(idx)}
                   style={styles.stopContentColumn}
@@ -1137,7 +1174,7 @@ export default function JourneyCommandCenterScreen() {
                           {stop.name}
                         </Text>
                         <View style={[
-                          styles.stopTypePill, 
+                          styles.stopTypePill,
                           { backgroundColor: stop.type === 'pickup' ? '#4F46E515' : '#10B98115' }
                         ]}>
                           <Text style={[styles.stopTypePillText, { color: stop.type === 'pickup' ? '#4F46E5' : '#10B981' }]}>
@@ -1157,16 +1194,16 @@ export default function JourneyCommandCenterScreen() {
                       {stop.bookings.map((booking) => {
                         const isPending = booking.status === 'pending';
                         const boardedStatus = (booking.status as string).toLowerCase();
-                        const boarded = ['boarded', 'inride', 'readyfordrop', 'completed', 'verified'].includes(boardedStatus);
+                        const boarded = ['boarded', 'readyfordrop', 'completed'].includes(boardedStatus);
                         const dropped = ['completed'].includes(boardedStatus);
                         const initials = booking.passengerName.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2);
 
                         return (
-                          <View 
-                            key={booking.id} 
+                          <View
+                            key={booking.id}
                             style={[
-                              styles.passengerRowCard, 
-                              { 
+                              styles.passengerRowCard,
+                              {
                                 backgroundColor: theme.colors.surface,
                                 borderColor: isPending ? '#F59E0B50' : boarded || dropped ? '#10B98140' : theme.colors.border
                               }
@@ -1174,13 +1211,13 @@ export default function JourneyCommandCenterScreen() {
                           >
                             {/* Avatar */}
                             <View style={[
-                              styles.avatarCircle, 
+                              styles.avatarCircle,
                               { backgroundColor: isPending ? '#F59E0B15' : boarded || dropped ? '#10B98115' : '#4F46E515' }
                             ]}>
                               <Text style={[
-                                  styles.avatarText, 
-                                  { color: isPending ? '#F59E0B' : boarded || dropped ? '#10B981' : '#4F46E5' }
-                                ]}
+                                styles.avatarText,
+                                { color: isPending ? '#F59E0B' : boarded || dropped ? '#10B981' : '#4F46E5' }
+                              ]}
                               >
                                 {initials}
                               </Text>
@@ -1214,16 +1251,16 @@ export default function JourneyCommandCenterScreen() {
                             </View>
 
                             {/* Actions */}
-                             {(booking.status !== 'pending') && (
-                               <View style={styles.quickContactRow}>
-                                 <TouchableOpacity 
-                                   style={[styles.contactIconBtn, { borderColor: theme.colors.border, backgroundColor: theme.colors.card }]}
-                                   onPress={() => Linking.openURL(`tel:${booking.passengerPhone}`).catch(() => Alert.alert('Error', 'Cannot dial number.'))}
-                                 >
-                                   <Phone size={12} color={theme.colors.textSecondary} />
-                                 </TouchableOpacity>
-                               </View>
-                             )}
+                            {(booking.status !== 'pending') && (
+                              <View style={styles.quickContactRow}>
+                                <TouchableOpacity
+                                  style={[styles.contactIconBtn, { borderColor: theme.colors.border, backgroundColor: theme.colors.card }]}
+                                  onPress={() => Linking.openURL(`tel:${booking.passengerPhone}`).catch(() => Alert.alert('Error', 'Cannot dial number.'))}
+                                >
+                                  <Phone size={12} color={theme.colors.textSecondary} />
+                                </TouchableOpacity>
+                              </View>
+                            )}
 
                             {/* Action Button */}
                             {(() => {
@@ -1235,10 +1272,10 @@ export default function JourneyCommandCenterScreen() {
                                   : (dropped ? 'Dropped ✓' : 'Confirm');
 
                               return (
-                                <TouchableOpacity 
+                                <TouchableOpacity
                                   style={[
-                                    styles.boardingStatusBtn, 
-                                    { 
+                                    styles.boardingStatusBtn,
+                                    {
                                       backgroundColor: isPending ? '#F59E0B' : (boarded || dropped) ? '#10B98115' : '#4F46E5',
                                       borderColor: (boarded || dropped) ? '#10B981' : 'transparent',
                                       borderWidth: 1,
@@ -1282,9 +1319,9 @@ export default function JourneyCommandCenterScreen() {
                                   }}
                                   disabled={!isActionAllowed}
                                 >
-                                  <Text 
+                                  <Text
                                     style={[
-                                      styles.boardingStatusBtnText, 
+                                      styles.boardingStatusBtnText,
                                       { color: isPending ? '#FFFFFF' : (boarded || dropped) ? '#10B981' : '#FFFFFF', fontWeight: 'bold' }
                                     ]}
                                   >
@@ -1407,9 +1444,9 @@ export default function JourneyCommandCenterScreen() {
       </Modal>
 
       {/* Passenger Boarding Verification Modal */}
-      <Modal 
-        visible={isVerificationOpen} 
-        animationType="fade" 
+      <Modal
+        visible={isVerificationOpen}
+        animationType="fade"
         transparent={true}
         onRequestClose={() => setIsVerificationOpen(false)}
       >
@@ -1429,8 +1466,8 @@ export default function JourneyCommandCenterScreen() {
                   return (
                     <View style={styles.pVerifyHeader}>
                       <View style={{ flex: 1 }}>
-                        <Text style={[styles.pVerifyNameText, { color: theme.colors.text }]}>                          {passenger ? passenger.passengerName : modalMode === 'dropoff' ? 'Confirm Drop-off' : 'Verify Boarding'}
-                          {passenger ? passenger.passengerName : 'Verify Boarding'}
+                        <Text style={[styles.pVerifyNameText, { color: theme.colors.text }]}>
+                          {passenger ? passenger.passengerName : modalMode === 'dropoff' ? 'Confirm Drop-off' : 'Verify Boarding'}
                         </Text>
                         {passenger && (
                           <Text style={{ fontSize: 11, color: theme.colors.textSecondary }}>
@@ -1486,8 +1523,8 @@ export default function JourneyCommandCenterScreen() {
                           onChangeText={setOtpValue}
                           editable={!isActionLoading}
                         />
-                        <TouchableOpacity 
-                          style={[styles.otpSubmitBtn, { backgroundColor: isActionLoading ? theme.colors.textSecondary : theme.colors.primary }]} 
+                        <TouchableOpacity
+                          style={[styles.otpSubmitBtn, { backgroundColor: isActionLoading ? theme.colors.textSecondary : theme.colors.primary }]}
                           onPress={() => handleVerifyPassenger('otp')}
                           disabled={isActionLoading}
                         >
@@ -1500,24 +1537,13 @@ export default function JourneyCommandCenterScreen() {
 
                     <View style={[styles.dividerLine, { backgroundColor: theme.colors.border }]} />
 
-                    <TouchableOpacity 
-                      style={[styles.verifyMethodBtn, { borderColor: theme.colors.border, opacity: isActionLoading ? 0.5 : 1 }]} 
+                    <TouchableOpacity
+                      style={[styles.verifyMethodBtn, { borderColor: theme.colors.border, opacity: isActionLoading ? 0.5 : 1 }]}
                       onPress={() => startQrScanner()}
                       disabled={isActionLoading}
                     >
                       <Camera size={16} color={theme.colors.text} style={{ marginRight: 8 }} />
                       <Text style={[styles.verifyMethodBtnText, { color: theme.colors.text }]}>Scan QR Passcode</Text>
-                    </TouchableOpacity>
-
-                    <View style={[styles.dividerLine, { backgroundColor: theme.colors.border }]} />
-
-                    <TouchableOpacity 
-                      style={[styles.verifyMethodBtn, { borderColor: theme.colors.success, backgroundColor: theme.colors.success + '10', opacity: isActionLoading ? 0.5 : 1 }]} 
-                      onPress={() => handleVerifyPassenger('manual')}
-                      disabled={isActionLoading}
-                    >
-                      <CheckCircle size={16} color={theme.colors.success} style={{ marginRight: 8 }} />
-                      <Text style={[styles.verifyMethodBtnText, { color: theme.colors.success }]}>ID Check manual bypass</Text>
                     </TouchableOpacity>
                   </View>
                 ) : (
@@ -1527,7 +1553,7 @@ export default function JourneyCommandCenterScreen() {
                         <Text style={[styles.permissionText, { color: theme.colors.text, textAlign: 'center', marginBottom: 12 }]}>
                           Camera permission is required to scan boarding passes.
                         </Text>
-                        <TouchableOpacity 
+                        <TouchableOpacity
                           style={[styles.grantBtn, { backgroundColor: theme.colors.primary }]}
                           onPress={async () => {
                             const res = await requestCameraPermission();
@@ -1557,9 +1583,9 @@ export default function JourneyCommandCenterScreen() {
                         </View>
                       </View>
                     )}
-                    
-                    <TouchableOpacity 
-                      style={[styles.cancelScanBtn, { backgroundColor: theme.colors.error + '20', borderColor: theme.colors.error, borderWidth: 1 }]} 
+
+                    <TouchableOpacity
+                      style={[styles.cancelScanBtn, { backgroundColor: theme.colors.error + '20', borderColor: theme.colors.error, borderWidth: 1 }]}
                       onPress={() => {
                         setQrScannerActive(false);
                         setScanned(false);

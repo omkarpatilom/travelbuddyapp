@@ -6,14 +6,13 @@ export enum UserRole {
 }
 
 export enum RideStatus {
-  Draft = 0,
   Published = 1,
   Scheduled = 2,
-  RideStarted = 3,
+  JourneyStarted = 3,
   ArrivedAtPickup = 4,
   Boarding = 5,
   InTransit = 6,
-  ArrivedAtDrop = 7,
+  ArrivedAtDestination = 7,
   DropOff = 8,
   Completed = 9,
   Cancelled = 10,
@@ -31,13 +30,12 @@ export enum RidePhase {
 }
 
 export enum BookingStatus {
-  Pending = 0,
-  Confirmed = 1,
-  Rejected = 2,
-  Cancelled = 3,
-  ReadyForBoarding = 4,
-  Boarded = 5,
-  InRide = 6,
+  Pending = 1,
+  Confirmed = 2,
+  Rejected = 3,
+  Cancelled = 4,
+  ReadyForBoarding = 5,
+  Boarded = 6,
   ReadyForDrop = 7,
   Completed = 8,
   NoShow = 9,

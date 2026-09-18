@@ -1,5 +1,4 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
-import * as Notifications from 'expo-notifications';
 import { AppState, AppStateStatus, Platform } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 import { notificationService } from '@/services/notification.service';
@@ -9,19 +8,32 @@ import { sqliteStorage } from '@/storage/sqlite';
 import { useNotificationsQuery } from '@/hooks/useNotifications';
 import { useAuth } from '@/contexts/AuthContext';
 
+let Notifications: any = null;
+try {
+  Notifications = require('expo-notifications');
+} catch (e) {
+  console.warn('[Push] expo-notifications module disabled in Expo Go on Android');
+}
+
 // Project ID from app.json extras.eas.projectId
 const EAS_PROJECT_ID = '9c20730d-9aff-4652-bc7d-c0c376a2f451';
 
-// Configure notification display behaviour
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
+// Configure notification display behaviour safely
+if (Notifications && typeof Notifications.setNotificationHandler === 'function') {
+  try {
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: true,
+        shouldShowBanner: true,
+        shouldShowList: true,
+      }),
+    });
+  } catch (e) {
+    console.warn('[Push] Could not set notification handler:', e);
+  }
+}
 
 interface Notification {
   id: string;
@@ -34,7 +46,7 @@ interface Notification {
 
 interface NotificationContextType {
   expoPushToken: string | null;
-  notification: Notifications.Notification | null;
+  notification: any | null;
   notifications: Notification[];
   unreadCount: number;
   isLoading: boolean;
@@ -52,7 +64,7 @@ const NotificationContext = createContext<NotificationContextType | undefined>(u
 
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
   const [expoPushToken, setExpoPushToken] = useState<string | null>(null);
-  const [notification, setNotification] = useState<Notifications.Notification | null>(null);
+  const [notification, setNotification] = useState<any | null>(null);
   const appState = useRef<AppStateStatus>(AppState.currentState);
 
   const { user } = useAuth();
@@ -84,26 +96,33 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
   // Register for push and set up notification listeners
   useEffect(() => {
-    // Request permissions + obtain Expo push token
-    registerForPushNotificationsAsync().then(token => {
-      if (token) setExpoPushToken(token);
-    });
+    let notificationListener: any = null;
+    let responseListener: any = null;
 
-    // Listener: fires when a push notification arrives while app is foregrounded
-    const notificationListener = Notifications.addNotificationReceivedListener(notif => {
-      console.log('[Push] Received foreground notification:', notif.request.content.title);
-      setNotification(notif);
-      // Immediately invalidate so the notifications tab shows new item
-      queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.notifications] });
-    });
+    if (Notifications) {
+      try {
+        registerForPushNotificationsAsync().then(token => {
+          if (token) setExpoPushToken(token);
+        });
 
-    // Listener: fires when user taps a notification
-    const responseListener = Notifications.addNotificationResponseReceivedListener(response => {
-      console.log('[Push] Notification tapped:', response.notification.request.content.title);
-      // Optionally navigate based on response.notification.request.content.data
-    });
+        if (typeof Notifications.addNotificationReceivedListener === 'function') {
+          notificationListener = Notifications.addNotificationReceivedListener((notif: any) => {
+            console.log('[Push] Received foreground notification:', notif.request?.content?.title);
+            setNotification(notif);
+            queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.notifications] });
+          });
+        }
 
-    // AppState: refetch when app comes back to foreground
+        if (typeof Notifications.addNotificationResponseReceivedListener === 'function') {
+          responseListener = Notifications.addNotificationResponseReceivedListener((response: any) => {
+            console.log('[Push] Notification tapped:', response.notification?.request?.content?.title);
+          });
+        }
+      } catch (e: any) {
+        console.warn('[Push] Error setting up notification listeners:', e?.message || e);
+      }
+    }
+
     const appStateSubscription = AppState.addEventListener('change', (nextState) => {
       if (appState.current.match(/inactive|background/) && nextState === 'active' && user) {
         queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.notifications] });
@@ -112,8 +131,8 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     });
 
     return () => {
-      notificationListener.remove();
-      responseListener.remove();
+      notificationListener?.remove?.();
+      responseListener?.remove?.();
       appStateSubscription.remove();
     };
   }, []);
@@ -130,7 +149,6 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const markAsRead = async (id: string) => {
     if (!user) return;
     try {
-      // Optimistic update in SQLite
       await sqliteStorage.updateNotificationReadStatus(id, true);
       await notificationService.markAsRead(id);
       await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.notifications] });
@@ -184,34 +202,36 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   };
 
   const registerForPushNotificationsAsync = async (): Promise<string | null> => {
-    // Set up Android notification channel
-    if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('travelbuddy-default', {
-        name: 'TravelBuddy Notifications',
-        importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#2563EB',
-        sound: 'default',
-        showBadge: true,
-      });
-    }
-
-    // Check / request permission
-    const { status: existingStatus } = await Notifications.getPermissionsAsync();
-    let finalStatus = existingStatus;
-
-    if (existingStatus !== 'granted') {
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
-    }
-
-    if (finalStatus !== 'granted') {
-      console.warn('[Push] Notification permission not granted.');
-      return null;
-    }
-
-    // Obtain Expo push token
+    if (!Notifications) return null;
     try {
+      if (Platform.OS === 'android' && typeof Notifications.setNotificationChannelAsync === 'function') {
+        await Notifications.setNotificationChannelAsync('travelbuddy-default', {
+          name: 'TravelBuddy Notifications',
+          importance: Notifications.AndroidImportance?.MAX || 5,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#2563EB',
+          sound: 'default',
+          showBadge: true,
+        });
+      }
+
+      if (typeof Notifications.getPermissionsAsync !== 'function') return null;
+
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      let finalStatus = existingStatus;
+
+      if (existingStatus !== 'granted' && typeof Notifications.requestPermissionsAsync === 'function') {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+      }
+
+      if (finalStatus !== 'granted') {
+        console.warn('[Push] Notification permission not granted.');
+        return null;
+      }
+
+      if (typeof Notifications.getExpoPushTokenAsync !== 'function') return null;
+
       const tokenData = await Notifications.getExpoPushTokenAsync({
         projectId: EAS_PROJECT_ID,
       });
@@ -219,36 +239,46 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       console.log('[Push] Expo push token obtained:', token.substring(0, 40) + '...');
       return token;
     } catch (error: any) {
-      console.warn('[Push] Could not get Expo push token:', error?.message);
+      console.warn('[Push] Remote push notifications not supported in Expo Go on Android:', error?.message || error);
       return null;
     }
   };
 
   const sendLocalNotification = async (title: string, body: string) => {
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title,
-        body,
-        sound: 'default',
-        data: { timestamp: Date.now() },
-      },
-      trigger: null,
-    });
+    if (!Notifications || typeof Notifications.scheduleNotificationAsync !== 'function') return;
+    try {
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title,
+          body,
+          sound: 'default',
+          data: { timestamp: Date.now() },
+        },
+        trigger: null,
+      });
+    } catch (e: any) {
+      console.warn('[Push] Local notification failed:', e?.message || e);
+    }
   };
 
   const scheduleRideReminder = async (rideId: string, rideDate: string) => {
-    const reminderDate = new Date(rideDate);
-    reminderDate.setHours(reminderDate.getHours() - 1);
+    if (!Notifications || typeof Notifications.scheduleNotificationAsync !== 'function') return;
+    try {
+      const reminderDate = new Date(rideDate);
+      reminderDate.setHours(reminderDate.getHours() - 1);
 
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: '🚗 Ride Reminder',
-        body: 'Your ride starts in 1 hour. Get ready!',
-        sound: 'default',
-        data: { rideId },
-      },
-      trigger: { date: reminderDate } as any,
-    });
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: '🚗 Ride Reminder',
+          body: 'Your ride starts in 1 hour. Get ready!',
+          sound: 'default',
+          data: { rideId },
+        },
+        trigger: { date: reminderDate } as any,
+      });
+    } catch (e: any) {
+      console.warn('[Push] Schedule ride reminder failed:', e?.message || e);
+    }
   };
 
   return (

@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -18,10 +18,18 @@ export default function ProfileScreen() {
   const { theme } = useTheme();
   const { user, logout, refreshProfile, isLoading } = useAuth();
   const router = useRouter();
+  // Rapid tab-switching re-triggers this on every focus; guard against firing
+  // a new refresh while a previous one (2-22s on the current backend) is
+  // still in flight, to avoid overlapping GET /users/me requests racing.
+  const isRefreshingProfileRef = useRef(false);
 
   useFocusEffect(
     useCallback(() => {
-      refreshProfile();
+      if (isRefreshingProfileRef.current) return;
+      isRefreshingProfileRef.current = true;
+      refreshProfile().finally(() => {
+        isRefreshingProfileRef.current = false;
+      });
     }, [])
   );
 

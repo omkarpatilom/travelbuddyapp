@@ -33,6 +33,7 @@ export default function SavedLocationsScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const [newLocation, setNewLocation] = useState({
     name: '',
@@ -116,13 +117,13 @@ export default function SavedLocationsScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              setIsLoading(true);
+              setDeletingId(id);
               await api.delete(`/saved-locations/${id}`);
-              fetchLocations();
+              await fetchLocations();
             } catch (error: any) {
               Alert.alert('Error', error.message || 'Failed to delete location');
             } finally {
-              setIsLoading(false);
+              setDeletingId(null);
             }
           },
         },
@@ -186,8 +187,16 @@ export default function SavedLocationsScreen() {
                   <Text style={[styles.locationName, { color: theme.colors.text }]}>{item.name}</Text>
                   <Text style={[styles.locationAddress, { color: theme.colors.textSecondary }]}>{item.address}</Text>
                 </View>
-                <TouchableOpacity onPress={() => handleDeleteLocation(item.id)} style={styles.deleteButton}>
-                  <X size={20} color={theme.colors.error} />
+                <TouchableOpacity
+                  onPress={() => handleDeleteLocation(item.id)}
+                  style={styles.deleteButton}
+                  disabled={deletingId === item.id}
+                >
+                  {deletingId === item.id ? (
+                    <ActivityIndicator size="small" color={theme.colors.error} />
+                  ) : (
+                    <X size={20} color={theme.colors.error} />
+                  )}
                 </TouchableOpacity>
               </View>
             ))}
