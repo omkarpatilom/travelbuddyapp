@@ -53,6 +53,7 @@ import {
   isRideTerminal,
   getBookingDisplayLabel,
   RIDE_STATUS_LABEL,
+  reconcileBookingStatus,
 } from '@/utils/rideStatus';
 
 const { width, height } = Dimensions.get('window');
@@ -142,6 +143,13 @@ export default function JourneyCommandCenterScreen() {
   // overwriting state with stale data after a newer call - or an optimistic
   // update - has already set fresher state.
   const loadDataSeqRef = useRef(0);
+  // Mirrors `bookings` state for synchronous reads inside loadData(), which
+  // can run from a setInterval closure captured on an earlier render (React
+  // state read via closure there can't be trusted to be fresh). Used to
+  // reconcile a freshly-fetched status against what's already on screen, so
+  // a racing re-fetch can't regress a booking's displayed status backwards
+  // (e.g. Boarded reverting to Verify) — see reconcileBookingStatus.
+  const bookingsRef = useRef<Booking[]>([]);
 
   const addLog = (message: string) => {
     const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -162,6 +170,10 @@ export default function JourneyCommandCenterScreen() {
   useEffect(() => {
     setExpandedStopIndex(currentStopIndex);
   }, [currentStopIndex]);
+
+  useEffect(() => {
+    bookingsRef.current = bookings;
+  }, [bookings]);
 
   // Periodic polling for automated state transitions
   useEffect(() => {
@@ -257,11 +269,15 @@ export default function JourneyCommandCenterScreen() {
         setRide(rideData);
 
         const bookingsList = await bookingService.getRideBookings(rideId);
-        const normalizedBookings = (bookingsList || []).map((b: any) => ({
-          ...b,
-          id: b.bookingId || b.id,
-          status: (b.status || '').toLowerCase()
-        }));
+        const normalizedBookings = (bookingsList || []).map((b: any) => {
+          const id = b.bookingId || b.id;
+          const priorMatch = bookingsRef.current.find((pb: any) => pb.id === id);
+          return {
+            ...b,
+            id,
+            status: reconcileBookingStatus((b.status || '').toLowerCase(), priorMatch?.status),
+          };
+        });
         if (mySeq !== loadDataSeqRef.current) return;
         setBookings(normalizedBookings as any);
 
@@ -1262,14 +1278,27 @@ export default function JourneyCommandCenterScreen() {
                               </View>
                             )}
 
-                            {/* Action Button */}
+                            {/* Action Button
+                                Per the booking lifecycle (docs/Tasks/Ride And
+                                Booking Life cycle.md §8, §20), a booking can
+                                only reach ReadyForDrop/Completed after it has
+                                been Boarded — Confirm (drop-off) must stay
+                                disabled for a passenger who was never
+                                verified at pickup, not just for one already
+                                dropped. */}
                             {(() => {
-                              const isActionAllowed = isPending || (!boarded && stop.type === 'pickup') || (stop.type === 'drop' && !dropped);
+                              const isActionAllowed = isPending
+                                || (stop.type === 'pickup' && !boarded)
+                                || (stop.type === 'drop' && boarded && !dropped);
                               const actionLabel = isPending
                                 ? 'Accept'
                                 : stop.type === 'pickup'
                                   ? (boarded ? 'Boarded ✓' : 'Verify')
-                                  : (dropped ? 'Dropped ✓' : 'Confirm');
+                                  : dropped
+                                    ? 'Dropped ✓'
+                                    : boarded
+                                      ? 'Confirm'
+                                      : 'Not Boarded';
 
                               return (
                                 <TouchableOpacity
@@ -1312,7 +1341,7 @@ export default function JourneyCommandCenterScreen() {
                                         openVerificationModal(booking, 'boarding');
                                       }
                                     } else {
-                                      if (!dropped) {
+                                      if (boarded && !dropped) {
                                         openVerificationModal(booking, 'dropoff');
                                       }
                                     }

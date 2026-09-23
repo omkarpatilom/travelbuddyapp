@@ -86,6 +86,50 @@ export const isBookingBoarded = (s: string) =>
 export const isInRide = (rideStatus: string, bookingStatus: string): boolean =>
   rideStatus === RIDE_STATUS.IN_TRANSIT && bookingStatus === BOOKING_STATUS.BOARDED;
 
+/** Forward order of the booking lifecycle (§8, §20) — excludes terminal side-states. */
+const BOOKING_PROGRESS_ORDER: BookingStatusType[] = [
+  BOOKING_STATUS.PENDING,
+  BOOKING_STATUS.CONFIRMED,
+  BOOKING_STATUS.READY_FOR_BOARDING,
+  BOOKING_STATUS.BOARDED,
+  BOOKING_STATUS.READY_FOR_DROP,
+  BOOKING_STATUS.COMPLETED,
+];
+
+const BOOKING_OVERRIDE_STATUSES: BookingStatusType[] = [
+  BOOKING_STATUS.CANCELLED,
+  BOOKING_STATUS.REJECTED,
+  BOOKING_STATUS.NO_SHOW,
+];
+
+/**
+ * Picks the more-authoritative of a freshly-fetched booking status and the
+ * status already shown in the UI, so a slow/racing re-fetch (a 5s poll tick
+ * that started before a Verify/Confirm call, or an immediate re-fetch right
+ * after one that races the backend's own write) can't regress a booking back
+ * to an earlier lifecycle stage than what the UI already confirmed.
+ *
+ * Override statuses (cancelled/rejected/noshow) can happen at any point and
+ * always win. Otherwise, whichever status is further along the forward
+ * lifecycle order wins.
+ */
+export const reconcileBookingStatus = (serverStatus: string, localStatus?: string): string => {
+  const server = (serverStatus || '').toLowerCase();
+  const local = (localStatus || '').toLowerCase();
+  if (!local || local === server) return server;
+
+  if (BOOKING_OVERRIDE_STATUSES.includes(server as BookingStatusType) ||
+    BOOKING_OVERRIDE_STATUSES.includes(local as BookingStatusType)) {
+    return server;
+  }
+
+  const serverRank = BOOKING_PROGRESS_ORDER.indexOf(server as BookingStatusType);
+  const localRank = BOOKING_PROGRESS_ORDER.indexOf(local as BookingStatusType);
+  if (serverRank === -1 || localRank === -1) return server;
+
+  return localRank > serverRank ? local : server;
+};
+
 // ─── Display helpers ──────────────────────────────────────────────────────────
 
 export const RIDE_STATUS_LABEL: Record<RideStatusType, string> = {
