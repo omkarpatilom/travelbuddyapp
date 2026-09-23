@@ -1,6 +1,15 @@
+import { Platform } from 'react-native';
 import * as SQLite from 'expo-sqlite';
 
 const isTestEnv = typeof jest !== 'undefined' || process.env.NODE_ENV === 'test';
+
+// expo-sqlite's web backend runs SQLite in a Worker synchronized via
+// SharedArrayBuffer, which browsers only expose in a secure context
+// (https://, or http://localhost). This app is served over plain http:// on
+// a Tailscale IP for remote device access, which browsers never treat as
+// secure, so that backend can never work here (no header/config fixes it).
+// Use the same in-memory mock as tests on web instead of crashing.
+const useMockDatabase = isTestEnv || Platform.OS === 'web';
 
 // Local memory mock tables for Jest testing
 const mockTables: Record<string, any[]> = {
@@ -100,7 +109,7 @@ let databaseInstance: any = null;
 export const getDB = () => {
   if (databaseInstance) return databaseInstance;
 
-  if (isTestEnv) {
+  if (useMockDatabase) {
     databaseInstance = new MockDatabase();
   } else {
     databaseInstance = SQLite.openDatabaseSync('travelbuddy.db');
