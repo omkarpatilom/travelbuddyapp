@@ -55,6 +55,7 @@ import {
   RIDE_STATUS_LABEL,
   reconcileBookingStatus,
 } from '@/utils/rideStatus';
+import { rememberConfirmedBookingStatus, getRememberedBookingStatus } from '@/utils/bookingStatusMemory';
 
 const { width, height } = Dimensions.get('window');
 
@@ -74,6 +75,32 @@ interface Stop {
 const isValidUUID = (id: string): boolean =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
+// react-native-web's Alert.alert() is a documented no-op (it renders nothing
+// and never calls any button's onPress), which silently broke every
+// confirm-gated action on web -- most critically, a driver could never
+// accept a pending booking on web at all, since that action only ran inside
+// an Alert.alert button callback. window.confirm()/window.alert() are the
+// standard cross-platform substitutes; native keeps the real Alert.alert.
+const confirmAction = (title: string, message: string, confirmLabel: string = 'OK'): Promise<boolean> => {
+  if (Platform.OS === 'web') {
+    return Promise.resolve(typeof window !== 'undefined' ? window.confirm(`${title}\n\n${message}`) : true);
+  }
+  return new Promise((resolve) => {
+    Alert.alert(title, message, [
+      { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+      { text: confirmLabel, onPress: () => resolve(true) },
+    ]);
+  });
+};
+
+const notify = (title: string, message: string): void => {
+  if (Platform.OS === 'web') {
+    if (typeof window !== 'undefined') window.alert(`${title}\n\n${message}`);
+    return;
+  }
+  Alert.alert(title, message);
+};
+
 // Active ride statuses are imported from rideStatus.ts (ACTIVE_RIDE_STATUSES)
 
 export default function JourneyCommandCenterScreen() {
@@ -89,6 +116,7 @@ export default function JourneyCommandCenterScreen() {
     verifyBooking,
     completeStop,
     confirmBooking,
+    completeBooking,
     cancelRide,
     updateTracking,
     overrideTransition,
@@ -269,15 +297,21 @@ export default function JourneyCommandCenterScreen() {
         setRide(rideData);
 
         const bookingsList = await bookingService.getRideBookings(rideId);
-        const normalizedBookings = (bookingsList || []).map((b: any) => {
+        const normalizedBookings = await Promise.all((bookingsList || []).map(async (b: any) => {
           const id = b.bookingId || b.id;
+          const serverStatus = (b.status || '').toLowerCase();
           const priorMatch = bookingsRef.current.find((pb: any) => pb.id === id);
-          return {
-            ...b,
-            id,
-            status: reconcileBookingStatus((b.status || '').toLowerCase(), priorMatch?.status),
-          };
-        });
+          // Reconcile against same-session state first, then against the
+          // durable "this app just confirmed X" memory that survives a full
+          // page refresh/relaunch (see utils/bookingStatusMemory.ts) — either
+          // can be further along than a fresh-but-transiently-stale read.
+          const remembered = await getRememberedBookingStatus(id);
+          const status = reconcileBookingStatus(
+            reconcileBookingStatus(serverStatus, priorMatch?.status),
+            remembered
+          );
+          return { ...b, id, status };
+        }));
         if (mySeq !== loadDataSeqRef.current) return;
         setBookings(normalizedBookings as any);
 
@@ -546,17 +580,17 @@ export default function JourneyCommandCenterScreen() {
         ((b as any).bookingId || '').toLowerCase() === (ride?.currentPassengerId || '').toLowerCase()
     );
     if (!passengerToVerify || !ride) {
-      Alert.alert('Verification Error', 'No passenger selected for verification.');
+      notify('Verification Error', 'No passenger selected for verification.');
       return false;
     }
 
     if (method === 'otp' && (!otpValue || otpValue.length < 4)) {
-      Alert.alert('Validation Error', 'Please enter a valid 4-digit OTP code.');
+      notify('Validation Error', 'Please enter a valid 4-digit OTP code.');
       return false;
     }
 
     if (method === 'qr' && !scannedToken) {
-      Alert.alert('Scan Error', 'No QR code was detected. Please try again.');
+      notify('Scan Error', 'No QR code was detected. Please try again.');
       return false;
     }
 
@@ -581,6 +615,11 @@ export default function JourneyCommandCenterScreen() {
         // tick that started before this verification completed) so its stale
         // response can't land after this optimistic update and revert it.
         loadDataSeqRef.current += 1;
+
+        // Durable record that this app confirmed the verification, so a full
+        // page refresh/relaunch right after can't lose this to a transiently
+        // stale re-fetch (see utils/bookingStatusMemory.ts).
+        await rememberConfirmedBookingStatus(passengerToVerify.id, BOOKING_STATUS.BOARDED);
 
         // Update local booking status to 'boarded' for immediate UI feedback
         setBookings(prev => prev.map(b =>
@@ -614,12 +653,12 @@ export default function JourneyCommandCenterScreen() {
         await loadData();
       } else {
         setIsActionLoading(false);
-        Alert.alert('Verification Failed', 'Invalid verification code or QR token. Please try again.');
+        notify('Verification Failed', 'Invalid verification code or QR token. Please try again.');
       }
     } catch (e) {
       setIsActionLoading(false);
       console.error(e);
-      Alert.alert('Error', 'An error occurred during verification.');
+      notify('Error', 'An error occurred during verification.');
     }
 
     return success;
@@ -629,7 +668,7 @@ export default function JourneyCommandCenterScreen() {
     if (!ride) return false;
     const passenger = selectedPassenger || currentPassengerBooking;
     if (!passenger) {
-      Alert.alert('Error', 'No passenger selected for drop-off.');
+      notify('Error', 'No passenger selected for drop-off.');
       return false;
     }
 
@@ -638,11 +677,13 @@ export default function JourneyCommandCenterScreen() {
       if (isValidUUID(passenger.id)) {
         const ok = await completeBooking(passenger.id);
         if (ok) {
+          loadDataSeqRef.current += 1;
+          await rememberConfirmedBookingStatus(passenger.id, BOOKING_STATUS.COMPLETED);
           addLog(`✓ Drop-off completed for passenger: ${passenger.passengerName}`);
           await loadData();
           return true;
         }
-        Alert.alert('Error', 'Failed to complete drop-off.');
+        notify('Error', 'Failed to complete drop-off.');
         return false;
       } else {
         // UI-generated booking/stop — no backend call needed
@@ -1315,27 +1356,24 @@ export default function JourneyCommandCenterScreen() {
                                     if (!isActionAllowed) return;
 
                                     if (isPending) {
-                                      Alert.alert(
+                                      const confirmed = await confirmAction(
                                         'Accept Booking Request',
                                         `Are you sure you want to accept and confirm the booking request from ${booking.passengerName}?`,
-                                        [
-                                          { text: 'Cancel', style: 'cancel' },
-                                          {
-                                            text: 'Accept & Confirm',
-                                            onPress: async () => {
-                                              setIsActionLoading(true);
-                                              const ok = await confirmBooking(booking.id);
-                                              setIsActionLoading(false);
-                                              if (ok) {
-                                                addLog(`✓ Accepted and confirmed booking: ${booking.passengerName}`);
-                                                await loadData();
-                                              } else {
-                                                Alert.alert('Error', 'Failed to accept booking.');
-                                              }
-                                            }
-                                          }
-                                        ]
+                                        'Accept & Confirm'
                                       );
+                                      if (!confirmed) return;
+
+                                      setIsActionLoading(true);
+                                      const ok = await confirmBooking(booking.id);
+                                      setIsActionLoading(false);
+                                      if (ok) {
+                                        loadDataSeqRef.current += 1;
+                                        await rememberConfirmedBookingStatus(booking.id, BOOKING_STATUS.CONFIRMED);
+                                        addLog(`✓ Accepted and confirmed booking: ${booking.passengerName}`);
+                                        await loadData();
+                                      } else {
+                                        notify('Error', 'Failed to accept booking.');
+                                      }
                                     } else if (stop.type === 'pickup') {
                                       if (!boarded) {
                                         openVerificationModal(booking, 'boarding');

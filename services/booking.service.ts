@@ -26,6 +26,10 @@ export const bookingService = {
     return api.post<boolean>(`/bookings/${bookingId}/verify`, data);
   },
 
+  async getBookingOtp(bookingId: string) {
+    return api.get<string>(`/bookings/${bookingId}/otp`);
+  },
+
   async getMyBookings() {
     return api.get<BookingResponseDto[]>('/bookings/my-bookings');
   },

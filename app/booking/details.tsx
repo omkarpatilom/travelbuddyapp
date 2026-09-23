@@ -37,6 +37,7 @@ import {
 import RatingModal from '@/components/RatingModal';
 import { formatPrice } from '@/utils/validation';
 import { reviewService } from '@/services/review.service';
+import { bookingService } from '@/services/booking.service';
 
 export default function BookingDetailsScreen() {
   const [showRatingModal, setShowRatingModal] = useState(false);
@@ -47,6 +48,7 @@ export default function BookingDetailsScreen() {
   const [qrLoadError, setQrLoadError] = useState(false);
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
   const [hasReviewed, setHasReviewed] = useState(false);
+  const [otpCode, setOtpCode] = useState<string | null>(null);
   
   const { theme } = useTheme();
   const { user } = useAuth();
@@ -95,6 +97,23 @@ export default function BookingDetailsScreen() {
   useEffect(() => {
     fetchBookingDetails();
   }, [fetchBookingDetails]);
+
+  // The boarding OTP shown here must match what VerifyBookingHandler expects
+  // on the driver's side — it's HMAC-derived server-side (not something the
+  // client can safely compute itself), so it's fetched rather than hashed
+  // locally. A locally-computed placeholder previously used a different,
+  // unrelated hash and essentially never matched, breaking OTP verification.
+  useEffect(() => {
+    if (!booking?.id) {
+      setOtpCode(null);
+      return;
+    }
+    let cancelled = false;
+    bookingService.getBookingOtp(booking.id)
+      .then((otp) => { if (!cancelled) setOtpCode(String(otp)); })
+      .catch(() => { if (!cancelled) setOtpCode(null); });
+    return () => { cancelled = true; };
+  }, [booking?.id]);
 
   const handleCancelBooking = () => {
     if (!booking) return;
@@ -728,18 +747,7 @@ export default function BookingDetailsScreen() {
                 <View style={styles.otpPassBlock}>
                   <Text style={[styles.otpPassLabel, { color: theme.colors.textSecondary }]}>BOARDING OTP PASSCODE</Text>
                   <Text style={[styles.otpPassValue, { color: theme.colors.text }]}>
-                    {(() => {
-                      const getBookingOtp = (id: string) => {
-                        let hash = 0;
-                        const normalizedId = (id || '').toLowerCase();
-                        for (let i = 0; i < normalizedId.length; i++) {
-                          hash = normalizedId.charCodeAt(i) + ((hash << 5) - hash);
-                        }
-                        const code = Math.abs(hash % 9000) + 1000;
-                        return code.toString();
-                      };
-                      return getBookingOtp(booking.id).split('').join(' ');
-                    })()}
+                    {otpCode ? otpCode.split('').join(' ') : '- - - -'}
                   </Text>
                 </View>
               </View>
