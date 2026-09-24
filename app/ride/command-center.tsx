@@ -675,6 +675,17 @@ export default function JourneyCommandCenterScreen() {
     setIsActionLoading(true);
     try {
       if (isValidUUID(passenger.id)) {
+        // A booking can only be completed from ReadyForDrop. That transition normally
+        // happens when the destination geofence fires, but GPS lag or an early drop
+        // leaves the passenger Boarded, so move them to the drop point explicitly first.
+        if ((passenger.status || '').toLowerCase() !== BOOKING_STATUS.READY_FOR_DROP) {
+          try {
+            await bookingService.reachDrop(passenger.id);
+          } catch (e) {
+            // Already past this step or not applicable; completion below reports real failures.
+            console.warn('[DropConfirm] reach-drop skipped:', e);
+          }
+        }
         const ok = await completeBooking(passenger.id);
         if (ok) {
           loadDataSeqRef.current += 1;

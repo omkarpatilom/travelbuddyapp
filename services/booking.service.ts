@@ -22,6 +22,11 @@ export const bookingService = {
     return api.post<boolean>(`/bookings/${bookingId}/complete`, {});
   },
 
+  /** Driver-only: marks a boarded passenger as at the drop point (Boarded -> ReadyForDrop). */
+  async reachDrop(bookingId: string) {
+    return api.post<boolean>(`/bookings/${bookingId}/reach-drop`, {});
+  },
+
   async verifyBooking(bookingId: string, data: { verificationType: 'OTP' | 'QR'; otp?: string; qrToken?: string }) {
     return api.post<boolean>(`/bookings/${bookingId}/verify`, data);
   },
