@@ -220,7 +220,8 @@ export default function RouteMap({ from, to, distance, duration, driverLocation,
           <MapView
             ref={mapRef}
             style={styles.map}
-            provider={PROVIDER_GOOGLE}
+            // Google provider needs the Google Maps SDK, which iOS Expo Go doesn't ship; use Apple Maps there
+            provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
             initialRegion={{
               latitude: (from.coordinates.latitude + to.coordinates.latitude) / 2,
               longitude: (from.coordinates.longitude + to.coordinates.longitude) / 2,
@@ -228,6 +229,7 @@ export default function RouteMap({ from, to, distance, duration, driverLocation,
               longitudeDelta: Math.abs(from.coordinates.longitude - to.coordinates.longitude) * 1.5 || 0.05,
             }}
             customMapStyle={isDark ? darkMapStyle : []}
+            userInterfaceStyle={isDark ? 'dark' : 'light'}
             showsCompass={true}
             showsScale={true}
           >
@@ -344,10 +346,10 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   map: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     justifyContent: 'center',
     alignItems: 'center',
     gap: 8,
@@ -357,7 +359,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   errorContainer: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
@@ -473,7 +475,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   webMapArt: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     overflow: 'hidden',
   },
   webGridLine: {
@@ -483,7 +485,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   webRouteSvgContainer: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     position: 'relative',
   },
   webDot: {

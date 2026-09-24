@@ -516,7 +516,8 @@ export default function InteractiveMap({
       <MapView
         ref={mapRef}
         style={styles.map}
-        provider={PROVIDER_GOOGLE}
+        // Google provider needs the Google Maps SDK, which iOS Expo Go doesn't ship; use Apple Maps there
+        provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
         region={region}
         onPress={handleMapPress}
         showsUserLocation
@@ -526,6 +527,7 @@ export default function InteractiveMap({
         loadingEnabled
         loadingIndicatorColor={theme.colors.primary}
         customMapStyle={isDark ? darkMapStyle : []}
+        userInterfaceStyle={isDark ? 'dark' : 'light'}
       >
         {renderMarkers()}
         

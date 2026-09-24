@@ -438,7 +438,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   loaderContainer: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 10,

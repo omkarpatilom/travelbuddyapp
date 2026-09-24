@@ -55,7 +55,7 @@ export async function getRoute(
   endLon: number
 ): Promise<RouteInfo> {
   try {
-    const url = `http://router.project-osrm.org/route/v1/driving/${startLon},${startLat};${endLon},${endLat}?overview=full&geometries=polyline`;
+    const url = `https://router.project-osrm.org/route/v1/driving/${startLon},${startLat};${endLon},${endLat}?overview=full&geometries=polyline`;
     const response = await fetch(url);
     
     if (response.ok) {

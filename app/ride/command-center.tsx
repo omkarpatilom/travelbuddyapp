@@ -1635,7 +1635,7 @@ export default function JourneyCommandCenterScreen() {
                     ) : (
                       <View style={styles.cameraBox}>
                         <CameraView
-                          style={StyleSheet.absoluteFillObject}
+                          style={StyleSheet.absoluteFill}
                           barcodeScannerSettings={{
                             barcodeTypes: ['qr'],
                           }}
@@ -1677,7 +1677,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   fullScreenMap: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 1,
   },
   loadingContainer: {
@@ -2187,7 +2187,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   scanOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: 'rgba(0,0,0,0.3)',
