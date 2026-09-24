@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { TouchableOpacity, Text, StyleSheet, Platform } from 'react-native';
-import DateTimePickerModal from 'react-native-modal-datetime-picker';
+import DateTimePickerModal from '@/components/DateTimePickerModal';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Calendar } from 'lucide-react-native';
 

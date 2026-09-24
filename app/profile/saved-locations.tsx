@@ -15,6 +15,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { api } from '@/utils/api';
 import { MapPin, Plus, X, Home, Briefcase, Heart, ArrowLeft, Save } from 'lucide-react-native';
 import LocationPicker from '@/components/LocationPicker';
+import { safeBack } from '@/utils/navigation';
 
 interface SavedLocation {
   id: string;
@@ -151,7 +152,7 @@ export default function SavedLocationsScreen() {
   return (
     <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <View style={[styles.header, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <TouchableOpacity onPress={() => safeBack(router)} style={styles.backButton}>
           <ArrowLeft size={24} color={theme.colors.text} />
         </TouchableOpacity>
         <Text style={[styles.title, { color: theme.colors.text }]}>Saved Locations</Text>

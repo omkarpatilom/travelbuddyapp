@@ -7,6 +7,7 @@ import { useSafety } from '@/contexts/SafetyContext';
 import { useReviews } from '@/contexts/ReviewContext';
 import { useNotifications } from '@/contexts/NotificationContext';
 import { useRouter } from 'expo-router';
+import { safeBack } from '@/utils/navigation';
 
 export default function DebugScreen() {
   const [logs, setLogs] = useState<string[]>([]);
@@ -76,7 +77,7 @@ export default function DebugScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>API Sync Debugger</Text>
-        <TouchableOpacity style={styles.closeButton} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.closeButton} onPress={() => safeBack(router)}>
           <Text style={styles.closeText}>Back</Text>
         </TouchableOpacity>
       </View>

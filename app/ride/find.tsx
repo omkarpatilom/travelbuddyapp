@@ -46,6 +46,7 @@ import PreferencesSelector from '@/components/PreferencesSelector';
 import LocationPicker from '@/components/LocationPicker';
 import * as Location from 'expo-location';
 import { api } from '@/utils/api';
+import { safeBack } from '@/utils/navigation';
 
 const { width } = Dimensions.get('window');
 
@@ -536,7 +537,7 @@ export default function FindRideScreen() {
       {/* Search Header */}
       <View style={[styles.searchContainer, { backgroundColor: theme.colors.card }]}>
         <View style={styles.headerNav}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
+          <TouchableOpacity onPress={() => safeBack(router)} style={styles.iconBtn}>
             <ArrowLeft size={24} color={theme.colors.text} />
           </TouchableOpacity>
           <Text style={[styles.headerTitle, { color: theme.colors.text }]}>Find a Ride</Text>

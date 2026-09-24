@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import DateTimePickerModal from 'react-native-modal-datetime-picker';
+import DateTimePickerModal from '@/components/DateTimePickerModal';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRides } from '@/contexts/RideContext';

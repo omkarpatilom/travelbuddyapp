@@ -21,6 +21,7 @@ import { Shield, Lock, Smartphone, Monitor, LogOut, ArrowLeft, ChevronRight, Key
 import Svg, { Path } from 'react-native-svg';
 import { Config } from '@/utils/config';
 import { googleAuthHelper } from '@/utils/googleAuth';
+import { safeBack } from '@/utils/navigation';
 
 interface Session {
   id: string;
@@ -237,7 +238,7 @@ export default function SecurityScreen() {
   return (
     <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <View style={[styles.header, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <TouchableOpacity onPress={() => safeBack(router)} style={styles.backButton}>
           <ArrowLeft size={24} color={theme.colors.text} />
         </TouchableOpacity>
         <Text style={[styles.title, { color: theme.colors.text }]}>Security Settings</Text>

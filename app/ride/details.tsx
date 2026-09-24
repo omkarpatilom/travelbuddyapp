@@ -35,6 +35,7 @@ import {
   RIDE_STATUS_LABEL,
   BOOKING_STATUS_LABEL,
 } from '@/utils/rideStatus';
+import { safeBack } from '@/utils/navigation';
 
 
 
@@ -531,7 +532,7 @@ export default function RideDetailsScreen() {
           setIsActionLoading(false);
           if (success) {
             Alert.alert('Success', 'Ride cancelled');
-            router.back();
+            safeBack(router);
           } else {
             Alert.alert('Error', 'Failed to cancel ride');
           }
@@ -632,7 +633,7 @@ export default function RideDetailsScreen() {
       <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]}>
         {/* Header */}
         <View style={[styles.header, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <TouchableOpacity onPress={() => safeBack(router)} style={styles.backButton}>
             <ArrowLeft size={24} color={theme.colors.text} />
           </TouchableOpacity>
           <Text style={[styles.title, { color: theme.colors.text }]}>Ride Details</Text>

@@ -6,6 +6,7 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import InteractiveMap from '@/components/InteractiveMap';
+import { safeBack } from '@/utils/navigation';
 
 interface LocationData {
   latitude: number;
@@ -38,7 +39,7 @@ export default function MapSelectScreen() {
   };
 
   const handleClose = () => {
-    router.back();
+    safeBack(router);
   };
 
   return (

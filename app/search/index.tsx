@@ -24,6 +24,7 @@ import {
   Clock,
   WifiOff
 } from 'lucide-react-native';
+import { safeBack } from '@/utils/navigation';
 
 export default function SearchScreen() {
   const { theme, isDark } = useTheme();
@@ -206,7 +207,7 @@ export default function SearchScreen() {
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => safeBack(router)} style={styles.backBtn}>
           <ArrowLeft size={24} color={theme.colors.text} />
         </TouchableOpacity>
         <Text style={[styles.title, { color: theme.colors.text }]}>Search History</Text>

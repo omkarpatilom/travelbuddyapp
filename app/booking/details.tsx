@@ -38,6 +38,7 @@ import RatingModal from '@/components/RatingModal';
 import { formatPrice } from '@/utils/validation';
 import { reviewService } from '@/services/review.service';
 import { bookingService } from '@/services/booking.service';
+import { safeBack } from '@/utils/navigation';
 
 export default function BookingDetailsScreen() {
   const [showRatingModal, setShowRatingModal] = useState(false);
@@ -132,7 +133,7 @@ export default function BookingDetailsScreen() {
               const success = await cancelBooking(booking.id);
               if (success) {
                 Alert.alert('Success', 'Your booking has been cancelled', [
-                  { text: 'OK', onPress: () => router.back() }
+                  { text: 'OK', onPress: () => safeBack(router) }
                 ]);
               } else {
                 Alert.alert('Error', 'Failed to cancel booking. Please try again.');
@@ -338,7 +339,7 @@ export default function BookingDetailsScreen() {
       <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]}>
         {/* Header */}
         <View style={[styles.header, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <TouchableOpacity onPress={() => safeBack(router)} style={styles.backButton}>
             <ArrowLeft size={24} color={theme.colors.text} />
           </TouchableOpacity>
           <Text style={[styles.title, { color: theme.colors.text }]}>Booking Details</Text>

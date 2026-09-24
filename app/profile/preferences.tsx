@@ -28,6 +28,7 @@ import {
   Briefcase,
   Baby
 } from 'lucide-react-native';
+import { safeBack } from '@/utils/navigation';
 
 export default function PreferencesScreen() {
   const { theme } = useTheme();
@@ -140,7 +141,7 @@ export default function PreferencesScreen() {
           text: 'OK',
           onPress: () => {
             if (router.canGoBack()) {
-              router.back();
+              safeBack(router);
             } else {
               router.replace('/(tabs)/profile');
             }
@@ -177,7 +178,7 @@ export default function PreferencesScreen() {
   return (
     <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <View style={[styles.header, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <TouchableOpacity onPress={() => safeBack(router)} style={styles.backButton}>
           <ArrowLeft size={24} color={theme.colors.text} />
         </TouchableOpacity>
         <Text style={[styles.title, { color: theme.colors.text }]}>Ride Preferences</Text>

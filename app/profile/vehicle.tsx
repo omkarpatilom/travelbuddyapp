@@ -18,6 +18,7 @@ import PhotoUploader from '@/components/PhotoUploader';
 import { AVAILABLE_FEATURES } from '@/components/VehicleFeatureTags';
 import DropdownSelector from '@/components/DropdownSelector';
 import { UniversalRidePreferences } from '@/components/RidePreferences';
+import { safeBack } from '@/utils/navigation';
 
 interface Vehicle {
   id: string;
@@ -319,7 +320,7 @@ export default function VehicleDetailsScreen() {
           text: 'OK',
           onPress: () => {
             if (router.canGoBack()) {
-              router.back();
+              safeBack(router);
             } else {
               router.replace('/(tabs)/profile');
             }
@@ -607,7 +608,7 @@ export default function VehicleDetailsScreen() {
       }
     >
       <View style={[styles.header, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <TouchableOpacity onPress={() => safeBack(router)} style={styles.backButton}>
           <ArrowLeft size={24} color={theme.colors.text} />
         </TouchableOpacity>
         <Text style={[styles.title, { color: theme.colors.text }]}>My Vehicles</Text>

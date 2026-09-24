@@ -14,6 +14,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { api } from '@/utils/api';
 import { ArrowLeft, Star, TrendingUp, Award, Users } from 'lucide-react-native';
+import { safeBack } from '@/utils/navigation';
 
 export default function ReviewsScreen() {
   const [activeTab, setActiveTab] = useState<'received' | 'given'>('received');
@@ -139,7 +140,7 @@ export default function ReviewsScreen() {
   return (
     <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <View style={[styles.header, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <TouchableOpacity onPress={() => safeBack(router)} style={styles.backButton}>
           <ArrowLeft size={24} color={theme.colors.text} />
         </TouchableOpacity>
         <Text style={[styles.title, { color: theme.colors.text }]}>Reviews & Ratings</Text>

@@ -56,6 +56,7 @@ import {
   reconcileBookingStatus,
 } from '@/utils/rideStatus';
 import { rememberConfirmedBookingStatus, getRememberedBookingStatus } from '@/utils/bookingStatusMemory';
+import { safeBack } from '@/utils/navigation';
 
 const { width, height } = Dimensions.get('window');
 
@@ -103,6 +104,9 @@ const notify = (title: string, message: string): void => {
 
 // Active ride statuses are imported from rideStatus.ts (ACTIVE_RIDE_STATUSES)
 
+
+/** How long real GPS pings are ignored after a simulated location is sent. */
+const SIMULATION_GPS_PAUSE_MS = 5 * 60 * 1000;
 export default function JourneyCommandCenterScreen() {
   const { theme, isDark } = useTheme();
   const { user } = useAuth();
@@ -164,6 +168,10 @@ export default function JourneyCommandCenterScreen() {
   // take several seconds when it also triggers a geofence transition) is
   // still in flight - overlapping requests were colliding on the ride row.
   const trackingInFlightRef = useRef(false);
+  // While a simulated position is in effect, real GPS pings would contradict it (the
+  // backend's geofence would see the driver jump away from the pickup and depart the
+  // ride), so pause them for a while after each simulation.
+  const simulationActiveUntilRef = useRef(0);
   // Monotonic counter: each loadData() call claims the next value before its
   // awaits, and only commits state if it's still the most-recently-claimed
   // call by the time its network responses land. Prevents an older, slower
@@ -252,6 +260,7 @@ export default function JourneyCommandCenterScreen() {
             // persistent "Confirm Drop-Off" 400s (concurrent writes to the
             // same ride row). The next ping picks up the latest position
             // anyway, so nothing meaningful is lost by skipping one.
+            if (Date.now() < simulationActiveUntilRef.current) return;
             if (trackingInFlightRef.current) return;
             trackingInFlightRef.current = true;
             updateTracking(ride.id, latitude, longitude).finally(() => {
@@ -551,6 +560,8 @@ export default function JourneyCommandCenterScreen() {
     if (!activeStop) return;
 
     setIsActionLoading(true);
+    simulationActiveUntilRef.current = Date.now() + SIMULATION_GPS_PAUSE_MS;
+    addLog('⏸️ Real GPS paused for 5 min while the simulated position is in effect.');
     try {
       if (type === 'far') {
         const lat = activeStop.coordinates.latitude + 0.01;
@@ -831,7 +842,7 @@ export default function JourneyCommandCenterScreen() {
           </Text>
           <TouchableOpacity
             style={[styles.hudPrimaryBtn, { backgroundColor: '#4F46E5' }]}
-            onPress={() => router.back()}
+            onPress={() => safeBack(router)}
           >
             <ArrowLeft size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
             <Text style={styles.hudBtnText}>Go to Ride Details</Text>
@@ -848,7 +859,7 @@ export default function JourneyCommandCenterScreen() {
           <Text style={styles.hudSubtitle}>All drop-offs completed. Thank you for riding with TravelBuddy!</Text>
           <TouchableOpacity
             style={[styles.hudPrimaryBtn, { backgroundColor: '#4F46E5' }]}
-            onPress={() => router.back()}
+            onPress={() => safeBack(router)}
           >
             <ArrowLeft size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
             <Text style={styles.hudBtnText}>Back to Dashboard</Text>
@@ -865,7 +876,7 @@ export default function JourneyCommandCenterScreen() {
           <Text style={styles.hudSubtitle}>This ride has been cancelled.</Text>
           <TouchableOpacity
             style={[styles.hudPrimaryBtn, { backgroundColor: '#4F46E5' }]}
-            onPress={() => router.back()}
+            onPress={() => safeBack(router)}
           >
             <ArrowLeft size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
             <Text style={styles.hudBtnText}>Back to Dashboard</Text>
@@ -1138,7 +1149,7 @@ export default function JourneyCommandCenterScreen() {
         <View style={{ width: '100%' }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
             <TouchableOpacity
-              onPress={() => router.back()}
+              onPress={() => safeBack(router)}
               style={styles.hudBackBtn}
             >
               <ArrowLeft size={20} color="#FFFFFF" />

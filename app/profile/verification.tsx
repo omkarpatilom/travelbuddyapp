@@ -33,6 +33,7 @@ import {
   FolderOpen,
   Image as LucideImage
 } from 'lucide-react-native';
+import { safeBack } from '@/utils/navigation';
 
 interface DocumentStatus {
   status: 'NotStarted' | 'Pending' | 'Approved' | 'Rejected';
@@ -455,7 +456,7 @@ export default function VerificationScreen() {
     <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
       <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={[styles.header, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <TouchableOpacity onPress={() => safeBack(router)} style={styles.backButton}>
             <ArrowLeft size={24} color={theme.colors.text} />
           </TouchableOpacity>
           <Text style={[styles.title, { color: theme.colors.text }]}>Verification Center</Text>

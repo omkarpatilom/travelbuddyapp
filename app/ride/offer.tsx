@@ -22,6 +22,7 @@ import VehicleSelector from '@/components/VehicleSelector';
 import PreferencesSelector, { RidePreferences } from '@/components/PreferencesSelector';
 import MapLocationSelector from '@/components/MapLocationSelector';
 import DropdownSelector from '@/components/DropdownSelector';
+import { safeBack } from '@/utils/navigation';
 
 
 interface Vehicle {
@@ -325,7 +326,7 @@ export default function OfferRideScreen() {
         await queryClient.refetchQueries({ queryKey: [CACHE_KEYS.rides, 'my-rides'] });
         console.log('[DEBUG] offer.tsx: my-rides cache invalidated and refetched');
         Alert.alert('Success', 'Your ride has been posted successfully!', [
-          { text: 'OK', onPress: () => router.back() }
+          { text: 'OK', onPress: () => safeBack(router) }
         ]);
       } else {
         Alert.alert('Error', 'Failed to create ride. Please try again.');
@@ -350,7 +351,7 @@ export default function OfferRideScreen() {
     <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <View style={[styles.header, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
         <View style={styles.headerTop}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <TouchableOpacity onPress={() => safeBack(router)} style={styles.backButton}>
             <ArrowLeft size={24} color={theme.colors.text} />
           </TouchableOpacity>
           <Text style={[styles.title, { color: theme.colors.text }]}>Offer a Ride</Text>

@@ -16,6 +16,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { User, Phone, Users, IndianRupee, ArrowLeft, CreditCard, MapPin, ChevronDown } from 'lucide-react-native';
 import { mockRides } from '@/data/mockData';
 import { formatPrice } from '@/utils/validation';
+import { safeBack } from '@/utils/navigation';
 
 export default function BookRideScreen() {
   const [selectedSeats, setSelectedSeats] = useState(1);
@@ -131,7 +132,7 @@ export default function BookRideScreen() {
   return (
     <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <View style={[styles.header, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <TouchableOpacity onPress={() => safeBack(router)} style={styles.backButton}>
           <ArrowLeft size={24} color={theme.colors.text} />
         </TouchableOpacity>
         <Text style={[styles.title, { color: theme.colors.text }]}>Book Ride</Text>

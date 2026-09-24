@@ -124,7 +124,7 @@ async function handleResponse<T>(
     try {
       if (text) {
         const errorData = JSON.parse(text);
-        errorMessage = errorData.message || errorData.error || errorMessage;
+        errorMessage = extractErrorMessage(errorData) || errorMessage;
       }
     } catch {}
     console.error(`Request Failed: ${endpoint}`, response.status, text);
@@ -140,6 +140,26 @@ async function handleResponse<T>(
   } catch (e) {
     return text as unknown as T;
   }
+}
+
+/**
+ * Pulls a human-readable message out of a backend error body. The .NET services
+ * answer with ProblemDetails (message in `title`, validation errors in `errors`)
+ * or `{ message }` / `{ Message }`. `detail` is ignored: in development it holds
+ * a server stack trace.
+ */
+function extractErrorMessage(errorData: any): string | undefined {
+  if (!errorData || typeof errorData !== 'object') return undefined;
+  if (errorData.errors && typeof errorData.errors === 'object') {
+    for (const messages of Object.values(errorData.errors)) {
+      if (Array.isArray(messages) && typeof messages[0] === 'string') return messages[0];
+    }
+  }
+  const candidates = [errorData.message, errorData.Message, errorData.error, errorData.title];
+  // "Bad Request"-style titles carry no information; prefer anything more specific.
+  return candidates.find(
+    (c) => typeof c === 'string' && c.trim() !== '' && !/^(bad request|not found|unauthorized|forbidden)$/i.test(c.trim())
+  );
 }
 
 export const api = {

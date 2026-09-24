@@ -13,6 +13,7 @@ import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
 import { api } from '@/utils/api';
 import { Bell, Mail, Smartphone, MessageSquare, ArrowLeft, Save } from 'lucide-react-native';
+import { safeBack } from '@/utils/navigation';
 
 export default function NotificationSettingsScreen() {
   const { theme } = useTheme();
@@ -80,7 +81,7 @@ export default function NotificationSettingsScreen() {
   return (
     <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <View style={[styles.header, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <TouchableOpacity onPress={() => safeBack(router)} style={styles.backButton}>
           <ArrowLeft size={24} color={theme.colors.text} />
         </TouchableOpacity>
         <Text style={[styles.title, { color: theme.colors.text }]}>Notification Settings</Text>
