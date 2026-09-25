@@ -89,9 +89,61 @@ async function handleRefreshToken(): Promise<string | null> {
   }
 }
 
+/** The parts of a fetch Response that handleResponse relies on. */
+type ApiResponse = Pick<Response, 'ok' | 'status' | 'statusText' | 'text'>;
+
+/**
+ * Multipart uploads go through React Native's native XMLHttpRequest. Expo's
+ * fetch (the global fetch since the winter runtime) cannot serialise React
+ * Native file parts ({ uri, name, type }) and fails with "Unsupported
+ * FormDataPart implementation"; XHR streams the file from its uri natively.
+ */
+function sendMultipart(
+  url: string,
+  init: { method: string; headers: Record<string, string>; body: FormData; signal: AbortSignal },
+): Promise<ApiResponse> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(init.method, url);
+    // The multipart boundary header is set by XHR itself.
+    Object.entries(init.headers).forEach(([key, value]) => {
+      if (key.toLowerCase() !== 'content-type') xhr.setRequestHeader(key, value);
+    });
+
+    const abortError = () => Object.assign(new Error('Aborted'), { name: 'AbortError' });
+    if (init.signal.aborted) return reject(abortError());
+    init.signal.addEventListener('abort', () => {
+      xhr.abort();
+      reject(abortError());
+    });
+
+    xhr.onload = () => {
+      const body = xhr.responseText ?? '';
+      resolve({
+        ok: xhr.status >= 200 && xhr.status < 300,
+        status: xhr.status,
+        statusText: xhr.statusText,
+        text: () => Promise.resolve(body),
+      });
+    };
+    xhr.onerror = () => reject(new TypeError('Network request failed'));
+    xhr.ontimeout = () => reject(abortError());
+    xhr.send(init.body);
+  });
+}
+
+function send(
+  url: string,
+  init: { method: string; headers: Record<string, string>; body?: any; signal: AbortSignal },
+): Promise<ApiResponse> {
+  return init.body instanceof FormData
+    ? sendMultipart(url, init as Parameters<typeof sendMultipart>[1])
+    : fetch(url, init);
+}
+
 // Safe response JSON parser
 async function handleResponse<T>(
-  response: Response,
+  response: ApiResponse,
   endpoint: string,
   originalRequest?: () => Promise<T>,
 ): Promise<T> {
@@ -223,7 +275,7 @@ export const api = {
       const id = setTimeout(() => controller.abort(), isFormData ? UPLOAD_TIMEOUT_MS : REQUEST_TIMEOUT_MS);
 
       try {
-        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+        const response = await send(`${API_BASE_URL}${endpoint}`, {
           method: 'POST',
           headers,
           body: isFormData ? body : JSON.stringify(body),
@@ -248,7 +300,7 @@ export const api = {
       const id = setTimeout(() => controller.abort(), isFormData ? UPLOAD_TIMEOUT_MS : REQUEST_TIMEOUT_MS);
 
       try {
-        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+        const response = await send(`${API_BASE_URL}${endpoint}`, {
           method: 'PUT',
           headers,
           body: isFormData ? body : JSON.stringify(body),
@@ -273,7 +325,7 @@ export const api = {
       const id = setTimeout(() => controller.abort(), isFormData ? UPLOAD_TIMEOUT_MS : REQUEST_TIMEOUT_MS);
 
       try {
-        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+        const response = await send(`${API_BASE_URL}${endpoint}`, {
           method: 'PATCH',
           headers,
           body: isFormData ? body : JSON.stringify(body),

@@ -15,7 +15,14 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as WebBrowser from 'expo-web-browser';
 import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
-import { api } from '@/utils/api';
+import {
+  verificationService,
+  DocumentValidationError,
+  DOCUMENT_PICKER_TYPES,
+  SUPPORTED_FORMATS_LABEL,
+  type VerificationDocType,
+  type VerificationDocumentState,
+} from '@/services/verification.service';
 import { 
   Shield, 
   FileCheck, 
@@ -34,26 +41,21 @@ import {
   Image as LucideImage
 } from 'lucide-react-native';
 import { safeBack } from '@/utils/navigation';
-
-interface DocumentStatus {
-  status: 'NotStarted' | 'Pending' | 'Approved' | 'Rejected';
-  documentUrl?: string | null;
-  originalFileName?: string | null;
-  rejectionReason?: string | null;
-}
+import { useAuth } from '@/contexts/AuthContext';
 
 interface VerificationStatus {
   status: 'Pending' | 'Approved' | 'Rejected' | 'NotStarted';
   documents: {
-    license: DocumentStatus;
-    aadhar: DocumentStatus;
-    vehicleRc: DocumentStatus;
+    license: VerificationDocumentState;
+    aadhar: VerificationDocumentState;
+    vehicleRc: VerificationDocumentState;
   };
 }
 
 export default function VerificationScreen() {
   const { theme } = useTheme();
   const router = useRouter();
+  const { refreshProfile } = useAuth();
 
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState<string | null>(null);
@@ -66,7 +68,8 @@ export default function VerificationScreen() {
     }
   });
 
-  const [activeUploadType, setActiveUploadType] = useState<'license' | 'aadhar' | 'vehicle-rc' | null>(null);
+  const [activeUploadType, setActiveUploadType] = useState<VerificationDocType | null>(null);
+  const [openingDocument, setOpeningDocument] = useState<string | null>(null);
   const [isOptionModalOpen, setIsOptionModalOpen] = useState(false);
 
   useEffect(() => {
@@ -75,7 +78,7 @@ export default function VerificationScreen() {
 
   const fetchVerificationStatus = async () => {
     try {
-      const data = await api.get<any>('/Verification/status');
+      const data = await verificationService.getStatus();
       setStatus({
         status: data.overallStatus || 'NotStarted',
         documents: {
@@ -91,7 +94,9 @@ export default function VerificationScreen() {
     }
   };
 
-  const handleUploadPress = (type: 'license' | 'aadhar' | 'vehicle-rc') => {
+  const handleUploadPress = (type: VerificationDocType) => {
+    // One upload per document at a time; other documents stay usable.
+    if (isUploading === type) return;
     setActiveUploadType(type);
     setIsOptionModalOpen(true);
   };
@@ -121,13 +126,12 @@ export default function VerificationScreen() {
 
       if (!result.canceled && result.assets[0].uri) {
         const asset = result.assets[0];
-        await processAndUploadFile(
-          activeUploadType,
-          asset.uri,
-          asset.fileName || `camera-capture.jpg`,
-          asset.mimeType || 'image/jpeg',
-          asset.fileSize
-        );
+        await uploadFile(activeUploadType, {
+          uri: asset.uri,
+          name: asset.fileName || 'camera-capture.jpg',
+          mimeType: asset.mimeType || 'image/jpeg',
+          size: asset.fileSize,
+        });
       }
     } catch (error) {
       console.error('[Verification] Error launching camera:', error);
@@ -151,7 +155,7 @@ export default function VerificationScreen() {
 
       console.log('[Verification] Launching image library...');
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: true,
         quality: 0.8,
       });
@@ -162,13 +166,12 @@ export default function VerificationScreen() {
 
       if (!result.canceled && result.assets[0].uri) {
         const asset = result.assets[0];
-        await processAndUploadFile(
-          activeUploadType,
-          asset.uri,
-          asset.fileName || `gallery-image.jpg`,
-          asset.mimeType || 'image/jpeg',
-          asset.fileSize
-        );
+        await uploadFile(activeUploadType, {
+          uri: asset.uri,
+          name: asset.fileName || 'gallery-image.jpg',
+          mimeType: asset.mimeType || 'image/jpeg',
+          size: asset.fileSize,
+        });
       }
     } catch (error) {
       console.error('[Verification] Error opening gallery:', error);
@@ -184,12 +187,7 @@ export default function VerificationScreen() {
     try {
       console.log('[Verification] Launching document picker...');
       const result = await DocumentPicker.getDocumentAsync({
-        type: [
-          'application/pdf',
-          'application/msword',
-          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-          'image/*'
-        ],
+        type: DOCUMENT_PICKER_TYPES,
         copyToCacheDirectory: true,
       });
       console.log('[Verification] Document picker result:', result);
@@ -199,13 +197,12 @@ export default function VerificationScreen() {
 
       if (!result.canceled && result.assets[0].uri) {
         const asset = result.assets[0];
-        await processAndUploadFile(
-          activeUploadType,
-          asset.uri,
-          asset.name,
-          asset.mimeType || 'application/octet-stream',
-          asset.size
-        );
+        await uploadFile(activeUploadType, {
+          uri: asset.uri,
+          name: asset.name,
+          mimeType: asset.mimeType,
+          size: asset.size,
+        });
       }
     } catch (error) {
       console.error('[Verification] Error selecting document:', error);
@@ -214,128 +211,57 @@ export default function VerificationScreen() {
     }
   };
 
-  const processAndUploadFile = async (
-    type: 'license' | 'aadhar' | 'vehicle-rc',
-    uri: string,
-    name: string,
-    mimeType: string,
-    size?: number
-  ) => {
-    // 1. Resolve and normalize MIME Type and Name
-    let resolvedName = name || `${type}.jpg`;
-    
-    // Normalize path or uri names (sometimes DocumentPicker gives paths)
-    resolvedName = resolvedName.split('/').pop() || resolvedName;
-
-    // Detect extension
-    let ext = resolvedName.split('.').pop()?.toLowerCase() || '';
-    
-    // If no valid extension exists in the name, infer it from the mimeType
-    const allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf', 'doc', 'docx'];
-    if (!allowedExtensions.includes(ext)) {
-      if (mimeType.includes('pdf')) {
-        ext = 'pdf';
-        resolvedName = resolvedName.includes('.') ? resolvedName.substring(0, resolvedName.lastIndexOf('.')) + '.pdf' : resolvedName + '.pdf';
-      } else if (mimeType.includes('jpeg') || mimeType.includes('jpg')) {
-        ext = 'jpg';
-        resolvedName = resolvedName.includes('.') ? resolvedName.substring(0, resolvedName.lastIndexOf('.')) + '.jpg' : resolvedName + '.jpg';
-      } else if (mimeType.includes('png')) {
-        ext = 'png';
-        resolvedName = resolvedName.includes('.') ? resolvedName.substring(0, resolvedName.lastIndexOf('.')) + '.png' : resolvedName + '.png';
-      } else if (mimeType.includes('gif')) {
-        ext = 'gif';
-        resolvedName = resolvedName.includes('.') ? resolvedName.substring(0, resolvedName.lastIndexOf('.')) + '.gif' : resolvedName + '.gif';
-      } else if (mimeType.includes('word') || mimeType.includes('msword') || mimeType.includes('document')) {
-        ext = 'docx';
-        resolvedName = resolvedName.includes('.') ? resolvedName.substring(0, resolvedName.lastIndexOf('.')) + '.docx' : resolvedName + '.docx';
-      } else {
-        // Try to infer from URI extension
-        const uriExt = uri.split('.').pop()?.toLowerCase() || '';
-        if (allowedExtensions.includes(uriExt)) {
-          ext = uriExt;
-          resolvedName = resolvedName.includes('.') ? resolvedName.substring(0, resolvedName.lastIndexOf('.')) + '.' + ext : resolvedName + '.' + ext;
-        }
-      }
-    }
-
-    // Standardize MIME type to match the backend whitelist exactly
-    let resolvedMimeType = mimeType;
-    if (ext === 'pdf') resolvedMimeType = 'application/pdf';
-    else if (ext === 'jpg' || ext === 'jpeg') resolvedMimeType = 'image/jpeg';
-    else if (ext === 'png') resolvedMimeType = 'image/png';
-    else if (ext === 'gif') resolvedMimeType = 'image/gif';
-    else if (ext === 'webp') resolvedMimeType = 'image/webp';
-    else if (ext === 'doc') resolvedMimeType = 'application/msword';
-    else if (ext === 'docx') resolvedMimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-
-    // Verify format support on client side
-    if (!allowedExtensions.includes(ext)) {
-      Alert.alert(
-        'Unsupported File Format',
-        'Please select a valid document or image file. Supported formats: PDF, DOC, DOCX, JPG, JPEG, PNG, GIF, WEBP.'
-      );
-      return;
-    }
-
-    // 2. Client-Side Size Validation
-    const isImage = resolvedMimeType.startsWith('image/');
-    const maxSizeBytes = isImage ? 5 * 1024 * 1024 : 10 * 1024 * 1024; // 5MB photo, 10MB doc
-    const limitLabel = isImage ? '5 MB' : '10 MB';
-
-    if (size && size > maxSizeBytes) {
-      Alert.alert(
-        'File Too Large',
-        `The selected file size (${(size / (1024 * 1024)).toFixed(1)} MB) exceeds the limit of ${limitLabel}.`
-      );
-      return;
-    }
-
+  const uploadFile = async (type: VerificationDocType, file: Parameters<typeof verificationService.upload>[1]) => {
     setIsUploading(type);
     try {
-      const formData = new FormData();
-      // @ts-ignore
-      formData.append('file', {
-        uri,
-        name: resolvedName,
-        type: resolvedMimeType,
-      });
-      
-      await api.post(`/Verification/${type}`, formData);
+      await verificationService.upload(type, file);
       Alert.alert('Success', 'Document uploaded successfully and is under review.');
       fetchVerificationStatus();
+      // The profile tab reads verification state from the auth profile.
+      refreshProfile();
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to upload document');
+      if (error instanceof DocumentValidationError) {
+        Alert.alert(error.title, error.message);
+      } else {
+        Alert.alert('Error', error.message || 'Failed to upload document');
+      }
     } finally {
       setIsUploading(null);
       setActiveUploadType(null);
     }
   };
 
-  const viewDocument = async (url?: string | null) => {
-    if (!url) {
-      Alert.alert('Not Available', 'Document URL is not available.');
+  // Documents are private: fetch a short-lived signed link, then open it.
+  const viewDocument = async (documentId?: string | null) => {
+    if (!documentId) {
+      Alert.alert('Not Available', 'This document cannot be opened right now.');
       return;
     }
+    setOpeningDocument(documentId);
     try {
+      const url = await verificationService.getViewUrl(documentId);
       await WebBrowser.openBrowserAsync(url);
     } catch (error) {
-      console.error('Error opening browser:', error);
+      console.error('Error opening document:', error);
       Alert.alert('Error', 'Could not open the document.');
+    } finally {
+      setOpeningDocument(null);
     }
   };
 
-  const renderDocStatus = (type: 'license' | 'aadhar' | 'vehicle-rc', title: string, description: string, icon: any) => {
+  const renderDocStatus = (type: VerificationDocType, title: string, description: string, icon: any) => {
     const docKey = type === 'vehicle-rc' ? 'vehicleRc' : type;
     const docState = status.documents[docKey];
     const Icon = icon;
 
     const docStatus = docState?.status || 'NotStarted';
     const isVerified = docStatus === 'Approved';
-    const isRejected = docStatus === 'Rejected';
+    const isReupload = docStatus === 'ReuploadRequested';
+    const needsAction = docStatus === 'Rejected' || isReupload;
 
     const badgeColor = docStatus === 'Approved' ? theme.colors.success :
                        docStatus === 'Pending' ? theme.colors.warning :
-                       docStatus === 'Rejected' ? '#EF4444' :
+                       needsAction ? '#EF4444' :
                        theme.colors.textSecondary;
 
     if (docStatus === 'NotStarted') {
@@ -343,6 +269,7 @@ export default function VerificationScreen() {
         <TouchableOpacity
           style={[styles.uploadTapTarget, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
           onPress={() => handleUploadPress(type)}
+          disabled={isUploading === type}
           accessible={true}
           accessibilityLabel={`Upload ${title}`}
         >
@@ -380,7 +307,8 @@ export default function VerificationScreen() {
               <Text style={[styles.badgeText, { color: badgeColor }]}>
                 {docStatus === 'Approved' ? 'Verified' :
                  docStatus === 'Pending' ? 'Under Review' :
-                 docStatus === 'Rejected' ? 'Rejected' : 'Not Uploaded'}
+                 docStatus === 'Rejected' ? 'Rejected' :
+                 isReupload ? 'Re-upload Requested' : 'Not Uploaded'}
               </Text>
             </View>
           </View>
@@ -391,24 +319,27 @@ export default function VerificationScreen() {
             ) : (
               <View style={styles.actionButtons}>
                 {/* View Document Button */}
-                {docState?.documentUrl && (
+                {docState?.documentId && (
                   <TouchableOpacity 
                     style={[styles.actionBtn, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
-                    onPress={() => viewDocument(docState.documentUrl)}
+                    onPress={() => viewDocument(docState.documentId)}
+                    disabled={openingDocument === docState.documentId}
                     accessible={true}
                     accessibilityLabel={`View uploaded ${title}`}
                   >
-                    <Eye size={16} color={theme.colors.text} />
+                    {openingDocument === docState.documentId
+                      ? <ActivityIndicator size="small" color={theme.colors.text} />
+                      : <Eye size={16} color={theme.colors.text} />}
                   </TouchableOpacity>
                 )}
                 
                 {/* Upload / Re-upload Button */}
-                {docStatus === 'Rejected' && (
+                {needsAction && (
                   <TouchableOpacity 
                     style={[styles.actionBtn, { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary }]}
                     onPress={() => handleUploadPress(type)}
                     accessible={true}
-                    accessibilityLabel={`Upload ${title}`}
+                    accessibilityLabel={`Re-upload ${title}`}
                   >
                     <Camera size={16} color="#FFFFFF" />
                   </TouchableOpacity>
@@ -424,16 +355,17 @@ export default function VerificationScreen() {
             <FileText size={14} color={theme.colors.textSecondary} />
             <Text style={[styles.metaText, { color: theme.colors.textSecondary }]} numberOfLines={1}>
               {docState.originalFileName}
+              {docState.version && docState.version > 1 ? ` · version ${docState.version}` : ''}
             </Text>
           </View>
         )}
 
         {/* Rejection Reason Block */}
-        {isRejected && docState?.rejectionReason && (
+        {needsAction && docState?.rejectionReason && (
           <View style={[styles.rejectionContainer, { backgroundColor: '#EF4444' + '10', borderColor: '#EF4444' }]}>
             <AlertCircle size={16} color="#EF4444" style={{ marginTop: 2 }} />
             <View style={styles.rejectionInfo}>
-              <Text style={styles.rejectionTitle}>Rejection Reason:</Text>
+              <Text style={styles.rejectionTitle}>{isReupload ? 'Please re-upload:' : 'Rejection Reason:'}</Text>
               <Text style={[styles.rejectionReasonText, { color: theme.colors.text }]}>
                 {docState.rejectionReason}
               </Text>
@@ -532,7 +464,7 @@ export default function VerificationScreen() {
               </TouchableOpacity>
             </View>
             <Text style={[styles.modalSubtitle, { color: theme.colors.textSecondary }]}>
-              Select a source for your document or image. Max size: 5MB for images, 10MB for documents.
+              Select a source for your document. Supported: {SUPPORTED_FORMATS_LABEL}, up to 10 MB.
             </Text>
 
             <View style={styles.optionButtons}>
