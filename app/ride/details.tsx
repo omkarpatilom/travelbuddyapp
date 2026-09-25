@@ -31,6 +31,7 @@ import {
   isRideActive,
   isRidePreStart,
   isRideTerminal,
+  getDriverRideAction,
   getBookingDisplayLabel,
   RIDE_STATUS_LABEL,
   BOOKING_STATUS_LABEL,
@@ -990,15 +991,15 @@ export default function RideDetailsScreen() {
               <View style={{ gap: 12 }}>
                 {/* Published / Scheduled state CTA rendering */}
                 {(() => {
-                  const statusLower = (ride.status as string).toLowerCase();
-                  console.log(ride.status);
-
                   const hasConfirmedBookings = bookings.some(b =>
                     [BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.READY_FOR_BOARDING, BOOKING_STATUS.BOARDED].includes((b.status || '').toLowerCase() as any)
                   );
+                  // One action per status (see getDriverRideAction): the start and
+                  // resume buttons used to overlap for JourneyStarted rides.
+                  const driverAction = getDriverRideAction(ride.status as string, hasConfirmedBookings);
 
-                  // Case A: Published and no confirmed bookings yet -> Only Cancel Ride
-                  if (statusLower === RIDE_STATUS.PUBLISHED && !hasConfirmedBookings) {
+                  // Published and no confirmed bookings yet -> Only Cancel Ride
+                  if (driverAction === 'awaitBookings') {
                     return (
                       <View style={{ gap: 12 }}>
                         <View style={[styles.passengerBanner, { backgroundColor: theme.colors.primary + '15', borderColor: theme.colors.primary }]}>
@@ -1020,8 +1021,8 @@ export default function RideDetailsScreen() {
                     );
                   }
 
-                  // Case B: Scheduled, or Published with confirmed bookings -> Start Journey + Cancel Ride
-                  if (statusLower === RIDE_STATUS.SCHEDULED || (statusLower === RIDE_STATUS.PUBLISHED || statusLower === RIDE_STATUS.JOURNEY_STARTED && hasConfirmedBookings)) {
+                  // Scheduled, or Published with confirmed bookings -> Start Journey + Cancel Ride
+                  if (driverAction === 'start') {
                     return (
                       <View style={{ gap: 12 }}>
                         <TouchableOpacity
@@ -1046,34 +1047,38 @@ export default function RideDetailsScreen() {
                     );
                   }
 
+                  // Active ride states: Resume in Command Center (per spec §18)
+                  if (driverAction === 'resume') {
+                    return (
+                      <TouchableOpacity
+                        style={[styles.bookButton, { backgroundColor: theme.colors.primary, flexDirection: 'row' }]}
+                        onPress={() => router.push(`/ride/command-center?id=${ride.id}`)}
+                      >
+                        <Navigation size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+                        <Text style={styles.bookButtonText}>Resume Ride in Command Center</Text>
+                      </TouchableOpacity>
+                    );
+                  }
+
+                  // Terminal states: Read-only banner
+                  if (driverAction === 'ended') {
+                    return (
+                      <View style={[styles.passengerBanner, { backgroundColor: theme.colors.textSecondary + '15', borderColor: theme.colors.textSecondary }]}>
+                        <CheckCircle size={24} color={theme.colors.textSecondary} style={{ marginRight: 8 }} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.bannerTitle, { color: theme.colors.textSecondary }]}>
+                            Ride {ride.status.charAt(0).toUpperCase() + ride.status.slice(1)}
+                          </Text>
+                          <Text style={[styles.bannerText, { color: theme.colors.text }]}>
+                            This ride has ended.
+                          </Text>
+                        </View>
+                      </View>
+                    );
+                  }
+
                   return null;
                 })()}
-
-                {/* Active ride states: Resume in Command Center (per spec §18) */}
-                {isRideActive((ride.status as string).toLowerCase()) && (
-                  <TouchableOpacity
-                    style={[styles.bookButton, { backgroundColor: theme.colors.primary, flexDirection: 'row' }]}
-                    onPress={() => router.push(`/ride/command-center?id=${ride.id}`)}
-                  >
-                    <Navigation size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
-                    <Text style={styles.bookButtonText}>Resume Ride in Command Center</Text>
-                  </TouchableOpacity>
-                )}
-
-                {/* Terminal states: Read-only banner */}
-                {isRideTerminal((ride.status as string).toLowerCase()) && (
-                  <View style={[styles.passengerBanner, { backgroundColor: theme.colors.textSecondary + '15', borderColor: theme.colors.textSecondary }]}>
-                    <CheckCircle size={24} color={theme.colors.textSecondary} style={{ marginRight: 8 }} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.bannerTitle, { color: theme.colors.textSecondary }]}>
-                        Ride {ride.status.charAt(0).toUpperCase() + ride.status.slice(1)}
-                      </Text>
-                      <Text style={[styles.bannerText, { color: theme.colors.text }]}>
-                        This ride has ended.
-                      </Text>
-                    </View>
-                  </View>
-                )}
               </View>
             ) : (
               <View style={{ gap: 12 }}>

@@ -71,6 +71,25 @@ export const isRideActive = (s: string) => ACTIVE_RIDE_STATUSES.includes(s as Ri
 export const isRidePreStart = (s: string) => PRE_START_RIDE_STATUSES.includes(s as RideStatusType);
 export const isRideTerminal = (s: string) => TERMINAL_RIDE_STATUSES.includes(s as RideStatusType);
 
+/**
+ * The single call to action a driver sees on Ride Details. Exactly one per
+ * status, so "Start Journey" and "Resume in Command Center" can never both show:
+ *  - awaitBookings: published, nothing accepted yet (Cancel only)
+ *  - start:         scheduled, or published with an accepted booking
+ *  - resume:        journey under way (JourneyStarted … DropOff)
+ *  - ended:         completed / cancelled (read-only banner)
+ */
+export type DriverRideAction = 'awaitBookings' | 'start' | 'resume' | 'ended';
+
+export function getDriverRideAction(status: string, hasConfirmedBookings: boolean): DriverRideAction | null {
+  const s = (status || '').toLowerCase();
+  if (isRideTerminal(s)) return 'ended';
+  if (isRideActive(s)) return 'resume';
+  if (s === RIDE_STATUS.SCHEDULED) return 'start';
+  if (s === RIDE_STATUS.PUBLISHED) return hasConfirmedBookings ? 'start' : 'awaitBookings';
+  return null;
+}
+
 export const isBookingTerminal = (s: string) =>
   [BOOKING_STATUS.COMPLETED, BOOKING_STATUS.CANCELLED,
   BOOKING_STATUS.REJECTED, BOOKING_STATUS.NO_SHOW].includes(s as BookingStatusType);
