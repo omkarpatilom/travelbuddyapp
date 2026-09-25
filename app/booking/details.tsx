@@ -36,6 +36,7 @@ import {
   Music
 } from 'lucide-react-native';
 import RatingModal from '@/components/RatingModal';
+import TripShareCard from '@/components/TripShareCard';
 import { formatPrice } from '@/utils/validation';
 import { bookingService } from '@/services/booking.service';
 import { safeBack } from '@/utils/navigation';
@@ -733,6 +734,11 @@ export default function BookingDetailsScreen() {
                 </Text>
               </View>
             </View>
+          )}
+
+          {/* Live trip sharing for family / friends (passenger only) */}
+          {!isDriver && booking.rideId && (
+            <TripShareCard rideId={booking.rideId} bookingId={booking.id} bookingStatus={booking.status} />
           )}
 
           {/* Action Buttons */}

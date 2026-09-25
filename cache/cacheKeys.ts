@@ -13,6 +13,7 @@ export const CACHE_KEYS = {
   notifications: 'notifications',
   notificationSettings: 'notificationSettings',
   activeRide: 'activeRide',
+  tripShare: 'tripShare',
 } as const;
 
 /**
@@ -35,4 +36,5 @@ export const qk = {
   verificationStatus: () => [CACHE_KEYS.verificationStatus] as const,
   notifications: () => [CACHE_KEYS.notifications] as const,
   notificationSettings: () => [CACHE_KEYS.notificationSettings] as const,
+  tripShare: (bookingId: string) => [CACHE_KEYS.tripShare, bookingId] as const,
 };
