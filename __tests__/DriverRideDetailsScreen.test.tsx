@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, fireEvent, waitFor, act, screen } from '@testing-library/react-native';
+import { render as rtlRender, fireEvent, waitFor, act, screen } from '@testing-library/react-native';
 import { Alert } from 'react-native';
 import RideDetailsScreen from '../app/ride/details';
 import { useTheme } from '../contexts/ThemeContext';
@@ -7,6 +7,11 @@ import { useAuth } from '../contexts/AuthContext';
 import { useRides } from '../contexts/RideContext';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { bookingService } from '@/services/booking.service';
+import { rideService } from '@/services/ride.service';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { __resetOverlays } from '@/cache/entityCache';
+import { __resetOperations } from '@/hooks/mutations/operations';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 jest.mock('../contexts/ThemeContext');
 jest.mock('../contexts/AuthContext');
@@ -14,11 +19,27 @@ jest.mock('../contexts/RideContext');
 jest.mock('@/services/booking.service', () => ({
   bookingService: {
     getRideBookings: jest.fn(),
+    confirmBooking: jest.fn(),
+    cancelBooking: jest.fn(),
   },
+}));
+// The screen reads the ride through the shared query cache now; the mapper is
+// covered elsewhere, so the fixture is already in mapped shape.
+jest.mock('@/services/ride.service', () => ({
+  rideService: {
+    getRideById: jest.fn(),
+    startRide: jest.fn(),
+    cancelRide: jest.fn(),
+  },
+}));
+jest.mock('@/utils/mappers', () => ({
+  mapRideData: jest.fn(async (r: any) => r),
+  mapBookingData: jest.fn(async (b: any) => b),
 }));
 jest.mock('expo-router', () => ({
   useRouter: jest.fn(),
   useLocalSearchParams: jest.fn(),
+  useFocusEffect: (cb: () => void) => require('react').useEffect(cb, []),
 }));
 jest.mock('../components/RouteMap', () => 'RouteMap');
 jest.mock('expo-location', () => ({
@@ -57,6 +78,10 @@ jest.mock('lucide-react-native', () => {
     Navigation: mockIcon('Navigation'),
   };
 });
+
+let queryClient: QueryClient;
+const render = (ui: React.ReactElement) =>
+  rtlRender(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
 
 describe('DriverRideDetailsScreen', () => {
   const mockTheme = {
@@ -129,8 +154,13 @@ describe('DriverRideDetailsScreen', () => {
   const mockCancelBooking = jest.fn();
   const mockCancelRide = jest.fn();
 
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.clearAllMocks();
+    // Accepting a booking records it in the durable confirmed-status memory.
+    await AsyncStorage.clear();
+    queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    __resetOverlays();
+    __resetOperations();
     (useTheme as jest.Mock).mockReturnValue({ theme: mockTheme });
     (useAuth as jest.Mock).mockReturnValue({ user: { id: 'd1', fullName: 'Driver User' } });
     (useLocalSearchParams as jest.Mock).mockReturnValue({ id: 'r1' });
@@ -152,10 +182,23 @@ describe('DriverRideDetailsScreen', () => {
     });
 
     mockGetRideById.mockResolvedValue(mockRide);
+    (rideService.getRideById as jest.Mock).mockImplementation((id: string) => mockGetRideById(id));
+    (rideService.startRide as jest.Mock).mockResolvedValue({});
     (bookingService.getRideBookings as jest.Mock).mockResolvedValue(mockBookings);
     mockConfirmBooking.mockResolvedValue(true);
     mockCancelBooking.mockResolvedValue(true);
     mockCancelRide.mockResolvedValue(true);
+    (bookingService.confirmBooking as jest.Mock).mockImplementation((id: string) => mockConfirmBooking(id));
+    (bookingService.cancelBooking as jest.Mock).mockImplementation((id: string, reason: string) => mockCancelBooking(id, reason));
+  });
+
+  afterEach(async () => {
+    // Let the previous test's reconciliation refetch finish so it can't
+    // bleed into the next test's call counts.
+    await act(async () => {
+      await queryClient.cancelQueries();
+      queryClient.clear();
+    });
   });
 
   it('renders ride details and passenger bookings section for drivers', async () => {
@@ -209,8 +252,9 @@ describe('DriverRideDetailsScreen', () => {
       });
     }
 
-    expect(mockConfirmBooking).toHaveBeenCalledWith('b1');
-    expect(bookingService.getRideBookings).toHaveBeenCalledTimes(2); // Initial + reload
+    await waitFor(() => expect(mockConfirmBooking).toHaveBeenCalledWith('b1'));
+    // Initial load + reconciliation refetch after the server confirmed
+    await waitFor(() => expect(bookingService.getRideBookings).toHaveBeenCalledTimes(2));
 
     alertSpy.mockRestore();
   });
@@ -241,8 +285,9 @@ describe('DriverRideDetailsScreen', () => {
       });
     }
 
-    expect(mockCancelBooking).toHaveBeenCalledWith('b1', 'Declined by driver');
-    expect(bookingService.getRideBookings).toHaveBeenCalledTimes(2); // Initial + reload
+    await waitFor(() => expect(mockCancelBooking).toHaveBeenCalledWith('b1', 'Declined by driver'));
+    // Initial load + reconciliation refetch after the server confirmed
+    await waitFor(() => expect(bookingService.getRideBookings).toHaveBeenCalledTimes(2));
 
     alertSpy.mockRestore();
   });

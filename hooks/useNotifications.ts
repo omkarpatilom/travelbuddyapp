@@ -1,8 +1,10 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import NetInfo from '@react-native-community/netinfo';
 import { notificationService } from '../services/notification.service';
 import { sqliteStorage } from '../storage/sqlite';
-import { CACHE_KEYS } from '../cache/cacheKeys';
+import { CACHE_KEYS, qk } from '../cache/cacheKeys';
+import { ListSnapshot, removeFromList, rollbackList, updateInList } from '../cache/entityCache';
+import { OperationDef } from './mutations/operations';
 
 export function useNotificationsQuery(enabled: boolean = true) {
   return useQuery({
@@ -34,46 +36,77 @@ export function useNotificationsQuery(enabled: boolean = true) {
   });
 }
 
-export function useMarkAsReadMutation() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (id: string) => {
-      // Optimistically update SQLite cache first to support fast offline UI
-      try {
+// ─── Operations ──────────────────────────────────────────────────────────────
+// Optimistic: read/delete state changes in the list (and the SQLite offline
+// copy) immediately; a server failure restores both.
+
+export const markNotificationReadOp: OperationDef<{ id: string }, unknown, ListSnapshot> = {
+  op: 'markNotificationRead',
+  key: (v) => v.id,
+  errorTitle: 'Could not mark notification as read',
+  mutationFn: (v) => notificationService.markAsRead(v.id),
+  onMutate: async (v, qc) => {
+    await qc.cancelQueries({ queryKey: qk.notifications() });
+    try {
+      await sqliteStorage.updateNotificationReadStatus(v.id, true);
+    } catch (e) {
+      console.warn('Failed to update sqlite notification read status', e);
+    }
+    return updateInList(qc, qk.notifications(), v.id, (n) => ({ ...n, isRead: true }));
+  },
+  onError: async (_e, v, snap, qc) => {
+    if (snap) rollbackList(qc, snap);
+    if (snap?.replaced && !snap.replaced.before?.isRead) {
+      await sqliteStorage.updateNotificationReadStatus(v.id, false).catch(() => {});
+    }
+  },
+  onSettled: (_v, qc) => qc.invalidateQueries({ queryKey: qk.notifications() }),
+};
+
+export const markAllNotificationsReadOp: OperationDef<void, unknown, { before?: any[]; unreadIds: string[] }> = {
+  op: 'markAllNotificationsRead',
+  key: () => 'all',
+  errorTitle: 'Could not mark notifications as read',
+  mutationFn: () => notificationService.markAllAsRead(),
+  onMutate: async (_v, qc) => {
+    await qc.cancelQueries({ queryKey: qk.notifications() });
+    const before = qc.getQueryData<any[]>(qk.notifications());
+    if (Array.isArray(before)) {
+      qc.setQueryData(qk.notifications(), before.map((n) => ({ ...n, isRead: true })));
+    }
+    // Sync the local SQLite copy, as before.
+    let unreadIds: string[] = [];
+    try {
+      const cached = await sqliteStorage.getCachedNotifications();
+      unreadIds = cached.filter((x) => !x.isRead).map((x) => x.id);
+      for (const id of unreadIds) {
         await sqliteStorage.updateNotificationReadStatus(id, true);
-      } catch (e) {
-        console.warn('Failed to update sqlite notification read status', e);
       }
-      return await notificationService.markAsRead(id);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.notifications] });
-    },
-  });
-}
+    } catch (e) {
+      console.warn('Failed to bulk update sqlite notifications', e);
+    }
+    return { before, unreadIds };
+  },
+  onError: async (_e, _v, ctx, qc) => {
+    if (ctx?.before) qc.setQueryData(qk.notifications(), ctx.before);
+    for (const id of ctx?.unreadIds ?? []) {
+      await sqliteStorage.updateNotificationReadStatus(id, false).catch(() => {});
+    }
+  },
+  onSettled: (_v, qc) => qc.invalidateQueries({ queryKey: qk.notifications() }),
+};
 
-export function useMarkAllAsReadMutation() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async () => {
-      const netState = await NetInfo.fetch();
-      if (netState.isConnected) {
-        await notificationService.markAllAsRead();
-      }
-
-      // Sync local SQLite cache
-      try {
-        const cached = await sqliteStorage.getCachedNotifications();
-        const unread = cached.filter(x => !x.isRead);
-        for (const notif of unread) {
-          await sqliteStorage.updateNotificationReadStatus(notif.id, true);
-        }
-      } catch (e) {
-        console.warn('Failed to bulk update sqlite notifications', e);
-      }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.notifications] });
-    },
-  });
-}
+export const deleteNotificationOp: OperationDef<{ id: string }, unknown, ListSnapshot> = {
+  op: 'deleteNotification',
+  key: (v) => v.id,
+  errorTitle: 'Could not delete notification',
+  mutationFn: (v) => notificationService.deleteNotification(v.id),
+  onMutate: async (v, qc) => {
+    await qc.cancelQueries({ queryKey: qk.notifications() });
+    return removeFromList(qc, qk.notifications(), v.id);
+  },
+  onError: (_e, _v, snap, qc) => {
+    if (snap) rollbackList(qc, snap);
+  },
+  onSettled: (_v, qc) => qc.invalidateQueries({ queryKey: qk.notifications() }),
+};

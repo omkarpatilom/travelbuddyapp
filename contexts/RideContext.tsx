@@ -1,18 +1,31 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useCallback, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import NetInfo from '@react-native-community/netinfo';
 import { rideService } from '@/services/ride.service';
 import { bookingService } from '@/services/booking.service';
-import { reviewService } from '@/services/review.service';
-import { userService } from '@/services/user.service';
-import { vehicleService } from '@/services/vehicle.service';
 import { useAuth } from './AuthContext';
-import { RideDto, BookingResponseDto, RideStatus, ConversationLevel, RideSearchDto } from '@/utils/types';
 import { CACHE_KEYS } from '@/cache/cacheKeys';
 import { sqliteStorage } from '@/storage/sqlite';
 import { mapRideData, mapBookingData, Ride, Booking } from '@/utils/mappers';
-import { useActiveRidesQuery, useMyRidesQuery } from '@/hooks/useRides';
-import { useMyBookingsQuery } from '@/hooks/useBookings';
+import {
+  useActiveRidesQuery,
+  useMyRidesQuery,
+  createRideOp,
+  cancelRideOp,
+  rideTransitionOp,
+  rateRideOp,
+  RideTransitionVars,
+} from '@/hooks/useRides';
+import {
+  useMyBookingsQuery,
+  createBookingOp,
+  confirmBookingOp,
+  completeBookingOp,
+  verifyBookingOp,
+  cancelBookingOp,
+} from '@/hooks/useBookings';
+import { OperationDef, runOperation } from '@/hooks/mutations/operations';
+import { applyOverlays } from '@/cache/entityCache';
 
 interface RideContextType {
   rides: Ride[];
@@ -73,6 +86,10 @@ interface RideContextType {
   loadInitialData: () => Promise<void>;
 }
 
+// Stable fallbacks so the memoised context value doesn't change every render.
+const EMPTY_RIDES: Ride[] = [];
+const EMPTY_BOOKINGS: Booking[] = [];
+
 const RideContext = createContext<RideContextType | undefined>(undefined);
 
 export function RideProvider({ children }: { children: React.ReactNode }) {
@@ -84,9 +101,9 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
   const myRidesQuery = useMyRidesQuery();
   const bookingsQuery = useMyBookingsQuery();
 
-  const rides = activeRidesQuery.data || [];
-  const bookings = bookingsQuery.data || [];
-  const myRides = myRidesQuery.data || [];
+  const rides = activeRidesQuery.data ?? EMPTY_RIDES;
+  const bookings = bookingsQuery.data ?? EMPTY_BOOKINGS;
+  const myRides = myRidesQuery.data ?? EMPTY_RIDES;
   const isLoading = activeRidesQuery.isLoading || bookingsQuery.isLoading || myRidesQuery.isLoading;
 
   console.log('[DEBUG] RideProvider state:', {
@@ -100,7 +117,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
     isLoading
   });
 
-  const loadInitialData = async () => {
+  const loadInitialData = useCallback(async () => {
     try {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] }),
@@ -109,9 +126,9 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.error('Error loading initial data:', error);
     }
-  };
+  }, [queryClient]);
 
-  const searchRides = async (params: {
+  const searchRides = useCallback(async (params: {
     from: string;
     to: string;
     date: string;
@@ -172,38 +189,31 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
       } catch {}
       return [];
     }
-  };
+  }, [queryClient]);
 
-  const createRide = async (rideData: any): Promise<boolean> => {
-    try {
-      const departureTime = `${rideData.date}T${rideData.time}:00Z`;
-      await rideService.createRide({
-        vehicleId: rideData.vehicleId,
-        fromAddress: rideData.from.address,
-        fromLat: rideData.from.coordinates.latitude,
-        fromLng: rideData.from.coordinates.longitude,
-        toAddress: rideData.to.address,
-        toLat: rideData.to.coordinates.latitude,
-        toLng: rideData.to.coordinates.longitude,
-        departureTime,
-        pricePerSeat: rideData.price,
-        totalSeats: rideData.totalSeats,
-        allowMusic: rideData.preferences?.musicAllowed ?? true,
-        allowSmoking: !rideData.preferences?.nonSmoking,
-        allowPets: rideData.preferences?.petsAllowed ?? false,
-        conversationLevel: rideData.preferences?.conversationLevel === 'quiet' ? ConversationLevel.Quiet :
-                          rideData.preferences?.conversationLevel === 'chatty' ? ConversationLevel.Chatty : ConversationLevel.Moderate
-      });
-      // Invalidate active & my rides to trigger reactive refetching
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] });
-      return true;
-    } catch (error) {
-      console.error('Error creating ride:', error);
-      return false;
-    }
-  };
+  /**
+   * Context mutations are thin wrappers over the shared operations in
+   * hooks/useRides.ts and hooks/useBookings.ts, so every caller gets the same
+   * optimistic/pending cache updates, rollback, ordering and duplicate
+   * protection. They keep their original contract (resolve to a boolean,
+   * never throw). A duplicate call joins the request already in flight.
+   */
+  const run = useCallback(
+    async <V, D>(def: OperationDef<V, D, any>, vars: V, label: string): Promise<boolean> => {
+      try {
+        await runOperation(queryClient, def, vars, { isHandledByCaller: () => true, joinDuplicate: true });
+        return true;
+      } catch (error) {
+        console.error(`Error ${label}:`, error);
+        return false;
+      }
+    },
+    [queryClient],
+  );
 
-  const updateRide = async (rideId: string, rideData: Partial<Ride>): Promise<boolean> => {
+  const createRide = useCallback((rideData: any) => run(createRideOp, rideData, 'creating ride'), [run]);
+
+  const updateRide = useCallback(async (rideId: string, rideData: Partial<Ride>): Promise<boolean> => {
     try {
       await rideService.updateRide(rideId, rideData);
       await Promise.all([
@@ -215,297 +225,123 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
       console.error('Error updating ride:', error);
       return false;
     }
-  };
+  }, [queryClient]);
 
-  const cancelRide = async (rideId: string, reason: string): Promise<boolean> => {
-    try {
-      await rideService.cancelRide(rideId, reason);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] }),
-        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] }),
-        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.bookings] }),
-      ]);
-      return true;
-    } catch (error) {
-      console.error('Error cancelling ride:', error);
-      return false;
-    }
-  };
+  const cancelRide = useCallback(
+    (rideId: string, reason: string) => run(cancelRideOp, { rideId, reason }, 'cancelling ride'),
+    [run],
+  );
 
-  const publishRide = async (rideId: string): Promise<boolean> => {
-    try {
-      await rideService.publishRide(rideId);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] }),
-        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] }),
-      ]);
-      return true;
-    } catch (e) {
-      return false;
-    }
-  };
+  const transition = useCallback(
+    (vars: RideTransitionVars) => run(rideTransitionOp, vars, `ride transition ${vars.action}`),
+    [run],
+  );
 
-  const startRide = async (rideId: string): Promise<boolean> => {
-    try {
-      await rideService.startRide(rideId);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] }),
-        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] }),
-      ]);
-      return true;
-    } catch (e) {
-      return false;
-    }
-  };
+  const publishRide = useCallback((rideId: string) => transition({ rideId, action: 'publish' }), [transition]);
+  const startRide = useCallback((rideId: string) => transition({ rideId, action: 'start' }), [transition]);
+  const arriveAtPickup = useCallback(
+    (rideId: string, lat?: number, lng?: number) => transition({ rideId, action: 'arrivePickup', lat, lng }),
+    [transition],
+  );
+  const startBoarding = useCallback((rideId: string) => transition({ rideId, action: 'boarding' }), [transition]);
+  const transitionEnRoute = useCallback((rideId: string) => transition({ rideId, action: 'enRoute' }), [transition]);
+  const arriveAtDrop = useCallback(
+    (rideId: string, lat?: number, lng?: number) => transition({ rideId, action: 'arriveDrop', lat, lng }),
+    [transition],
+  );
+  const completeDropoff = useCallback((rideId: string) => transition({ rideId, action: 'dropoff' }), [transition]);
+  const completeRide = useCallback((rideId: string) => transition({ rideId, action: 'complete' }), [transition]);
+  const overrideTransition = useCallback(
+    (rideId: string, targetStatus: number, reason: string) =>
+      transition({ rideId, action: 'override', targetStatus, reason }),
+    [transition],
+  );
+  const completeStop = useCallback(
+    (rideId: string, stopId: string) => transition({ rideId, action: 'completeStop', stopId }),
+    [transition],
+  );
 
-  const arriveAtPickup = async (rideId: string, lat?: number, lng?: number): Promise<boolean> => {
-    try {
-      await rideService.arriveAtPickup(rideId, lat, lng);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] }),
-        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] }),
-      ]);
-      return true;
-    } catch (e) {
-      return false;
-    }
-  };
-
-  const startBoarding = async (rideId: string): Promise<boolean> => {
-    try {
-      await rideService.startBoarding(rideId);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] }),
-        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] }),
-      ]);
-      return true;
-    } catch (e) {
-      return false;
-    }
-  };
-
-  const transitionEnRoute = async (rideId: string): Promise<boolean> => {
-    try {
-      await rideService.transitionEnRoute(rideId);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] }),
-        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] }),
-      ]);
-      return true;
-    } catch (e) {
-      return false;
-    }
-  };
-
-  const arriveAtDrop = async (rideId: string, lat?: number, lng?: number): Promise<boolean> => {
-    try {
-      await rideService.arriveAtDrop(rideId, lat, lng);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] }),
-        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] }),
-      ]);
-      return true;
-    } catch (e) {
-      return false;
-    }
-  };
-
-  const completeDropoff = async (rideId: string): Promise<boolean> => {
-    try {
-      await rideService.completeDropoff(rideId);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] }),
-        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] }),
-      ]);
-      return true;
-    } catch (e) {
-      return false;
-    }
-  };
-
-  const completeRide = async (rideId: string): Promise<boolean> => {
-    try {
-      await rideService.completeRide(rideId);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] }),
-        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.activeRide] }),
-        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] }),
-        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.bookings] }),
-      ]);
-      return true;
-    } catch (e) {
-      return false;
-    }
-  };
-
-  const overrideTransition = async (rideId: string, targetStatus: number, reason: string): Promise<boolean> => {
-    try {
-      await rideService.overrideTransition(rideId, targetStatus, reason);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] }),
-        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] }),
-      ]);
-      return true;
-    } catch (e) {
-      return false;
-    }
-  };
-
-  const bookRide = async (rideId: string, seats: number, passengerData: any): Promise<boolean> => {
-    try {
-      await bookingService.createBooking({
+  const bookRide = useCallback(
+    (rideId: string, seats: number, passengerData: any) =>
+      run(createBookingOp, {
         rideId,
         seats,
         passengerName: passengerData.name,
         passengerPhone: passengerData.phone,
         specialRequest: passengerData.specialRequest,
-        acceptTerms: true
-      });
-      // Invalidate bookings & rides
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.bookings] }),
-        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] }),
-        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] }),
-      ]);
-      return true;
-    } catch (error) {
-      console.error('Error booking ride:', error);
-      return false;
-    }
-  };
+      }, 'booking ride'),
+    [run],
+  );
 
-  const confirmBooking = async (bookingId: string): Promise<boolean> => {
-    try {
-      await bookingService.confirmBooking(bookingId);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.bookings] }),
-        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] }),
-      ]);
-      return true;
-    } catch (e) {
-      console.error('Error confirming booking:', e);
-      return false;
-    }
-  };
+  const confirmBooking = useCallback(
+    (bookingId: string) => run(confirmBookingOp, { bookingId }, 'confirming booking'),
+    [run],
+  );
 
-  const completeBooking = async (bookingId: string): Promise<boolean> => {
-    try {
-      await bookingService.completeBooking(bookingId);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.bookings] }),
-        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] }),
-      ]);
-      return true;
-    } catch (e) {
-      console.error('Error completing booking:', e);
-      return false;
-    }
-  };
+  const completeBooking = useCallback(
+    (bookingId: string) => run(completeBookingOp, { bookingId }, 'completing booking'),
+    [run],
+  );
 
-  const verifyBooking = async (bookingId: string, data: { verificationType: 'OTP' | 'QR'; otp?: string; qrToken?: string }): Promise<boolean> => {
-    try {
-      await bookingService.verifyBooking(bookingId, data);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.bookings] }),
-        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] }),
-      ]);
-      return true;
-    } catch (e) {
-      console.error('Error verifying booking:', e);
-      return false;
-    }
-  };
+  const verifyBooking = useCallback(
+    (bookingId: string, data: { verificationType: 'OTP' | 'QR'; otp?: string; qrToken?: string }) =>
+      run(verifyBookingOp, { bookingId, data }, 'verifying booking'),
+    [run],
+  );
 
-  const completeStop = async (rideId: string, stopId: string): Promise<boolean> => {
-    try {
-      await rideService.completeStop(rideId, stopId);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] }),
-        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rideDetails, rideId] }),
-      ]);
-      return true;
-    } catch (e) {
-      console.error('Error completing stop:', e);
-      return false;
-    }
-  };
+  const cancelBooking = useCallback(
+    (bookingId: string, reason: string = 'User cancelled') =>
+      run(cancelBookingOp, { bookingId, reason }, 'cancelling booking'),
+    [run],
+  );
 
-  const cancelBooking = async (bookingId: string, reason: string = 'User cancelled'): Promise<boolean> => {
-    try {
-      await bookingService.cancelBooking(bookingId, reason);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.bookings] }),
-        queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] }),
-      ]);
-      return true;
-    } catch (error) {
-      console.error('Error cancelling booking:', error);
-      return false;
-    }
-  };
+  const rateRide = useCallback(
+    (
+      rideId: string,
+      bookingId: string,
+      reviewedUserId: string,
+      targetRole: 'driver' | 'passenger',
+      rating: number,
+      review: string
+    ) => run(rateRideOp, { rideId, bookingId, reviewedUserId, targetRole, rating, review }, 'submitting review'),
+    [run],
+  );
 
-  const rateRide = async (
-    rideId: string,
-    bookingId: string,
-    reviewedUserId: string,
-    targetRole: 'driver' | 'passenger',
-    rating: number,
-    review: string
-  ): Promise<boolean> => {
-    try {
-      await reviewService.createReview({
-        bookingId: bookingId,
-        rideId: rideId,
-        reviewedUserId: reviewedUserId,
-        targetType: targetRole === 'driver' ? 0 : 1,
-        rating: rating,
-        comment: review,
-        isAnonymous: false
-      });
-      // Invalidate queries to refresh states
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides] });
-      return true;
-    } catch (error) {
-      console.error('Error submitting review:', error);
-      return false;
-    }
-  };
-
-  const updateTracking = async (rideId: string, latitude: number, longitude: number) => {
+  const updateTracking = useCallback(async (rideId: string, latitude: number, longitude: number) => {
     try {
       await rideService.updateTracking(rideId, { latitude, longitude });
     } catch (e) {
       console.error('Error updating tracking:', e);
     }
-  };
+  }, [queryClient]);
 
-  const getTracking = async (rideId: string) => {
+  const getTracking = useCallback(async (rideId: string) => {
     try {
       return await rideService.getTracking(rideId);
     } catch (e) {
       return null;
     }
-  };
+  }, [queryClient]);
 
-  const getUserRides = async (userId: string): Promise<Ride[]> => {
+  const getUserRides = useCallback(async (userId: string): Promise<Ride[]> => {
     try {
       const data = await rideService.getMyRides();
       return Promise.all(data.map(mapRideData));
     } catch (e) {
       return [];
     }
-  };
+  }, [queryClient]);
 
-  const getUserBookings = async (userId: string): Promise<Booking[]> => {
+  const getUserBookings = useCallback(async (userId: string): Promise<Booking[]> => {
     try {
       const data = await bookingService.getMyBookings();
       return Promise.all(data.map(mapBookingData));
     } catch (e) {
       return [];
     }
-  };
+  }, [queryClient]);
 
-  const getRideById = async (rideId: string): Promise<Ride | null> => {
+  const getRideById = useCallback(async (rideId: string): Promise<Ride | null> => {
     try {
       const netState = await NetInfo.fetch();
       if (!netState.isConnected) {
@@ -514,7 +350,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
       }
       
       const ride = await rideService.getRideById(rideId);
-      const mapped = await mapRideData(ride);
+      const mapped = applyOverlays('ride', await mapRideData(ride));
       queryClient.setQueryData([CACHE_KEYS.rideDetails, rideId], mapped);
       return mapped;
     } catch (e) {
@@ -523,9 +359,9 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
       if (cached) return cached;
       return null;
     }
-  };
+  }, [queryClient]);
 
-  const getBookingById = async (bookingId: string): Promise<Booking | null> => {
+  const getBookingById = useCallback(async (bookingId: string): Promise<Booking | null> => {
     try {
       const netState = await NetInfo.fetch();
       if (!netState.isConnected) {
@@ -534,7 +370,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
       }
 
       const data = await bookingService.getBookingById(bookingId);
-      const mapped = await mapBookingData(data);
+      const mapped = applyOverlays('booking', await mapBookingData(data));
       queryClient.setQueryData([CACHE_KEYS.bookings, bookingId], mapped);
       return mapped;
     } catch (e) {
@@ -543,11 +379,9 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
       if (cached) return cached;
       return null;
     }
-  };
+  }, [queryClient]);
 
-  return (
-    <RideContext.Provider 
-      value={{
+  const value = useMemo<RideContextType>(() => ({
         rides,
         bookings,
         myRides,
@@ -582,8 +416,18 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
         getRideById,
         getBookingById,
         loadInitialData
-      }}
-    >
+  }), [
+    rides, bookings, myRides, isLoading,
+    activeRidesQuery.isLoading, myRidesQuery.isLoading, bookingsQuery.isLoading,
+    searchRides, createRide, updateRide, publishRide, cancelRide, startRide, arriveAtPickup,
+    startBoarding, transitionEnRoute, arriveAtDrop, completeDropoff, completeRide, bookRide,
+    confirmBooking, completeBooking, verifyBooking, completeStop, overrideTransition,
+    cancelBooking, rateRide, updateTracking, getTracking, getUserRides, getUserBookings,
+    getRideById, getBookingById, loadInitialData,
+  ]);
+
+  return (
+    <RideContext.Provider value={value}>
       {children}
     </RideContext.Provider>
   );

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -47,6 +47,7 @@ import LocationPicker from '@/components/LocationPicker';
 import * as Location from 'expo-location';
 import { api } from '@/utils/api';
 import { safeBack } from '@/utils/navigation';
+import { useSavedLocationsQuery, SavedLocation } from '@/hooks/useSavedLocations';
 
 const { width } = Dimensions.get('window');
 
@@ -79,58 +80,21 @@ export default function FindRideScreen() {
   const [sortBy, setSortBy] = useState('Recommended');
   const [showSortModal, setShowSortModal] = useState(false);
   
-  interface SavedLocation {
-    id: string;
-    name: string;
-    address: string;
-    latitude: number;
-    longitude: number;
-    type: 'Home' | 'Work' | 'Favorite' | 'Other';
-  }
-
-  const [savedLocations, setSavedLocations] = useState<SavedLocation[]>([]);
-  const [isLoadingSaved, setIsLoadingSaved] = useState(false);
+  // Shared saved-locations cache (see hooks/useSavedLocations.ts).
+  const savedLocationsQuery = useSavedLocationsQuery();
+  const savedLocations: SavedLocation[] = savedLocationsQuery.data ?? [];
+  useEffect(() => {
+    if (savedLocationsQuery.error) {
+      console.warn('Failed to fetch saved locations in FindRideScreen:', savedLocationsQuery.error);
+    }
+  }, [savedLocationsQuery.error]);
 
   useEffect(() => {
-    fetchSavedLocations();
     if (!from) {
       prefillCurrentLocation();
     }
   }, []);
 
-  const fetchSavedLocations = async () => {
-    setIsLoadingSaved(true);
-    try {
-      const data = await api.get<any[]>('/saved-locations');
-      if (data) {
-        setSavedLocations(data.map(item => {
-          let derivedType: SavedLocation['type'] = 'Favorite';
-          const lowerName = item.name.toLowerCase();
-          if (lowerName === 'home') {
-            derivedType = 'Home';
-          } else if (lowerName === 'work') {
-            derivedType = 'Work';
-          } else if (lowerName === 'favorite') {
-            derivedType = 'Favorite';
-          } else {
-            derivedType = 'Other';
-          }
-          return {
-            id: item.id,
-            name: item.name,
-            address: item.address,
-            latitude: item.latitude,
-            longitude: item.longitude,
-            type: derivedType,
-          };
-        }));
-      }
-    } catch (error) {
-      console.warn('Failed to fetch saved locations in FindRideScreen:', error);
-    } finally {
-      setIsLoadingSaved(false);
-    }
-  };
 
   const prefillCurrentLocation = async () => {
     try {
@@ -253,6 +217,8 @@ export default function FindRideScreen() {
     }
   }, [fromCoords, toCoords]);
 
+  const searchSeqRef = useRef(0);
+
   const performSearch = async () => {
     console.log('Performing search with:', { fromLocation, toLocation, fromCoords, toCoords, selectedDate, passengerCount });
     if (!fromLocation || !toLocation) {
@@ -316,6 +282,9 @@ export default function FindRideScreen() {
         }
     }
 
+    // Only the latest search may update the results: an older, slower
+    // response (e.g. an auto-search superseded by a manual one) is dropped.
+    const mySeq = ++searchSeqRef.current;
     setIsLoading(true);
     setHasSearched(true);
     try {
@@ -330,12 +299,14 @@ export default function FindRideScreen() {
         seats: passengerCount,
       });
       
+      if (mySeq !== searchSeqRef.current) return;
       setSearchResults(results);
     } catch (error) {
+      if (mySeq !== searchSeqRef.current) return;
       console.error('Search failed:', error);
       Alert.alert('Search Error', 'Unable to fetch rides. Please check your connection.');
     } finally {
-      setIsLoading(false);
+      if (mySeq === searchSeqRef.current) setIsLoading(false);
     }
   };
 

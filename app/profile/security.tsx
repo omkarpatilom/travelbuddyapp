@@ -132,7 +132,10 @@ export default function SecurityScreen() {
             try {
               setRevokingSessionId(sessionId);
               await api.delete(`/security/sessions/${sessionId}`);
-              await fetchSecurityData();
+              // Server confirmed: drop the row now, then re-sync the list in
+              // the background instead of holding the spinner for it.
+              setSessions(prev => prev.filter((sess: any) => sess.id !== sessionId));
+              fetchSecurityData();
             } catch (error: any) {
               Alert.alert('Error', error.message || 'Failed to revoke session');
             } finally {

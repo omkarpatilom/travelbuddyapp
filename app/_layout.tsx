@@ -11,6 +11,7 @@ import { SafetyProvider } from '@/contexts/SafetyContext';
 import { ReviewProvider } from '@/contexts/ReviewContext';
 import { QueryProvider } from '@/providers/QueryProvider';
 import ErrorBoundary from '@/components/ErrorBoundary';
+import OperationFeedback from '@/components/OperationFeedback';
 import { initSQLiteDB } from '@/storage/sqlite';
 
 export default function RootLayout() {
@@ -47,6 +48,7 @@ export default function RootLayout() {
                       <Stack.Screen name="profile/safety" />
                       <Stack.Screen name="+not-found" />
                     </Stack>
+                    <OperationFeedback />
                     <StatusBar style="auto" />
                   </ReviewProvider>
                 </SafetyProvider>

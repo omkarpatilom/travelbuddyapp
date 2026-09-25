@@ -1,4 +1,6 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { vehicleKeys, invalidateVehicles } from '@/hooks/useVehicles';
 import { vehicleService } from '@/services/vehicle.service';
 import { useAuth } from './AuthContext';
 import { VehicleResponseDto, VehicleFeatureDto, VehiclePhotoDto, VehiclePreferenceDto } from '@/utils/types';
@@ -20,26 +22,28 @@ interface VehicleContextType {
 const VehicleContext = createContext<VehicleContextType | undefined>(undefined);
 
 export function VehicleProvider({ children }: { children: React.ReactNode }) {
-  const [vehicles, setVehicles] = useState<VehicleResponseDto[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
   const { user } = useAuth();
+  const queryClient = useQueryClient();
 
-  useEffect(() => {
-    if (user?.role === 'Driver' || user?.role === 'Admin') {
-      fetchMyVehicles();
-    }
-  }, [user]);
+  // Same `vehicles` cache root as the vehicle manager and the Offer Ride form,
+  // so a change made on any of them refreshes this list too.
+  const vehiclesQuery = useQuery({
+    queryKey: vehicleKeys.raw,
+    queryFn: async () => {
+      try {
+        return await vehicleService.getMyVehicles();
+      } catch (e) {
+        console.error('Error fetching vehicles:', e);
+        throw e;
+      }
+    },
+    enabled: user?.role === 'Driver' || user?.role === 'Admin',
+  });
+  const vehicles: VehicleResponseDto[] = vehiclesQuery.data ?? [];
+  const isLoading = vehiclesQuery.isFetching;
 
   const fetchMyVehicles = async () => {
-    try {
-      setIsLoading(true);
-      const data = await vehicleService.getMyVehicles();
-      setVehicles(data);
-    } catch (e) {
-      console.error('Error fetching vehicles:', e);
-    } finally {
-      setIsLoading(false);
-    }
+    await vehiclesQuery.refetch();
   };
 
   const getVehicleById = async (id: string) => {
@@ -53,7 +57,7 @@ export function VehicleProvider({ children }: { children: React.ReactNode }) {
   const createVehicle = async (data: any) => {
     try {
       const id = await vehicleService.createVehicle(data);
-      await fetchMyVehicles();
+      await invalidateVehicles(queryClient);
       return id;
     } catch (e) {
       return null;
@@ -63,7 +67,7 @@ export function VehicleProvider({ children }: { children: React.ReactNode }) {
   const updateVehicle = async (id: string, data: any) => {
     try {
       await vehicleService.updateVehicle(id, data);
-      await fetchMyVehicles();
+      await invalidateVehicles(queryClient);
       return true;
     } catch (e) {
       return false;
@@ -73,7 +77,7 @@ export function VehicleProvider({ children }: { children: React.ReactNode }) {
   const deleteVehicle = async (id: string) => {
     try {
       await vehicleService.deleteVehicle(id);
-      await fetchMyVehicles();
+      await invalidateVehicles(queryClient);
       return true;
     } catch (e) {
       return false;
@@ -83,7 +87,7 @@ export function VehicleProvider({ children }: { children: React.ReactNode }) {
   const setDefaultVehicle = async (id: string) => {
     try {
       await vehicleService.setDefault(id);
-      await fetchMyVehicles();
+      await invalidateVehicles(queryClient);
       return true;
     } catch (e) {
       return false;

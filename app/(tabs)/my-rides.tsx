@@ -18,11 +18,19 @@ import { CACHE_KEYS } from '@/cache/cacheKeys';
 import { Plus, Calendar, Clock, MapPin, Users, CreditCard as Edit, X } from 'lucide-react-native';
 import { mockRides } from '@/data/mockData';
 import { formatPrice } from '@/utils/validation';
+import { confirmAction } from '@/utils/dialog';
+import { createRideOp, cancelRideOp, CreateRideVars } from '@/hooks/useRides';
+import { useOperation } from '@/hooks/mutations/operations';
+import { usePendingCreates } from '@/hooks/mutations/usePendingCreates';
+import PendingCreateCard from '@/components/PendingCreateCard';
 
 export default function MyRidesScreen() {
   const { theme } = useTheme();
   const { user } = useAuth();
-  const { myRides, cancelRide, isLoadingMyRides, loadInitialData } = useRides();
+  const { myRides, isLoadingMyRides } = useRides();
+  const { run: runCancelRide } = useOperation(cancelRideOp);
+  // Rides the user submitted that the server hasn't created yet (or failed to).
+  const pendingCreates = usePendingCreates(createRideOp);
   const queryClient = useQueryClient();
   const router = useRouter();
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -83,26 +91,25 @@ export default function MyRidesScreen() {
     });
   };
 
-  const handleCancelRide = (rideId: string) => {
-    Alert.alert(
+  // Optimistic: the ride shows Cancelled (in every list and on its details
+  // screen) right away; if the server refuses, it is restored and the error
+  // is shown.
+  const handleCancelRide = async (rideId: string) => {
+    const confirmed = await confirmAction(
       'Cancel Ride',
       'Are you sure you want to cancel this ride? All passengers will be notified.',
-      [
-        { text: 'No', style: 'cancel' },
-        { 
-          text: 'Yes, Cancel', 
-          style: 'destructive',
-          onPress: async () => {
-            const success = await cancelRide(rideId, 'User cancelled from app');
-            if (success) {
-              Alert.alert('Success', 'Your ride has been cancelled. Passengers have been notified.');
-            } else {
-              Alert.alert('Error', 'Failed to cancel ride');
-            }
-          }
-        },
-      ]
+      'Yes, Cancel',
+      true
     );
+    if (!confirmed) return;
+    try {
+      const result = await runCancelRide({ rideId, reason: 'User cancelled from app' });
+      if (result) {
+        Alert.alert('Success', 'Your ride has been cancelled. Passengers have been notified.');
+      }
+    } catch (e) {
+      Alert.alert('Error', 'Failed to cancel ride');
+    }
   };
 
   const getStatusColor = (status: string) => {
@@ -130,10 +137,11 @@ export default function MyRidesScreen() {
         <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) + '20' }]}>
           <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>
             {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
+            {item._pending ? ` · ${item._pending.label}` : ''}
           </Text>
         </View>
         
-        {['published', 'scheduled'].includes(item.status.toLowerCase()) && (
+        {['published', 'scheduled'].includes(item.status.toLowerCase()) && !item._pending && (
           <View style={styles.actionButtons}>
             <TouchableOpacity 
               onPress={() => handleEditRide(item.id)}
@@ -258,7 +266,30 @@ export default function MyRidesScreen() {
         showsVerticalScrollIndicator={false}
         refreshing={isRefreshing}
         onRefresh={onRefresh}
-        ListEmptyComponent={
+        ListHeaderComponent={
+          pendingCreates.items.length > 0 ? (
+            <View>
+              {pendingCreates.items.map((p) => {
+                const v = p.variables as CreateRideVars;
+                return (
+                  <PendingCreateCard
+                    key={p.mutationId}
+                    testID="pending-ride-card"
+                    status={p.status}
+                    pendingLabel="Creating ride…"
+                    errorLabel="Ride was not created"
+                    title={`${v.from.address} → ${v.to.address}`}
+                    subtitle={`${v.date} · ${v.time} · ${formatPrice(v.price)}`}
+                    error={p.error}
+                    onRetry={() => pendingCreates.retry(p)}
+                    onDismiss={() => pendingCreates.dismiss(p.mutationId)}
+                  />
+                );
+              })}
+            </View>
+          ) : null
+        }
+        ListEmptyComponent={pendingCreates.items.length > 0 ? null :
           <View style={styles.emptyContainer}>
             <Text style={[styles.emptyIcon, { color: theme.colors.textSecondary }]}>🚗</Text>
             <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>

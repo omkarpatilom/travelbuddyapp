@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,10 +9,10 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { useTheme } from '@/contexts/ThemeContext';
-import { useRides } from '@/contexts/RideContext';
-import { CACHE_KEYS } from '@/cache/cacheKeys';
+import { qk } from '@/cache/cacheKeys';
+import { vehicleKeys } from '@/hooks/useVehicles';
 import { api } from '@/utils/api';
 import { Users, IndianRupee, ArrowLeft } from 'lucide-react-native';
 import { formatPrice } from '@/utils/validation';
@@ -23,6 +23,8 @@ import PreferencesSelector, { RidePreferences } from '@/components/PreferencesSe
 import MapLocationSelector from '@/components/MapLocationSelector';
 import DropdownSelector from '@/components/DropdownSelector';
 import { safeBack } from '@/utils/navigation';
+import { createRideOp } from '@/hooks/useRides';
+import { useOperation, useAnyOperationPending } from '@/hooks/mutations/operations';
 
 
 interface Vehicle {
@@ -61,7 +63,6 @@ export default function OfferRideScreen() {
     description: '',
   });
   
-  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
   const [preferences, setPreferences] = useState<RidePreferences>({
     nonSmoking: true,
@@ -70,19 +71,21 @@ export default function OfferRideScreen() {
     airConditioning: true,
     conversationLevel: 'moderate',
   });
-  const [isLoading, setIsLoading] = useState(false);
-  const [isFetchingVehicles, setIsFetchingVehicles] = useState(true);
 
   const [pricingSuggestion, setPricingSuggestion] = useState<PricingSuggestion | null>(null);
   const [isFetchingPricing, setIsFetchingPricing] = useState(false);
   const [pricingError, setPricingError] = useState<string | null>(null);
   
   const { theme } = useTheme();
-  const { createRide } = useRides();
-  const queryClient = useQueryClient();
+  const { run: runCreateRide } = useOperation(createRideOp);
+  const isLoading = useAnyOperationPending('createRide');
   const router = useRouter();
 
   useEffect(() => {
+    // A newer route/vehicle/seats change supersedes this request; its late
+    // response must not overwrite the newer suggestion.
+    let superseded = false;
+
     const fetchPricingSuggestion = async () => {
       if (
         !formData.fromCoords.latitude ||
@@ -99,20 +102,25 @@ export default function OfferRideScreen() {
       try {
         const query = `?vehicleId=${selectedVehicle.id}&fromLat=${formData.fromCoords.latitude}&fromLng=${formData.fromCoords.longitude}&toLat=${formData.toCoords.latitude}&toLng=${formData.toCoords.longitude}&seats=${formData.seats}&tollAdjustment=0`;
         const data = await api.get<PricingSuggestion>(`/pricing/suggest${query}`);
+        if (superseded) return;
         setPricingSuggestion(data);
         
         if (!formData.price) {
           setFormData(prev => ({ ...prev, price: data.suggestedPricePerSeat.toString() }));
         }
       } catch (error: any) {
+        if (superseded) return;
         console.error('Error fetching pricing suggestion:', error);
         setPricingError(error.message || 'Failed to fetch suggested pricing');
       } finally {
-        setIsFetchingPricing(false);
+        if (!superseded) setIsFetchingPricing(false);
       }
     };
 
     fetchPricingSuggestion();
+    return () => {
+      superseded = true;
+    };
   }, [formData.fromCoords.latitude, formData.fromCoords.longitude, formData.toCoords.latitude, formData.toCoords.longitude, selectedVehicle, formData.seats]);
 
   const getCategoryAndValidation = () => {
@@ -150,26 +158,52 @@ export default function OfferRideScreen() {
 
   const { category: currentCategory, isValid: isPriceValid, error: priceValidationError } = getCategoryAndValidation();
 
-  useEffect(() => {
-    fetchVehicles();
-    fetchDefaultPreferences();
-  }, []);
-
-  const fetchDefaultPreferences = async () => {
-    try {
-      const data = await api.get<any>('/preferences');
-      if (data) {
-        setPreferences({
-          nonSmoking: !data.allowSmoking,
-          musicAllowed: data.allowMusic,
-          petsAllowed: data.allowPets,
-          airConditioning: data.comfortAmenities?.includes('ac') ?? true,
-          conversationLevel: data.conversationLevel?.toLowerCase() === 'quiet' ? 'quiet' : 
-                             data.conversationLevel?.toLowerCase() === 'chatty' ? 'chatty' : 'moderate',
-        });
+  // Vehicles and default preferences come from the shared cache, so edits
+  // made on the vehicle / preferences screens show up here without a remount.
+  const vehiclesQuery = useQuery({ queryKey: vehicleKeys.summary, queryFn: () => loadVehicles() });
+  const vehicles: Vehicle[] = vehiclesQuery.data ?? [];
+  const isFetchingVehicles = vehiclesQuery.isPending;
+  const preferencesQuery = useQuery({
+    queryKey: qk.preferences(),
+    queryFn: async () => {
+      try {
+        return await api.get<any>('/preferences');
+      } catch (error) {
+        console.warn('Failed to load default preferences:', error);
+        throw error;
       }
-    } catch (error) {
-      console.warn('Failed to load default preferences:', error);
+    },
+  });
+  const appliedDefaultsRef = useRef(false);
+
+  useEffect(() => {
+    // Seed the form's defaults once; after that the form belongs to the user.
+    if (preferencesQuery.data && !appliedDefaultsRef.current) {
+      appliedDefaultsRef.current = true;
+      applyDefaultPreferences(preferencesQuery.data);
+    }
+  }, [preferencesQuery.data]);
+
+  useEffect(() => {
+    // Keep the selection valid when the vehicle list changes (e.g. a vehicle
+    // was deleted or a new default chosen on the vehicle screen).
+    if (vehicles.length === 0) return;
+    if (!selectedVehicle || !vehicles.some(v => v.id === selectedVehicle.id)) {
+      const defaultVehicle = vehicles.find(v => v.isDefault) || vehicles[0];
+      if (defaultVehicle) setSelectedVehicle(defaultVehicle);
+    }
+  }, [vehicles]);
+
+  const applyDefaultPreferences = (data: any) => {
+    if (data) {
+      setPreferences({
+        nonSmoking: !data.allowSmoking,
+        musicAllowed: data.allowMusic,
+        petsAllowed: data.allowPets,
+        airConditioning: data.comfortAmenities?.includes('ac') ?? true,
+        conversationLevel: data.conversationLevel?.toLowerCase() === 'quiet' ? 'quiet' : 
+                           data.conversationLevel?.toLowerCase() === 'chatty' ? 'chatty' : 'moderate',
+      });
     }
   };
 
@@ -192,7 +226,7 @@ export default function OfferRideScreen() {
     return options;
   };
 
-  const fetchVehicles = async () => {
+  const loadVehicles = async (): Promise<Vehicle[]> => {
     try {
       const data = await api.get<any[]>('/vehicles/my-vehicles');
       const mappedVehicles = await Promise.all(data.map(async (v: any) => {
@@ -214,13 +248,10 @@ export default function OfferRideScreen() {
           isDefault: v.isDefault,
         };
       }));
-      setVehicles(mappedVehicles);
-      const defaultVehicle = mappedVehicles.find(v => v.isDefault) || mappedVehicles[0];
-      if (defaultVehicle) setSelectedVehicle(defaultVehicle);
+      return mappedVehicles;
     } catch (error) {
       console.error('Error fetching vehicles:', error);
-    } finally {
-      setIsFetchingVehicles(false);
+      throw error;
     }
   };
 
@@ -294,49 +325,36 @@ export default function OfferRideScreen() {
   const handleSubmit = async () => {
     if (!validateForm()) return;
 
-    setIsLoading(true);
-    try {
-      const rideData = {
-        vehicleId: selectedVehicle!.id,
-        from: {
-          address: formData.from,
-          coordinates: formData.fromCoords
-        },
-        to: {
-          address: formData.to,
-          coordinates: formData.toCoords
-        },
-        date: selectedDate!.toISOString().split('T')[0], // YYYY-MM-DD
-        time: selectedTime!.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }), // HH:mm
-        availableSeats: parseInt(formData.seats),
-        totalSeats: parseInt(formData.seats),
-        price: parseFloat(formData.price),
-        carModel: `${selectedVehicle!.make} ${selectedVehicle!.model}`,
-        carColor: selectedVehicle!.color,
-        preferences,
-      };
+    const rideData = {
+      vehicleId: selectedVehicle!.id,
+      from: {
+        address: formData.from,
+        coordinates: formData.fromCoords
+      },
+      to: {
+        address: formData.to,
+        coordinates: formData.toCoords
+      },
+      date: selectedDate!.toISOString().split('T')[0], // YYYY-MM-DD
+      time: selectedTime!.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }), // HH:mm
+      availableSeats: parseInt(formData.seats),
+      totalSeats: parseInt(formData.seats),
+      price: parseFloat(formData.price),
+      carModel: `${selectedVehicle!.make} ${selectedVehicle!.model}`,
+      carColor: selectedVehicle!.color,
+      preferences,
+    };
 
-      console.log('[DEBUG] offer.tsx: Submitting ride creation:', rideData);
-      const success = await createRide(rideData);
-      console.log('[DEBUG] offer.tsx: Ride creation result:', success);
-
-      if (success) {
-        // Force-invalidate my-rides cache to ensure the new ride appears immediately
-        await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.rides, 'my-rides'] });
-        await queryClient.refetchQueries({ queryKey: [CACHE_KEYS.rides, 'my-rides'] });
-        console.log('[DEBUG] offer.tsx: my-rides cache invalidated and refetched');
-        Alert.alert('Success', 'Your ride has been posted successfully!', [
-          { text: 'OK', onPress: () => safeBack(router) }
-        ]);
-      } else {
-        Alert.alert('Error', 'Failed to create ride. Please try again.');
-      }
-    } catch (error) {
+    // Server-authoritative create: no ride is invented locally. The request
+    // keeps running after we leave; My Rides shows a "Creating ride…" card
+    // until the server returns the real ride (or the failure with Retry), and
+    // the banner reports the outcome wherever the user is. A second tap while
+    // the same ride is being created sends nothing.
+    console.log('[DEBUG] offer.tsx: Submitting ride creation:', rideData);
+    runCreateRide(rideData, { handleErrors: false }).catch((error) => {
       console.error('[DEBUG] offer.tsx: Error during ride creation:', error);
-      Alert.alert('Error', 'An unexpected error occurred. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
+    });
+    router.replace('/(tabs)/my-rides');
   };
 
   if (isFetchingVehicles) {

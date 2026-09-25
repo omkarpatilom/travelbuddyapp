@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { storage, StorageKeys } from '@/utils/storage';
 import { validateEmail, validatePassword } from '@/utils/validation';
 import { authService } from '@/services/auth.service';
@@ -187,22 +187,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const updateUser = async (userData: Partial<User>) => {
-    try {
-      if (user) {
-        if (userData.fullName || userData.phone) {
-          await userService.updateProfile({
-            fullName: userData.fullName || user.fullName,
-            phoneNumber: userData.phone || user.phone,
-          });
-        }
+  // Bumped by every profile save, so a slow failure of an older save can't
+  // roll back over a newer one.
+  const updateSeqRef = useRef(0);
 
-        const updatedUser = { ...user, ...userData };
-        await storage.setItem(StorageKeys.USER_DATA, updatedUser);
-        setUser(updatedUser);
+  /**
+   * Optimistic: the new name/phone show everywhere (profile tab, headers)
+   * immediately. The same PUT as before is sent; on success the server's
+   * canonical profile is re-read in the background, on failure the previous
+   * profile is restored (state and storage) and the error is rethrown.
+   */
+  const updateUser = async (userData: Partial<User>) => {
+    if (!user) return;
+    const previousUser = user;
+    const updatedUser = { ...user, ...userData };
+    const seq = ++updateSeqRef.current;
+    setUser(updatedUser);
+    try {
+      if (userData.fullName || userData.phone) {
+        await userService.updateProfile({
+          fullName: userData.fullName || user.fullName,
+          phoneNumber: userData.phone || user.phone,
+        });
       }
+      await storage.setItem(StorageKeys.USER_DATA, updatedUser);
+      if (seq === updateSeqRef.current) refreshProfile();
     } catch (error) {
       console.error('Update user error:', error);
+      if (seq === updateSeqRef.current) {
+        setUser(previousUser);
+        await storage.setItem(StorageKeys.USER_DATA, previousUser).catch(() => {});
+      }
       throw error;
     }
   };

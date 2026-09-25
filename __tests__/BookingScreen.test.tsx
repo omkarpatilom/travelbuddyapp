@@ -1,5 +1,6 @@
 import React from 'react';
-import { render, fireEvent, waitFor } from '@testing-library/react-native';
+import { render as rtlRender, fireEvent, waitFor } from '@testing-library/react-native';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import BookingsScreen from '../app/(tabs)/bookings';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -12,6 +13,10 @@ jest.mock('../contexts/RideContext');
 jest.mock('expo-router', () => ({
   useRouter: jest.fn(),
 }));
+
+// The screen reads pending booking requests from the query client's mutation cache.
+const render = (ui: React.ReactElement) =>
+  rtlRender(<QueryClientProvider client={new QueryClient()}>{ui}</QueryClientProvider>);
 
 describe('BookingsScreen', () => {
   const mockTheme = {

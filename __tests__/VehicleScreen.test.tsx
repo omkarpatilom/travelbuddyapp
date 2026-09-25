@@ -1,5 +1,12 @@
 import React from 'react';
-import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
+import { render as rtlRender, fireEvent, waitFor, act } from '@testing-library/react-native';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+// The vehicle list lives in the shared query cache.
+const render = (ui: React.ReactElement) =>
+  rtlRender(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{ui}</QueryClientProvider>
+  );
 import VehicleDetailsScreen from '../app/profile/vehicle';
 import { useTheme } from '../contexts/ThemeContext';
 import { api } from '../utils/api';
@@ -160,7 +167,7 @@ describe('VehicleDetailsScreen', () => {
       fireEvent.press(setDefaultBtn);
     });
 
-    expect(api.patch).toHaveBeenCalledWith('/vehicles/v1/default', {});
+    await waitFor(() => expect(api.patch).toHaveBeenCalledWith('/vehicles/v1/default', {}));
   });
 
   it('handles delete vehicle', async () => {
@@ -190,6 +197,6 @@ describe('VehicleDetailsScreen', () => {
       await deleteAction.onPress();
     });
 
-    expect(api.delete).toHaveBeenCalledWith('/vehicles/v1'); // First vehicle has the delete button
+    await waitFor(() => expect(api.delete).toHaveBeenCalledWith('/vehicles/v1')); // First vehicle has the delete button
   });
 });

@@ -11,12 +11,15 @@ import {
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
-import { useRides, Ride } from '@/contexts/RideContext';
+import { Ride } from '@/contexts/RideContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { User, Phone, Users, IndianRupee, ArrowLeft, CreditCard, MapPin, ChevronDown } from 'lucide-react-native';
 import { mockRides } from '@/data/mockData';
 import { formatPrice } from '@/utils/validation';
 import { safeBack } from '@/utils/navigation';
+import { useRideDetailsQuery } from '@/hooks/useRides';
+import { createBookingOp } from '@/hooks/useBookings';
+import { useOperation, useOperationPending } from '@/hooks/mutations/operations';
 
 export default function BookRideScreen() {
   const [selectedSeats, setSelectedSeats] = useState(1);
@@ -26,28 +29,20 @@ export default function BookRideScreen() {
   const [requestedPickup, setRequestedPickup] = useState('');
   const [requestedDropoff, setRequestedDropoff] = useState('');
   const [specialNotes, setSpecialNotes] = useState('');
-  const [isLoading, setIsLoading] = useState(true);
-  const [ride, setRide] = useState<Ride | null>(null);
-  
   const { theme } = useTheme();
-  const { bookRide, getRideById } = useRides();
   const { user } = useAuth();
   const router = useRouter();
   const params = useLocalSearchParams();
   const rideId = params.id as string;
 
-  useEffect(() => {
-    if (rideId) {
-      fetchRideDetails();
-    }
-  }, [rideId]);
+  // Same cache entry as Ride Details, so it's usually already there.
+  const rideQuery = useRideDetailsQuery(rideId);
+  const ride: Ride | null = rideQuery.data ?? null;
+  const isLoading = rideQuery.isPending;
 
-  const fetchRideDetails = async () => {
-    setIsLoading(true);
-    const data = await getRideById(rideId);
-    setRide(data);
-    setIsLoading(false);
-  };
+  const { run: runCreateBooking } = useOperation(createBookingOp);
+  // A booking request for this ride is already on its way.
+  const isSubmitting = useOperationPending('createBooking', rideId);
 
   // Auto-fill passenger details from user profile
   useEffect(() => {
@@ -99,34 +94,28 @@ export default function BookRideScreen() {
       return;
     }
 
-    setIsLoading(true);
-    try {
-      const specialRequestPayload = JSON.stringify({
-        requestedPickup: requestedPickup.trim(),
-        requestedDropoff: requestedDropoff.trim(),
-        notes: specialNotes.trim()
-      });
+    const specialRequestPayload = JSON.stringify({
+      requestedPickup: requestedPickup.trim(),
+      requestedDropoff: requestedDropoff.trim(),
+      notes: specialNotes.trim()
+    });
 
-      const success = await bookRide(rideId, selectedSeats, {
-        name: passengerName,
-        phone: passengerPhone,
-        specialRequest: specialRequestPayload
-      });
-
-      if (success) {
-        Alert.alert(
-          'Booking Confirmed!',
-          `Your ride has been booked successfully. Total cost: ${formatPrice(totalPrice)}`,
-          [{ text: 'OK', onPress: () => router.push('/(tabs)/bookings') }]
-        );
-      } else {
-        Alert.alert('Booking Failed', 'Unable to book the ride. Please try again.');
-      }
-    } catch (error) {
-      Alert.alert('Error', 'An unexpected error occurred. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
+    // Server-authoritative create: nothing is assumed booked. The request
+    // keeps running after we leave this screen; My Bookings shows a
+    // "Requesting booking…" card until the server returns the real booking
+    // (or "Booking failed" with Retry), and the banner reports the outcome.
+    // A second tap while the same request is in flight sends nothing.
+    runCreateBooking({
+      rideId,
+      seats: selectedSeats,
+      passengerName,
+      passengerPhone,
+      specialRequest: specialRequestPayload,
+      rideSummary: { from: ride.from.address, to: ride.to.address, date: ride.date, time: ride.time, price: ride.price },
+    }, { handleErrors: false }).catch((error) => {
+      console.error('Error booking ride:', error);
+    });
+    router.push('/(tabs)/bookings');
   };
 
   return (
@@ -334,9 +323,9 @@ export default function BookRideScreen() {
         <TouchableOpacity 
           style={[styles.bookButton, { backgroundColor: theme.colors.primary }]}
           onPress={handleBooking}
-          disabled={isLoading}
+          disabled={isSubmitting}
         >
-          {isLoading ? (
+          {isSubmitting ? (
             <ActivityIndicator color="#FFFFFF" />
           ) : (
             <>

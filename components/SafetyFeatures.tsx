@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -18,13 +18,14 @@ import { useNotifications } from '@/contexts/NotificationContext';
 import { api } from '@/utils/api';
 import { Shield, MapPin, Users, Plus, X, TriangleAlert as AlertTriangle, Camera, FileText, CircleCheck as CheckCircle } from 'lucide-react-native';
 import { requestLocationPermission } from '@/utils/permissions';
-
-interface EmergencyContact {
-  id: string;
-  name: string;
-  phone: string;
-  relationship: string;
-}
+import { confirmAction } from '@/utils/dialog';
+import {
+  EmergencyContact,
+  useEmergencyContactsQuery,
+  addEmergencyContactOp,
+  removeEmergencyContactOp,
+} from '@/hooks/useSafety';
+import { useOperation, usePendingKeys } from '@/hooks/mutations/operations';
 
 interface SafetyFeaturesProps {
   style?: any;
@@ -40,13 +41,19 @@ interface VerificationDocument {
 
 export default function SafetyFeatures({ style }: SafetyFeaturesProps) {
   const router = useRouter();
-  const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([]);
+  // Shared with SafetyContext (see hooks/useSafety.ts).
+  const contactsQuery = useEmergencyContactsQuery();
+  const emergencyContacts: EmergencyContact[] = contactsQuery.data ?? [];
+  const { run: runAddContact } = useOperation(addEmergencyContactOp);
+  const { run: runRemoveContact } = useOperation(removeEmergencyContactOp);
+  const removingIds = usePendingKeys('removeEmergencyContact');
+  // Holds the running SOS countdown so Cancel (or leaving the screen) can stop it.
+  const sosIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [showAddContact, setShowAddContact] = useState(false);
   const [showSOSModal, setShowSOSModal] = useState(false);
   const [isTrackingEnabled, setIsTrackingEnabled] = useState(false);
   const [isSendingSOS, setIsSendingSOS] = useState(false);
   const [sosCountdown, setSOSCountdown] = useState(0);
-  const [isLoading, setIsLoading] = useState(false);
   const [newContact, setNewContact] = useState({
     name: '',
     phone: '',
@@ -58,23 +65,13 @@ export default function SafetyFeatures({ style }: SafetyFeaturesProps) {
   const { sendLocalNotification } = useNotifications();
 
   useEffect(() => {
-    fetchEmergencyContacts();
     fetchVerificationStatus();
+    return () => clearSOSCountdown();
   }, []);
 
-  const fetchEmergencyContacts = async () => {
-    try {
-      const data = await api.get<any[]>('/safety/emergency-contacts');
-      setEmergencyContacts(data.map(c => ({
-        id: c.id,
-        name: c.name,
-        phone: c.phoneNumber,
-        relationship: c.relation || 'Contact',
-      })));
-    } catch (error) {
-      console.error('Error fetching emergency contacts:', error);
-    }
-  };
+  useEffect(() => {
+    if (contactsQuery.error) console.error('Error fetching emergency contacts:', contactsQuery.error);
+  }, [contactsQuery.error]);
 
   const mapApiStatusToLocal = (status: string): 'pending' | 'verified' | 'rejected' => {
     if (status === 'Approved') return 'verified';
@@ -123,23 +120,35 @@ export default function SafetyFeatures({ style }: SafetyFeaturesProps) {
     }
   };
 
+  const clearSOSCountdown = () => {
+    if (sosIntervalRef.current) {
+      clearInterval(sosIntervalRef.current);
+      sosIntervalRef.current = null;
+    }
+  };
+
   const handleSOSPress = () => {
+    clearSOSCountdown();
     setShowSOSModal(true);
     setSOSCountdown(5);
-    
-    const countdown = setInterval(() => {
-      setSOSCountdown(prev => {
-        if (prev <= 1) {
-          clearInterval(countdown);
-          triggerSOS();
-          return 0;
-        }
-        return prev - 1;
-      });
+
+    // The countdown lives in a ref (not inside a state updater) so that
+    // Cancel really stops it. Previously Cancel only reset the displayed
+    // number; the still-running interval then saw 0 on its next tick and
+    // sent the SOS immediately.
+    let remaining = 5;
+    sosIntervalRef.current = setInterval(() => {
+      remaining -= 1;
+      setSOSCountdown(Math.max(remaining, 0));
+      if (remaining <= 0) {
+        clearSOSCountdown();
+        triggerSOS();
+      }
     }, 1000);
   };
 
   const cancelSOS = () => {
+    clearSOSCountdown();
     setShowSOSModal(false);
     setSOSCountdown(0);
   };
@@ -205,54 +214,44 @@ export default function SafetyFeatures({ style }: SafetyFeaturesProps) {
     }
   };
 
+  // Pending: the form closes and a "Saving…" row appears immediately; the
+  // server's contact replaces it, or it is removed with an error.
   const addEmergencyContact = async () => {
     if (!newContact.name || !newContact.phone) {
       Alert.alert('Error', 'Please fill in all required fields');
       return;
     }
 
+    const vars = {
+      name: newContact.name,
+      phone: newContact.phone,
+      relationship: newContact.relationship,
+      isPrimary: emergencyContacts.filter(c => !c._pending).length === 0,
+      tempId: `pending-${Date.now()}`,
+    };
+    setNewContact({ name: '', phone: '', relationship: '' });
+    setShowAddContact(false);
     try {
-      setIsLoading(true);
-      await api.post('/safety/emergency-contacts', {
-        name: newContact.name,
-        phoneNumber: newContact.phone,
-        relation: newContact.relationship,
-        isPrimary: emergencyContacts.length === 0,
-      });
-
-      setNewContact({ name: '', phone: '', relationship: '' });
-      setShowAddContact(false);
-      fetchEmergencyContacts();
+      await runAddContact(vars);
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to add contact');
-    } finally {
-      setIsLoading(false);
     }
   };
 
-  const removeEmergencyContact = (contactId: string) => {
-    Alert.alert(
+  // Optimistic: the contact disappears immediately; restored on failure.
+  const removeEmergencyContact = async (contactId: string) => {
+    const confirmed = await confirmAction(
       'Remove Contact',
       'Are you sure you want to remove this emergency contact?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setIsLoading(true);
-              await api.delete(`/safety/emergency-contacts/${contactId}`);
-              fetchEmergencyContacts();
-            } catch (error: any) {
-              Alert.alert('Error', error.message || 'Failed to remove contact');
-            } finally {
-              setIsLoading(false);
-            }
-          },
-        },
-      ]
+      'Remove',
+      true
     );
+    if (!confirmed) return;
+    try {
+      await runRemoveContact({ id: contactId });
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to remove contact');
+    }
   };
 
   const toggleTripTracking = () => {
@@ -372,14 +371,17 @@ export default function SafetyFeatures({ style }: SafetyFeaturesProps) {
                 {contact.phone}
               </Text>
               <Text style={[styles.contactRelation, { color: theme.colors.textSecondary }]}>
-                {contact.relationship}
+                {contact._pending ? contact._pending.label : contact.relationship}
               </Text>
             </View>
             <TouchableOpacity
               style={styles.removeContactButton}
               onPress={() => removeEmergencyContact(contact.id)}
+              disabled={!!contact._pending || removingIds.has(contact.id)}
             >
-              <X size={20} color={theme.colors.error} />
+              {contact._pending || removingIds.has(contact.id)
+                ? <ActivityIndicator size="small" color={theme.colors.error} />
+                : <X size={20} color={theme.colors.error} />}
             </TouchableOpacity>
           </View>
         ))}

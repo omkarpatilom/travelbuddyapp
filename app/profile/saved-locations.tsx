@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -12,29 +12,30 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTheme } from '@/contexts/ThemeContext';
-import { api } from '@/utils/api';
 import { MapPin, Plus, X, Home, Briefcase, Heart, ArrowLeft, Save } from 'lucide-react-native';
 import LocationPicker from '@/components/LocationPicker';
 import { safeBack } from '@/utils/navigation';
-
-interface SavedLocation {
-  id: string;
-  name: string;
-  address: string;
-  latitude: number;
-  longitude: number;
-  type: 'Home' | 'Work' | 'Favorite' | 'Other';
-}
+import { confirmAction } from '@/utils/dialog';
+import {
+  SavedLocation,
+  useSavedLocationsQuery,
+  addSavedLocationOp,
+  deleteSavedLocationOp,
+} from '@/hooks/useSavedLocations';
+import { useOperation, usePendingKeys } from '@/hooks/mutations/operations';
 
 export default function SavedLocationsScreen() {
   const { theme } = useTheme();
   const router = useRouter();
 
-  const [locations, setLocations] = useState<SavedLocation[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  // Shared with Home, Find Ride and the location picker.
+  const locationsQuery = useSavedLocationsQuery();
+  const locations: SavedLocation[] = locationsQuery.data ?? [];
+  const isLoading = locationsQuery.isPending;
   const [showAddModal, setShowAddModal] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const { run: runAddLocation } = useOperation(addSavedLocationOp);
+  const { run: runDeleteLocation } = useOperation(deleteSavedLocationOp);
+  const deletingIds = usePendingKeys('deleteSavedLocation');
 
   const [newLocation, setNewLocation] = useState({
     name: '',
@@ -44,92 +45,45 @@ export default function SavedLocationsScreen() {
     longitude: 0,
   });
 
-  useEffect(() => {
-    fetchLocations();
-  }, []);
-
-  const fetchLocations = async () => {
-    try {
-      const data = await api.get<any[]>('/saved-locations');
-      setLocations(data.map(item => {
-        let derivedType: SavedLocation['type'] = 'Favorite';
-        const lowerName = item.name.toLowerCase();
-        if (lowerName === 'home') {
-          derivedType = 'Home';
-        } else if (lowerName === 'work') {
-          derivedType = 'Work';
-        } else if (lowerName === 'favorite') {
-          derivedType = 'Favorite';
-        } else {
-          derivedType = 'Other';
-        }
-        return {
-          id: item.id,
-          name: item.name,
-          address: item.address,
-          latitude: item.latitude,
-          longitude: item.longitude,
-          type: derivedType,
-        };
-      }));
-    } catch (error) {
-      console.error('Error fetching saved locations:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
+  // Pending: the modal closes and a "Saving…" row appears immediately; the
+  // real row (with its server id) replaces it once the server has created it.
   const handleAddLocation = async () => {
     if (!newLocation.name || !newLocation.address) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
     }
 
-    setIsSaving(true);
+    const vars = {
+      name: newLocation.name,
+      address: newLocation.address,
+      latitude: newLocation.latitude || 0,
+      longitude: newLocation.longitude || 0,
+      tempId: `pending-${Date.now()}`,
+    };
+    setShowAddModal(false);
+    setNewLocation({ name: '', address: '', type: 'Favorite', latitude: 0, longitude: 0 });
     try {
-      // In a real app, we would use a geocoding service here
-      // For now, we'll use mock coordinates
-      await api.post('/saved-locations', {
-        name: newLocation.name,
-        address: newLocation.address,
-        latitude: newLocation.latitude || 0,
-        longitude: newLocation.longitude || 0,
-      });
-
-      setShowAddModal(false);
-      setNewLocation({ name: '', address: '', type: 'Favorite', latitude: 0, longitude: 0 });
-      fetchLocations();
-      Alert.alert('Success', 'Location saved successfully!');
+      const result = await runAddLocation(vars);
+      if (result) Alert.alert('Success', 'Location saved successfully!');
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to save location');
-    } finally {
-      setIsSaving(false);
     }
   };
 
-  const handleDeleteLocation = (id: string) => {
-    Alert.alert(
+  // Optimistic: the row disappears immediately; restored if the server refuses.
+  const handleDeleteLocation = async (id: string) => {
+    const confirmed = await confirmAction(
       'Delete Location',
       'Are you sure you want to delete this saved location?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setDeletingId(id);
-              await api.delete(`/saved-locations/${id}`);
-              await fetchLocations();
-            } catch (error: any) {
-              Alert.alert('Error', error.message || 'Failed to delete location');
-            } finally {
-              setDeletingId(null);
-            }
-          },
-        },
-      ]
+      'Delete',
+      true
     );
+    if (!confirmed) return;
+    try {
+      await runDeleteLocation({ id });
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to delete location');
+    }
   };
 
   const getLocationIcon = (type: SavedLocation['type']) => {
@@ -186,14 +140,16 @@ export default function SavedLocationsScreen() {
                 </View>
                 <View style={styles.locationInfo}>
                   <Text style={[styles.locationName, { color: theme.colors.text }]}>{item.name}</Text>
-                  <Text style={[styles.locationAddress, { color: theme.colors.textSecondary }]}>{item.address}</Text>
+                  <Text style={[styles.locationAddress, { color: theme.colors.textSecondary }]}>
+                    {item._pending ? item._pending.label : item.address}
+                  </Text>
                 </View>
                 <TouchableOpacity
                   onPress={() => handleDeleteLocation(item.id)}
                   style={styles.deleteButton}
-                  disabled={deletingId === item.id}
+                  disabled={!!item._pending || deletingIds.has(item.id)}
                 >
-                  {deletingId === item.id ? (
+                  {item._pending || deletingIds.has(item.id) ? (
                     <ActivityIndicator size="small" color={theme.colors.error} />
                   ) : (
                     <X size={20} color={theme.colors.error} />
@@ -283,16 +239,9 @@ export default function SavedLocationsScreen() {
               <TouchableOpacity
                 style={[styles.saveButton, { backgroundColor: theme.colors.primary }]}
                 onPress={handleAddLocation}
-                disabled={isSaving}
               >
-                {isSaving ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <>
-                    <Save size={20} color="#FFFFFF" />
-                    <Text style={styles.saveButtonText}>Save Location</Text>
-                  </>
-                )}
+                <Save size={20} color="#FFFFFF" />
+                <Text style={styles.saveButtonText}>Save Location</Text>
               </TouchableOpacity>
             </View>
           </View>

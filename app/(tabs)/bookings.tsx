@@ -16,6 +16,11 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useRides } from '@/contexts/RideContext';
 import { Calendar, Clock, MapPin, Star, Phone, X } from 'lucide-react-native';
 import { formatPrice } from '@/utils/validation';
+import { confirmAction } from '@/utils/dialog';
+import { createBookingOp, cancelBookingOp, CreateBookingVars } from '@/hooks/useBookings';
+import { useOperation } from '@/hooks/mutations/operations';
+import { usePendingCreates } from '@/hooks/mutations/usePendingCreates';
+import PendingCreateCard from '@/components/PendingCreateCard';
 
 export default function BookingsScreen() {
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past'>('upcoming');
@@ -23,7 +28,10 @@ export default function BookingsScreen() {
   
   const { theme } = useTheme();
   const { user } = useAuth();
-  const { bookings, cancelBooking, isLoadingBookings, loadInitialData } = useRides();
+  const { bookings, isLoadingBookings, loadInitialData } = useRides();
+  const { run: runCancelBooking } = useOperation(cancelBookingOp);
+  // Booking requests the server hasn't created yet (or failed to create).
+  const pendingCreates = usePendingCreates(createBookingOp);
   const router = useRouter();
 
   console.log('[DEBUG] BookingsScreen Render:', {
@@ -55,26 +63,19 @@ export default function BookingsScreen() {
   );
   console.log('[DEBUG] Past bookings filtered count:', pastBookings.length);
 
-  const handleCancelBooking = (bookingId: string) => {
-    Alert.alert(
-      'Cancel Booking',
-      'Are you sure you want to cancel this booking?',
-      [
-        { text: 'No', style: 'cancel' },
-        { 
-          text: 'Yes, Cancel', 
-          style: 'destructive',
-          onPress: async () => {
-            const success = await cancelBooking(bookingId);
-            if (success) {
-              Alert.alert('Success', 'Your booking has been cancelled');
-            } else {
-              Alert.alert('Error', 'Failed to cancel booking. Please try again.');
-            }
-          }
-        },
-      ]
-    );
+  // Optimistic: the booking shows Cancelled straight away (it moves to Past)
+  // and is restored if the server refuses the cancellation.
+  const handleCancelBooking = async (bookingId: string, rideId?: string) => {
+    const confirmed = await confirmAction('Cancel Booking', 'Are you sure you want to cancel this booking?', 'Yes, Cancel', true);
+    if (!confirmed) return;
+    try {
+      const result = await runCancelBooking({ bookingId, rideId, reason: 'User cancelled' });
+      if (result) {
+        Alert.alert('Success', 'Your booking has been cancelled');
+      }
+    } catch (e) {
+      Alert.alert('Error', 'Failed to cancel booking. Please try again.');
+    }
   };
 
   const getStatusColor = (status: string) => {
@@ -155,11 +156,12 @@ export default function BookingsScreen() {
           <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) + '20' }]}>
             <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>
               {getStatusText(item.status)}
+              {item._pending ? ` · ${item._pending.label}` : ''}
             </Text>
           </View>
-          {['pending', 'confirmed', 'readyforboarding'].includes((item.status || '').toLowerCase()) && (
+          {['pending', 'confirmed', 'readyforboarding'].includes((item.status || '').toLowerCase()) && !item._pending && (
             <TouchableOpacity 
-              onPress={() => handleCancelBooking(item.id)}
+              onPress={() => handleCancelBooking(item.id, item.rideId)}
               style={[styles.cancelButton, { backgroundColor: theme.colors.error + '20' }]}
             >
               <X size={16} color={theme.colors.error} />
@@ -233,7 +235,7 @@ export default function BookingsScreen() {
     );
   };
 
-  if (isLoadingBookings && (!bookings || bookings.length === 0) && !isRefreshing) {
+  if (isLoadingBookings && (!bookings || bookings.length === 0) && !isRefreshing && pendingCreates.items.length === 0) {
     return (
       <View style={[styles.container, { backgroundColor: theme.colors.background, justifyContent: 'center', alignItems: 'center' }]}>
         <ActivityIndicator size="large" color={theme.colors.primary} testID="loading-indicator" />
@@ -286,7 +288,33 @@ export default function BookingsScreen() {
             tintColor={theme.colors.primary}
           />
         }
-        ListEmptyComponent={
+        ListHeaderComponent={
+          activeTab === 'upcoming' && pendingCreates.items.length > 0 ? (
+            <View>
+              {pendingCreates.items.map((p) => {
+                const v = p.variables as CreateBookingVars;
+                const r = v.rideSummary;
+                return (
+                  <PendingCreateCard
+                    key={p.mutationId}
+                    testID="pending-booking-card"
+                    status={p.status}
+                    pendingLabel="Requesting booking…"
+                    errorLabel="Booking failed"
+                    title={r ? `${r.from} → ${r.to}` : 'Ride booking'}
+                    subtitle={r
+                      ? `${r.date} · ${r.time} · ${v.seats} seat${v.seats > 1 ? 's' : ''} · ${formatPrice(r.price * v.seats)}`
+                      : `${v.seats} seat${v.seats > 1 ? 's' : ''}`}
+                    error={p.error}
+                    onRetry={() => pendingCreates.retry(p)}
+                    onDismiss={() => pendingCreates.dismiss(p.mutationId)}
+                  />
+                );
+              })}
+            </View>
+          ) : null
+        }
+        ListEmptyComponent={activeTab === 'upcoming' && pendingCreates.items.length > 0 ? null :
           <View style={styles.emptyContainer}>
             <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>
               No {activeTab} bookings

@@ -17,6 +17,9 @@ import * as Location from 'expo-location';
 import { MapPin, Search, X, Navigation, Clock, Star, ArrowLeft } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { api } from '@/utils/api';
+import { useQueryClient } from '@tanstack/react-query';
+import { qk } from '@/cache/cacheKeys';
+import { fetchSavedLocations } from '@/hooks/useSavedLocations';
 
 interface LocationPickerProps {
   value: string;
@@ -34,6 +37,7 @@ export default function LocationPicker({
   showIcon = true,
 }: LocationPickerProps) {
   const { theme, isDark } = useTheme();
+  const queryClient = useQueryClient();
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [suggestions, setSuggestions] = useState<any[]>([]);
@@ -100,7 +104,13 @@ export default function LocationPicker({
 
   const showRecents = async () => {
     try {
-      const data = await api.get<any[]>('/saved-locations');
+      // Refreshes the shared saved-locations cache (Home, Find Ride and Saved
+      // Locations read the same entry) with the same single request as before.
+      const data = await queryClient.fetchQuery({
+        queryKey: qk.savedLocations(),
+        queryFn: fetchSavedLocations,
+        staleTime: 0,
+      });
       if (data && data.length > 0) {
         setSuggestions(data.map(item => {
           let suggestionType = 'favorite';

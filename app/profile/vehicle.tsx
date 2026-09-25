@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -19,6 +19,10 @@ import { AVAILABLE_FEATURES } from '@/components/VehicleFeatureTags';
 import DropdownSelector from '@/components/DropdownSelector';
 import { UniversalRidePreferences } from '@/components/RidePreferences';
 import { safeBack } from '@/utils/navigation';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { confirmAction } from '@/utils/dialog';
+import { vehicleKeys, invalidateVehicles, deleteVehicleOp, setDefaultVehicleOp } from '@/hooks/useVehicles';
+import { useOperation, usePendingKeys, useAnyOperationPending } from '@/hooks/mutations/operations';
 
 interface Vehicle {
   id: string;
@@ -44,9 +48,10 @@ export default function VehicleDetailsScreen() {
   const { theme } = useTheme();
   const router = useRouter();
 
-  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const queryClient = useQueryClient();
   const [isEditing, setIsEditing] = useState(false);
   const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null);
+  // Only the Save button's own operation; list reloads no longer toggle it.
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -73,12 +78,21 @@ export default function VehicleDetailsScreen() {
     } as UniversalRidePreferences,
   });
 
-  useEffect(() => {
-    fetchVehicles();
-  }, []);
+  // Shared cache entry: a change here also refreshes the Offer Ride vehicle
+  // picker and VehicleContext (same `vehicles` root).
+  const vehiclesQuery = useQuery({
+    queryKey: vehicleKeys.detailed,
+    queryFn: () => loadVehicles(),
+  });
+  const vehicles: Vehicle[] = vehiclesQuery.data ?? [];
+  const { run: runDeleteVehicle } = useOperation(deleteVehicleOp);
+  const { run: runSetDefault } = useOperation(setDefaultVehicleOp);
+  const deletingIds = usePendingKeys('deleteVehicle');
+  const isSettingDefault = useAnyOperationPending('setDefaultVehicle');
 
-  const fetchVehicles = async () => {
-    setIsLoading(true);
+  const fetchVehicles = () => invalidateVehicles(queryClient);
+
+  const loadVehicles = async (): Promise<Vehicle[]> => {
     try {
       const data = await api.get<any[]>('/vehicles/my-vehicles');
       const mappedVehicles = await Promise.all(data.map(async (v: any) => {
@@ -135,14 +149,12 @@ export default function VehicleDetailsScreen() {
           preferences,
         };
       }));
-      setVehicles(mappedVehicles);
+      return mappedVehicles;
     } catch (error) {
       console.error('Error fetching vehicles:', error);
       // Fallback to mock data if API fails during development
       // setVehicles(mockVehicles);
-    } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
+      return vehiclesQuery.data ?? [];
     }
   };
 
@@ -164,9 +176,10 @@ export default function VehicleDetailsScreen() {
     }
   };
 
-  const onRefresh = () => {
+  const onRefresh = async () => {
     setIsRefreshing(true);
-    fetchVehicles();
+    await vehiclesQuery.refetch();
+    setIsRefreshing(false);
   };
 
   const updateFormData = (field: string, value: any) => {
@@ -314,6 +327,8 @@ export default function VehicleDetailsScreen() {
       }
 
       setIsEditing(false);
+      // Refresh every vehicle list (this screen, Offer Ride, VehicleContext)
+      // in the background.
       fetchVehicles();
       Alert.alert('Success', 'Vehicle saved successfully!', [
         {
@@ -344,40 +359,24 @@ export default function VehicleDetailsScreen() {
     }
   };
 
-  const handleDeleteVehicle = (vehicleId: string) => {
-    Alert.alert(
-      'Delete Vehicle',
-      'Are you sure you want to delete this vehicle?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Delete', 
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setIsLoading(true);
-              await api.delete(`/vehicles/${vehicleId}`);
-              fetchVehicles();
-            } catch (error: any) {
-              Alert.alert('Error', error.message || 'Failed to delete vehicle');
-            } finally {
-              setIsLoading(false);
-            }
-          }
-        },
-      ]
-    );
+  // Optimistic: the vehicle leaves the list immediately (and every other
+  // vehicle list); it is restored with an error if the server refuses.
+  const handleDeleteVehicle = async (vehicleId: string) => {
+    const confirmed = await confirmAction('Delete Vehicle', 'Are you sure you want to delete this vehicle?', 'Delete', true);
+    if (!confirmed) return;
+    try {
+      await runDeleteVehicle({ vehicleId });
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to delete vehicle');
+    }
   };
 
+  // Optimistic: the Default badge moves immediately; restored on failure.
   const handleSetDefault = async (vehicleId: string) => {
     try {
-      setIsLoading(true);
-      await api.patch(`/vehicles/${vehicleId}/default`, {});
-      fetchVehicles();
+      await runSetDefault({ vehicleId });
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to set default vehicle');
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -426,8 +425,9 @@ export default function VehicleDetailsScreen() {
         
         {!vehicle.isDefault && (
           <TouchableOpacity 
-            style={[styles.actionButton, { backgroundColor: theme.colors.surface }]}
+            style={[styles.actionButton, { backgroundColor: theme.colors.surface, opacity: isSettingDefault ? 0.5 : 1 }]}
             onPress={() => handleSetDefault(vehicle.id)}
+            disabled={isSettingDefault}
           >
             <Text style={[styles.actionButtonText, { color: theme.colors.secondary }]}>Set Default</Text>
           </TouchableOpacity>
@@ -437,6 +437,7 @@ export default function VehicleDetailsScreen() {
           <TouchableOpacity 
             style={[styles.actionButton, { backgroundColor: theme.colors.surface }]}
             onPress={() => handleDeleteVehicle(vehicle.id)}
+            disabled={deletingIds.has(vehicle.id)}
           >
             <Text style={[styles.actionButtonText, { color: theme.colors.error }]}>Delete</Text>
           </TouchableOpacity>

@@ -39,7 +39,7 @@ import {
   Users,
 } from 'lucide-react-native';
 import LocationPicker from '@/components/LocationPicker';
-import { api } from '@/utils/api';
+import { useSavedLocationsQuery, SavedLocation } from '@/hooks/useSavedLocations';
 
 const { width } = Dimensions.get('window');
 
@@ -49,6 +49,8 @@ const QUICK_ROUTES = [
   { id: 'qr2', from: 'Campus Library', to: 'Downtown Transit Center', label: 'Campus ➔ Downtown 🏙️' },
   { id: 'qr3', from: 'Sector 5 Corporate Park', to: 'Greenwood Heights', label: 'Office ➔ Home 🏠' },
 ];
+
+const EMPTY_LOCATIONS: SavedLocation[] = [];
 
 export default function HomeScreen() {
   const [fromLocation, setFromLocation] = useState('');
@@ -64,51 +66,15 @@ export default function HomeScreen() {
   const { rides } = useRides();
   const router = useRouter();
 
-  interface SavedLocation {
-    id: string;
-    name: string;
-    address: string;
-    latitude: number;
-    longitude: number;
-    type: 'Home' | 'Work' | 'Favorite' | 'Other';
-  }
-
-  const [savedLocations, setSavedLocations] = useState<SavedLocation[]>([]);
-
+  // Shared saved-locations cache: adding or deleting one on the Saved
+  // Locations screen updates this list too.
+  const savedLocationsQuery = useSavedLocationsQuery();
+  const savedLocations: SavedLocation[] = savedLocationsQuery.data ?? EMPTY_LOCATIONS;
   useEffect(() => {
-    fetchSavedLocations();
-  }, []);
-
-  const fetchSavedLocations = async () => {
-    try {
-      const data = await api.get<any[]>('/saved-locations');
-      if (data) {
-        setSavedLocations(data.map(item => {
-          let derivedType: SavedLocation['type'] = 'Favorite';
-          const lowerName = item.name.toLowerCase();
-          if (lowerName === 'home') {
-            derivedType = 'Home';
-          } else if (lowerName === 'work') {
-            derivedType = 'Work';
-          } else if (lowerName === 'favorite') {
-            derivedType = 'Favorite';
-          } else {
-            derivedType = 'Other';
-          }
-          return {
-            id: item.id,
-            name: item.name,
-            address: item.address,
-            latitude: item.latitude,
-            longitude: item.longitude,
-            type: derivedType,
-          };
-        }));
-      }
-    } catch (error) {
-      console.warn('Failed to fetch saved locations in HomeScreen:', error);
+    if (savedLocationsQuery.error) {
+      console.warn('Failed to fetch saved locations in HomeScreen:', savedLocationsQuery.error);
     }
-  };
+  }, [savedLocationsQuery.error]);
 
   const handleFrequentlyTraveledSelect = (location: SavedLocation) => {
     setToLocation(location.address);

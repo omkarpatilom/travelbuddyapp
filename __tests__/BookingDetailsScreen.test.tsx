@@ -1,5 +1,6 @@
 import React from 'react';
-import { render, fireEvent, waitFor, act } from '@testing-library/react-native';
+import { render as rtlRender, fireEvent, waitFor, act } from '@testing-library/react-native';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import BookingDetailsScreen from '../app/booking/details';
 import { useTheme } from '../contexts/ThemeContext';
 import { useRides } from '../contexts/RideContext';
@@ -14,6 +15,17 @@ jest.mock('expo-router', () => ({
   useLocalSearchParams: jest.fn(),
 }));
 jest.mock('../components/RatingModal', () => 'RatingModal');
+jest.mock('@/services/review.service', () => ({
+  reviewService: { getByBookingId: jest.fn().mockResolvedValue(null) },
+}));
+jest.mock('@/services/booking.service', () => ({
+  bookingService: { getBookingOtp: jest.fn().mockResolvedValue('1234') },
+}));
+
+// The screen reads the booking through the shared query cache.
+let queryClient: QueryClient;
+const render = (ui: React.ReactElement) =>
+  rtlRender(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
 
 // Locally mock lucide-react-native to include the Navigation icon
 jest.mock('lucide-react-native', () => {
@@ -92,6 +104,7 @@ describe('BookingDetailsScreen', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     jest.spyOn(console, 'warn').mockImplementation(() => {});
     (useTheme as jest.Mock).mockReturnValue({ theme: mockTheme });
@@ -110,6 +123,7 @@ describe('BookingDetailsScreen', () => {
 
   afterEach(() => {
     errorSpy.mockRestore();
+    queryClient.clear();
   });
 
   it('renders loading state initially', async () => {

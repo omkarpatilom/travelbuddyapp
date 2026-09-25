@@ -4,8 +4,13 @@ import { useQueryClient } from '@tanstack/react-query';
 import { notificationService } from '@/services/notification.service';
 import { NotificationResponseDto, NotificationPreferenceDto } from '@/utils/types';
 import { CACHE_KEYS } from '@/cache/cacheKeys';
-import { sqliteStorage } from '@/storage/sqlite';
-import { useNotificationsQuery } from '@/hooks/useNotifications';
+import {
+  useNotificationsQuery,
+  markNotificationReadOp,
+  markAllNotificationsReadOp,
+  deleteNotificationOp,
+} from '@/hooks/useNotifications';
+import { OperationDef, runOperation } from '@/hooks/mutations/operations';
 import { useAuth } from '@/contexts/AuthContext';
 
 let Notifications: any = null;
@@ -146,41 +151,22 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     }
   };
 
-  const markAsRead = async (id: string) => {
+  // Optimistic (see hooks/useNotifications.ts): the list updates at once and
+  // is restored if the server call fails; failures now reach the banner.
+  const runNotificationOp = async <V,>(def: OperationDef<V, any, any>, vars: V, label: string) => {
     if (!user) return;
     try {
-      await sqliteStorage.updateNotificationReadStatus(id, true);
-      await notificationService.markAsRead(id);
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.notifications] });
+      await runOperation(queryClient, def, vars, { joinDuplicate: true });
     } catch (e) {
-      console.error('Error marking notification as read:', e);
+      console.error(`Error ${label}:`, e);
     }
   };
 
-  const markAllAsRead = async () => {
-    if (!user) return;
-    try {
-      const cached = await sqliteStorage.getCachedNotifications();
-      const unread = cached.filter(x => !x.isRead);
-      for (const notif of unread) {
-        await sqliteStorage.updateNotificationReadStatus(notif.id, true);
-      }
-      await notificationService.markAllAsRead();
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.notifications] });
-    } catch (e) {
-      console.error('Error marking all notifications as read:', e);
-    }
-  };
+  const markAsRead = (id: string) => runNotificationOp(markNotificationReadOp, { id }, 'marking notification as read');
 
-  const deleteNotification = async (id: string) => {
-    if (!user) return;
-    try {
-      await notificationService.deleteNotification(id);
-      await queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.notifications] });
-    } catch (e) {
-      console.error('Error deleting notification:', e);
-    }
-  };
+  const markAllAsRead = () => runNotificationOp(markAllNotificationsReadOp, undefined, 'marking all notifications as read');
+
+  const deleteNotification = (id: string) => runNotificationOp(deleteNotificationOp, { id }, 'deleting notification');
 
   const getSettings = async () => {
     if (!user) return null;

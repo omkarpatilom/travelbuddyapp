@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   View,
   Text,
@@ -36,68 +37,61 @@ import {
 } from 'lucide-react-native';
 import RatingModal from '@/components/RatingModal';
 import { formatPrice } from '@/utils/validation';
-import { reviewService } from '@/services/review.service';
 import { bookingService } from '@/services/booking.service';
 import { safeBack } from '@/utils/navigation';
+import { confirmAction } from '@/utils/dialog';
+import { qk } from '@/cache/cacheKeys';
+import { useBookingReviewedQuery, cancelBookingOp, confirmBookingOp } from '@/hooks/useBookings';
+import { useOperation, useOperationPending } from '@/hooks/mutations/operations';
 
 export default function BookingDetailsScreen() {
   const [showRatingModal, setShowRatingModal] = useState(false);
-  const [booking, setBooking] = useState<any | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isActionLoading, setIsActionLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [qrLoadError, setQrLoadError] = useState(false);
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
-  const [hasReviewed, setHasReviewed] = useState(false);
   const [otpCode, setOtpCode] = useState<string | null>(null);
   
   const { theme } = useTheme();
   const { user } = useAuth();
-  const { getBookingById, cancelBooking, confirmBooking } = useRides();
+  const { getBookingById } = useRides();
   const router = useRouter();
   const params = useLocalSearchParams();
   const bookingId = params.id as string;
 
-  const fetchBookingDetails = useCallback(async () => {
-    console.log(`[DEBUG] fetchBookingDetails called with bookingId: ${bookingId}`);
-    if (!bookingId) {
-      setError('No booking ID provided');
-      setIsLoading(false);
-      return;
-    }
-
-    setIsLoading(true);
-    setError(null);
-    try {
+  // The booking lives in the shared query cache under the same key every
+  // booking mutation updates, so Cancel/Accept (here or on any other screen)
+  // are reflected immediately. getBookingById keeps its offline cache fallback.
+  const bookingQuery = useQuery({
+    queryKey: qk.bookingDetails(bookingId),
+    queryFn: async () => {
       const result = await getBookingById(bookingId);
-      console.log(`[DEBUG] getBookingById result:`, result);
-      if (result) {
-        setBooking(result);
-        try {
-          const rev = await reviewService.getByBookingId(bookingId);
-          console.log(`[DEBUG] Fetched review for booking:`, rev);
-          if (rev) {
-            setHasReviewed(true);
-          } else {
-            setHasReviewed(false);
-          }
-        } catch (e) {
-          setHasReviewed(false);
-        }
-      } else {
-        setError('Booking not found');
-      }
-    } catch (e: any) {
-      console.error('Failed to fetch booking details:', e);
-      setError(e.message || 'Failed to load booking details. Please check your connection.');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [bookingId, getBookingById]);
+      if (!result) throw new Error('Booking not found');
+      return result as any;
+    },
+    enabled: !!bookingId,
+    staleTime: 0,
+  });
+  const booking: any | null = bookingQuery.data ?? null;
+  // Full-screen spinner only for the first load; background refetches keep
+  // the current booking on screen.
+  const isLoading = !!bookingId && bookingQuery.isPending;
+  const error: string | null = !bookingId
+    ? 'No booking ID provided'
+    : !booking && bookingQuery.error
+      ? (bookingQuery.error as Error).message || 'Failed to load booking details. Please check your connection.'
+      : null;
+  const fetchBookingDetails = useCallback(() => {
+    bookingQuery.refetch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookingQuery.refetch]);
 
-  useEffect(() => {
-    fetchBookingDetails();
-  }, [fetchBookingDetails]);
+  const reviewQuery = useBookingReviewedQuery(booking?.id, !!booking);
+  const hasReviewed = !!reviewQuery.data;
+
+  const { run: runCancelBooking } = useOperation(cancelBookingOp);
+  const { run: runConfirmBooking } = useOperation(confirmBookingOp);
+  const isCancelPending = useOperationPending('cancelBooking', booking?.id);
+  const isConfirmPending = useOperationPending('confirmBooking', booking?.id);
+  const isActionLoading = isCancelPending || isConfirmPending;
 
   // The boarding OTP shown here must match what VerifyBookingHandler expects
   // on the driver's side — it's HMAC-derived server-side (not something the
@@ -116,72 +110,50 @@ export default function BookingDetailsScreen() {
     return () => { cancelled = true; };
   }, [booking?.id]);
 
-  const handleCancelBooking = () => {
+  // Optimistic: the booking shows Cancelled (here and in My Bookings)
+  // immediately; the confirmation and navigation still wait for the server,
+  // and a refusal restores the previous status.
+  const handleCancelBooking = async () => {
     if (!booking) return;
-
-    Alert.alert(
+    const confirmed = await confirmAction(
       'Cancel Booking',
       'Are you sure you want to cancel this booking? This action cannot be undone.',
-      [
-        { text: 'No', style: 'cancel' },
-        { 
-          text: 'Yes, Cancel',
-          style: 'destructive',
-          onPress: async () => {
-            setIsActionLoading(true);
-            try {
-              const success = await cancelBooking(booking.id);
-              if (success) {
-                Alert.alert('Success', 'Your booking has been cancelled', [
-                  { text: 'OK', onPress: () => safeBack(router) }
-                ]);
-              } else {
-                Alert.alert('Error', 'Failed to cancel booking. Please try again.');
-              }
-            } finally {
-              setIsActionLoading(false);
-            }
-          }
-        },
-      ]
+      'Yes, Cancel',
+      true
     );
+    if (!confirmed) return;
+    try {
+      const result = await runCancelBooking({ bookingId: booking.id, rideId: booking.rideId, reason: 'User cancelled' });
+      if (result) {
+        Alert.alert('Success', 'Your booking has been cancelled', [
+          { text: 'OK', onPress: () => safeBack(router) }
+        ]);
+      }
+    } catch (e) {
+      Alert.alert('Error', 'Failed to cancel booking. Please try again.');
+    }
   };
 
   const isDriver = user?.id === booking?.ride?.driverId;
 
+  // Pending: "Accepting…" until the server confirms.
   const handleConfirmBooking = async () => {
     if (!booking) return;
-
-    Alert.alert(
+    const confirmed = await confirmAction(
       isDriver ? 'Confirm Booking Request' : 'Simulate Driver Approval',
-      isDriver 
+      isDriver
         ? `Are you sure you want to accept and confirm the booking request from ${booking.passengerName}?`
         : `Simulate confirming this booking. The booking status will be updated to Confirmed.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Confirm',
-          onPress: async () => {
-            setIsActionLoading(true);
-            try {
-              const success = await confirmBooking(booking.id);
-              if (success) {
-                Alert.alert('Success', 'Booking has been successfully confirmed!', [
-                  { text: 'OK', onPress: () => fetchBookingDetails() }
-                ]);
-              } else {
-                Alert.alert('Error', 'Failed to confirm booking.');
-              }
-            } catch (e: any) {
-              console.error('Failed to confirm booking:', e);
-              Alert.alert('Error', e.message || 'Failed to confirm booking.');
-            } finally {
-              setIsActionLoading(false);
-            }
-          }
-        }
-      ]
+      'Confirm'
     );
+    if (!confirmed) return;
+    try {
+      const result = await runConfirmBooking({ bookingId: booking.id, rideId: booking.rideId });
+      if (result) Alert.alert('Success', 'Booking has been successfully confirmed!');
+    } catch (e: any) {
+      console.error('Failed to confirm booking:', e);
+      Alert.alert('Error', e.message || 'Failed to confirm booking.');
+    }
   };
 
   const handleCallDriver = () => {
@@ -352,7 +324,7 @@ export default function BookingDetailsScreen() {
             <View style={styles.statusHeader}>
               <View style={[styles.statusBadge, { backgroundColor: getStatusColor(booking.status) + '20' }]}>
                 <Text style={[styles.statusText, { color: getStatusColor(booking.status) }]}>
-                  {getStatusText(booking.status)}
+                  {getStatusText(booking.status)}{booking._pending ? ` · ${booking._pending.label}` : ''}
                 </Text>
               </View>
               <Text style={[styles.bookingId, { color: theme.colors.textSecondary }]}>
@@ -884,7 +856,7 @@ export default function BookingDetailsScreen() {
           visible={showRatingModal}
           onClose={() => {
             setShowRatingModal(false);
-            fetchBookingDetails();
+            reviewQuery.refetch();
           }}
           rideId={booking.ride.id}
           bookingId={booking.id}

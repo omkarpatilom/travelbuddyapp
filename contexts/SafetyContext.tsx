@@ -1,4 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { emergencyContactKeys } from '@/hooks/useSafety';
 import { safetyService } from '@/services/safety.service';
 import { useAuth } from './AuthContext';
 import { EmergencyContactDto, SafetyIncidentDto, TriggerSosDto } from '@/utils/types';
@@ -17,29 +19,38 @@ interface SafetyContextType {
 const SafetyContext = createContext<SafetyContextType | undefined>(undefined);
 
 export function SafetyProvider({ children }: { children: React.ReactNode }) {
-  const [contacts, setContacts] = useState<EmergencyContactDto[]>([]);
   const [incidents, setIncidents] = useState<SafetyIncidentDto[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
   const { user } = useAuth();
+  const queryClient = useQueryClient();
+
+  // Same `emergencyContacts` cache root as the Safety screen, so a contact
+  // added or removed on either side refreshes both.
+  const contactsQuery = useQuery({
+    queryKey: emergencyContactKeys.raw,
+    queryFn: async () => {
+      try {
+        return await safetyService.getEmergencyContacts();
+      } catch (e) {
+        console.error('Error fetching contacts:', e);
+        throw e;
+      }
+    },
+    enabled: !!user,
+  });
+  const contacts: EmergencyContactDto[] = contactsQuery.data ?? [];
+  const isLoading = contactsQuery.isFetching;
 
   useEffect(() => {
     if (user) {
-      fetchContacts();
       fetchIncidents();
     }
   }, [user]);
 
   const fetchContacts = async () => {
-    try {
-      setIsLoading(true);
-      const data = await safetyService.getEmergencyContacts();
-      setContacts(data);
-    } catch (e) {
-      console.error('Error fetching contacts:', e);
-    } finally {
-      setIsLoading(false);
-    }
+    await contactsQuery.refetch();
   };
+
+  const refreshAllContacts = () => queryClient.invalidateQueries({ queryKey: emergencyContactKeys.all });
 
   const fetchIncidents = async () => {
     try {
@@ -53,7 +64,7 @@ export function SafetyProvider({ children }: { children: React.ReactNode }) {
   const addContact = async (data: any) => {
     try {
       const id = await safetyService.addEmergencyContact(data);
-      await fetchContacts();
+      await refreshAllContacts();
       return id;
     } catch (e) {
       return null;
@@ -63,7 +74,7 @@ export function SafetyProvider({ children }: { children: React.ReactNode }) {
   const deleteContact = async (id: string) => {
     try {
       await safetyService.deleteEmergencyContact(id);
-      await fetchContacts();
+      await refreshAllContacts();
       return true;
     } catch (e) {
       return false;

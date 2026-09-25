@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -20,7 +20,6 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useRides } from '@/contexts/RideContext';
 import { Ride, Booking } from '@/utils/mappers';
 import RouteMap from '@/components/RouteMap';
-import { bookingService } from '@/services/booking.service';
 import { formatPrice } from '@/utils/validation';
 import {
   MapPin,
@@ -53,12 +52,16 @@ import {
   isRideTerminal,
   getBookingDisplayLabel,
   RIDE_STATUS_LABEL,
-  reconcileBookingStatus,
 } from '@/utils/rideStatus';
-import { rememberConfirmedBookingStatus, getRememberedBookingStatus } from '@/utils/bookingStatusMemory';
 import { safeBack } from '@/utils/navigation';
+import { confirmAction, notify } from '@/utils/dialog';
+import { useRideDetailsQuery, rideTransitionOp } from '@/hooks/useRides';
+import { useRideBookingsQuery, confirmBookingOp, verifyBookingOp, dropOffBookingOp } from '@/hooks/useBookings';
+import { useOperation, useOperationPending } from '@/hooks/mutations/operations';
 
 const { width, height } = Dimensions.get('window');
+
+const EMPTY_BOOKINGS: never[] = [];
 
 interface Stop {
   id: string;
@@ -76,32 +79,6 @@ interface Stop {
 const isValidUUID = (id: string): boolean =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
-// react-native-web's Alert.alert() is a documented no-op (it renders nothing
-// and never calls any button's onPress), which silently broke every
-// confirm-gated action on web -- most critically, a driver could never
-// accept a pending booking on web at all, since that action only ran inside
-// an Alert.alert button callback. window.confirm()/window.alert() are the
-// standard cross-platform substitutes; native keeps the real Alert.alert.
-const confirmAction = (title: string, message: string, confirmLabel: string = 'OK'): Promise<boolean> => {
-  if (Platform.OS === 'web') {
-    return Promise.resolve(typeof window !== 'undefined' ? window.confirm(`${title}\n\n${message}`) : true);
-  }
-  return new Promise((resolve) => {
-    Alert.alert(title, message, [
-      { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
-      { text: confirmLabel, onPress: () => resolve(true) },
-    ]);
-  });
-};
-
-const notify = (title: string, message: string): void => {
-  if (Platform.OS === 'web') {
-    if (typeof window !== 'undefined') window.alert(`${title}\n\n${message}`);
-    return;
-  }
-  Alert.alert(title, message);
-};
-
 // Active ride statuses are imported from rideStatus.ts (ACTIVE_RIDE_STATUSES)
 
 
@@ -110,34 +87,36 @@ const SIMULATION_GPS_PAUSE_MS = 5 * 60 * 1000;
 export default function JourneyCommandCenterScreen() {
   const { theme, isDark } = useTheme();
   const { user } = useAuth();
-  const {
-    getRideById,
-    startRide,
-    arriveAtPickup,
-    arriveAtDrop,
-    completeDropoff,
-    completeRide,
-    verifyBooking,
-    completeStop,
-    confirmBooking,
-    completeBooking,
-    cancelRide,
-    updateTracking,
-    overrideTransition,
-  } = useRides();
+  const { updateTracking } = useRides();
 
   const router = useRouter();
   const params = useLocalSearchParams();
   const rideId = params.id as string;
 
-  // Primary States
-  const [ride, setRide] = useState<Ride | null>(null);
-  const [bookings, setBookings] = useState<Booking[]>([]);
-  const [stops, setStops] = useState<Stop[]>([]);
-  const [currentStopIndex, setCurrentStopIndex] = useState(0);
+  // Primary state: the ride and its bookings come from the shared query cache
+  // (the same entries Ride Details, My Rides and My Bookings read), polled
+  // every 5s while the journey is active so geofence transitions show up.
+  // The bookings query reconciles each status against what was already shown
+  // and the durable confirmed-status memory, so a racing or read-lagged poll
+  // can't move a booking backwards (see fetchRideBookings).
+  const rideQuery = useRideDetailsQuery(rideId, {
+    pollMs: 5000,
+    pollWhile: (r) => !!r && ACTIVE_RIDE_STATUSES.includes(r.status),
+  });
+  const ride: Ride | null = rideQuery.data ?? null;
+  const isRideLive = !!ride && ACTIVE_RIDE_STATUSES.includes(ride.status);
+  const bookingsQuery = useRideBookingsQuery(rideId, { enabled: !!ride, pollMs: isRideLive ? 5000 : false });
+  const bookings = (bookingsQuery.data ?? EMPTY_BOOKINGS) as unknown as Booking[];
   const [expandedStopIndex, setExpandedStopIndex] = useState<number | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isActionLoading, setIsActionLoading] = useState(false);
+  const isLoading = rideQuery.isPending;
+  // Per-operation processing state (replaces one shared isActionLoading flag):
+  // only the control whose operation is running is disabled.
+  const [isSimulating, setIsSimulating] = useState(false);
+  const { run: runTransition } = useOperation(rideTransitionOp);
+  const { run: runConfirm } = useOperation(confirmBookingOp);
+  const { run: runVerify } = useOperation(verifyBookingOp);
+  const { run: runDropOff } = useOperation(dropOffBookingOp);
+  const isTransitionPending = useOperationPending('rideTransition', rideId);
   const [driverLocation, setDriverLocation] = useState<{ latitude: number; longitude: number } | null>(null);
 
   // Developer Proximity States
@@ -172,30 +151,12 @@ export default function JourneyCommandCenterScreen() {
   // backend's geofence would see the driver jump away from the pickup and depart the
   // ride), so pause them for a while after each simulation.
   const simulationActiveUntilRef = useRef(0);
-  // Monotonic counter: each loadData() call claims the next value before its
-  // awaits, and only commits state if it's still the most-recently-claimed
-  // call by the time its network responses land. Prevents an older, slower
-  // loadData() response (e.g. a 5s poll tick already in flight) from
-  // overwriting state with stale data after a newer call - or an optimistic
-  // update - has already set fresher state.
-  const loadDataSeqRef = useRef(0);
-  // Mirrors `bookings` state for synchronous reads inside loadData(), which
-  // can run from a setInterval closure captured on an earlier render (React
-  // state read via closure there can't be trusted to be fresh). Used to
-  // reconcile a freshly-fetched status against what's already on screen, so
-  // a racing re-fetch can't regress a booking's displayed status backwards
-  // (e.g. Boarded reverting to Verify) — see reconcileBookingStatus.
-  const bookingsRef = useRef<Booking[]>([]);
-
   const addLog = (message: string) => {
     const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     setAuditLogs((prev) => [`[${timeStr}] ${message}`, ...prev.slice(0, 30)]);
   };
 
   useEffect(() => {
-    if (rideId) {
-      loadData();
-    }
     return () => {
       if (locationSubscriptionRef.current) {
         locationSubscriptionRef.current.remove();
@@ -204,25 +165,12 @@ export default function JourneyCommandCenterScreen() {
   }, [rideId]);
 
   useEffect(() => {
-    setExpandedStopIndex(currentStopIndex);
-  }, [currentStopIndex]);
-
-  useEffect(() => {
-    bookingsRef.current = bookings;
-  }, [bookings]);
-
-  // Periodic polling for automated state transitions
-  useEffect(() => {
-    let interval: any = null;
-    if (rideId && ride && ACTIVE_RIDE_STATUSES.includes(ride.status)) {
-      interval = setInterval(() => {
-        loadData();
-      }, 5000);
+    if (rideQuery.error || bookingsQuery.error) {
+      console.error(rideQuery.error || bookingsQuery.error);
+      addLog('❌ Syncing error.');
     }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [rideId, ride?.status]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rideQuery.errorUpdatedAt, bookingsQuery.errorUpdatedAt]);
 
   // BG coordinates syncing
   useEffect(() => {
@@ -295,89 +243,11 @@ export default function JourneyCommandCenterScreen() {
     };
   }, [ride?.status]);
 
-  const loadData = async () => {
-    const mySeq = ++loadDataSeqRef.current;
-    console.log(`[DEBUG] CommandCenter loadData called with rideId: ${rideId}`);
-    try {
-      const rideData = await getRideById(rideId);
-      console.log(`[DEBUG] CommandCenter fetched rideData:`, rideData);
-      if (rideData) {
-        if (mySeq !== loadDataSeqRef.current) return;
-        setRide(rideData);
-
-        const bookingsList = await bookingService.getRideBookings(rideId);
-        const normalizedBookings = await Promise.all((bookingsList || []).map(async (b: any) => {
-          const id = b.bookingId || b.id;
-          const serverStatus = (b.status || '').toLowerCase();
-          const priorMatch = bookingsRef.current.find((pb: any) => pb.id === id);
-          // Reconcile against same-session state first, then against the
-          // durable "this app just confirmed X" memory that survives a full
-          // page refresh/relaunch (see utils/bookingStatusMemory.ts) — either
-          // can be further along than a fresh-but-transiently-stale read.
-          const remembered = await getRememberedBookingStatus(id);
-          const status = reconcileBookingStatus(
-            reconcileBookingStatus(serverStatus, priorMatch?.status),
-            remembered
-          );
-          return { ...b, id, status };
-        }));
-        if (mySeq !== loadDataSeqRef.current) return;
-        setBookings(normalizedBookings as any);
-
-        const generatedStops = (rideData.stops && rideData.stops.length > 0)
-          ? rideData.stops.map((s: any) => {
-            const stopBookings = normalizedBookings.filter((b: any) =>
-              (b.id || '').toLowerCase() === (s.bookingId || '').toLowerCase() ||
-              ((b.bookingId || '') as string).toLowerCase() === (s.bookingId || '').toLowerCase()
-            );
-
-            // Handle both integer (0) and string ("Pickup" / "pickup") enum serializations
-            const isPickup = s.type === 0 ||
-              s.type === 'Pickup' ||
-              (typeof s.type === 'string' && s.type.toLowerCase() === 'pickup');
-            const stopType = isPickup ? 'pickup' : 'drop';
-
-            // Handle both integer (3 = Completed, 1 = Navigating, 2 = Arrived) and string enums
-            const isCompleted = s.status === 3 ||
-              s.status === 'Completed' ||
-              (typeof s.status === 'string' && s.status.toLowerCase() === 'completed');
-            const isCurrent = s.status === 1 || s.status === 2 ||
-              s.status === 'Navigating' || s.status === 'Arrived' ||
-              (typeof s.status === 'string' &&
-                (s.status.toLowerCase() === 'navigating' || s.status.toLowerCase() === 'arrived'));
-            const stopStatus = isCompleted ? 'completed' : (isCurrent ? 'current' : 'pending');
-
-            return {
-              id: s.id,
-              name: s.stopName,
-              type: stopType as 'pickup' | 'drop',
-              address: s.address,
-              coordinates: { latitude: s.latitude, longitude: s.longitude },
-              passengerCount: stopBookings.length,
-              seatsCount: stopBookings.reduce((sum, b) => sum + b.seats, 0),
-              bookings: stopBookings,
-              status: stopStatus as 'completed' | 'current' | 'pending',
-              sequence: s.sequence
-            };
-          })
-          : calculateStops(rideData, normalizedBookings);
-
-        setStops(generatedStops);
-
-        // Find current active stop in queue
-        let stopIdx = generatedStops.findIndex(s => s.status !== 'completed');
-        if (stopIdx === -1) {
-          stopIdx = generatedStops.length > 0 ? generatedStops.length - 1 : 0;
-        }
-        setCurrentStopIndex(stopIdx);
-      }
-    } catch (e) {
-      console.error(e);
-      addLog('❌ Syncing error.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  /** Fetches the latest ride and bookings now (e.g. after a simulated GPS ping). */
+  const refreshData = useCallback(
+    () => Promise.all([rideQuery.refetch(), bookingsQuery.refetch()]),
+    [rideQuery.refetch, bookingsQuery.refetch],
+  );
 
   const calculateStops = (rideObj: Ride, bookingsList: any[]): Stop[] => {
     const stopsList: Stop[] = [];
@@ -443,22 +313,75 @@ export default function JourneyCommandCenterScreen() {
     return stopsList;
   };
 
+  // Stops and the current stop are derived from the cached ride + bookings,
+  // so they update with every poll, optimistic patch and rollback.
+  const stops: Stop[] = useMemo(() => {
+    if (!ride) return [];
+    const rideObj = ride;
+    const bookingsList = bookings as any[];
+    const generatedStops = (rideObj.stops && rideObj.stops.length > 0)
+      ? rideObj.stops.map((s: any) => {
+        const stopBookings = bookingsList.filter((b: any) =>
+          (b.id || '').toLowerCase() === (s.bookingId || '').toLowerCase() ||
+          ((b.bookingId || '') as string).toLowerCase() === (s.bookingId || '').toLowerCase()
+        );
+
+        // Handle both integer (0) and string ("Pickup" / "pickup") enum serializations
+        const isPickup = s.type === 0 ||
+          s.type === 'Pickup' ||
+          (typeof s.type === 'string' && s.type.toLowerCase() === 'pickup');
+        const stopType = isPickup ? 'pickup' : 'drop';
+
+        // Handle both integer (3 = Completed, 1 = Navigating, 2 = Arrived) and string enums
+        const isCompleted = s.status === 3 ||
+          s.status === 'Completed' ||
+          (typeof s.status === 'string' && s.status.toLowerCase() === 'completed');
+        const isCurrent = s.status === 1 || s.status === 2 ||
+          s.status === 'Navigating' || s.status === 'Arrived' ||
+          (typeof s.status === 'string' &&
+            (s.status.toLowerCase() === 'navigating' || s.status.toLowerCase() === 'arrived'));
+        const stopStatus = isCompleted ? 'completed' : (isCurrent ? 'current' : 'pending');
+
+        return {
+          id: s.id,
+          name: s.stopName,
+          type: stopType as 'pickup' | 'drop',
+          address: s.address,
+          coordinates: { latitude: s.latitude, longitude: s.longitude },
+          passengerCount: stopBookings.length,
+          seatsCount: stopBookings.reduce((sum, b) => sum + b.seats, 0),
+          bookings: stopBookings,
+          status: stopStatus as 'completed' | 'current' | 'pending',
+          sequence: s.sequence
+        };
+      })
+      : calculateStops(rideObj, bookingsList);
+
+    return generatedStops as Stop[];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ride, bookings]);
+
+  const currentStopIndex = useMemo(() => {
+    let stopIdx = stops.findIndex(s => s.status !== 'completed');
+    if (stopIdx === -1) {
+      stopIdx = stops.length > 0 ? stops.length - 1 : 0;
+    }
+    return stopIdx;
+  }, [stops]);
+
+  useEffect(() => {
+    setExpandedStopIndex(currentStopIndex);
+  }, [currentStopIndex]);
+
 
   const handleCompleteDropoff = async () => {
     if (!ride) return;
-    setIsActionLoading(true);
     try {
-      const ok = await completeDropoff(ride.id);
-      if (ok) {
-        addLog('⚡ Manual Override: Drop-off phase initiated!');
-        await loadData();
-      } else {
-        Alert.alert('Error', 'Failed to begin drop-off.');
-      }
+      const result = await runTransition({ rideId: ride.id, action: 'dropoff' });
+      if (result) addLog('⚡ Manual Override: Drop-off phase initiated!');
     } catch (e) {
       console.error(e);
-    } finally {
-      setIsActionLoading(false);
+      Alert.alert('Error', 'Failed to begin drop-off.');
     }
   };
 
@@ -466,19 +389,12 @@ export default function JourneyCommandCenterScreen() {
     if (!ride) return;
 
     const performOverride = async (reason: string) => {
-      setIsActionLoading(true);
       try {
-        const ok = await overrideTransition(ride.id, 4, reason);
-        if (ok) {
-          addLog(`⚡ Manual Override: Driver arrived at pickup. Reason: ${reason}`);
-          await loadData();
-        } else {
-          Alert.alert('Error', 'Failed to trigger arrival at pickup override.');
-        }
+        const result = await runTransition({ rideId: ride.id, action: 'override', targetStatus: 4, reason });
+        if (result) addLog(`⚡ Manual Override: Driver arrived at pickup. Reason: ${reason}`);
       } catch (e) {
         console.error(e);
-      } finally {
-        setIsActionLoading(false);
+        Alert.alert('Error', 'Failed to trigger arrival at pickup override.');
       }
     };
 
@@ -510,19 +426,12 @@ export default function JourneyCommandCenterScreen() {
     if (!ride) return;
 
     const performOverride = async (reason: string) => {
-      setIsActionLoading(true);
       try {
-        const ok = await overrideTransition(ride.id, 7, reason);
-        if (ok) {
-          addLog(`⚡ Manual Override: Driver arrived at drop-off. Reason: ${reason}`);
-          await loadData();
-        } else {
-          Alert.alert('Error', 'Failed to trigger arrival at drop-off override.');
-        }
+        const result = await runTransition({ rideId: ride.id, action: 'override', targetStatus: 7, reason });
+        if (result) addLog(`⚡ Manual Override: Driver arrived at drop-off. Reason: ${reason}`);
       } catch (e) {
         console.error(e);
-      } finally {
-        setIsActionLoading(false);
+        Alert.alert('Error', 'Failed to trigger arrival at drop-off override.');
       }
     };
 
@@ -559,7 +468,8 @@ export default function JourneyCommandCenterScreen() {
     const activeStop = targetStop ?? stops[currentStopIndex];
     if (!activeStop) return;
 
-    setIsActionLoading(true);
+    if (isSimulating) return;
+    setIsSimulating(true);
     simulationActiveUntilRef.current = Date.now() + SIMULATION_GPS_PAUSE_MS;
     addLog('⏸️ Real GPS paused for 5 min while the simulated position is in effect.');
     try {
@@ -577,11 +487,11 @@ export default function JourneyCommandCenterScreen() {
         addLog(`🚨 Simulating GPS Arrived (0m): ${lat.toFixed(5)}, ${lng.toFixed(5)}`);
         addLog('⚡ Backend geofence check executed!');
       }
-      await loadData();
+      await refreshData();
     } catch (e) {
       console.error(e);
     } finally {
-      setIsActionLoading(false);
+      setIsSimulating(false);
     }
   };
 
@@ -605,71 +515,39 @@ export default function JourneyCommandCenterScreen() {
       return false;
     }
 
-    setIsActionLoading(true);
-
     let success = false;
     try {
-      if (method === 'otp') {
-        success = await verifyBooking(passengerToVerify.id, {
-          verificationType: 'OTP',
-          otp: otpValue
-        });
-      } else if (method === 'qr') {
-        success = await verifyBooking(passengerToVerify.id, {
-          verificationType: 'QR',
-          qrToken: scannedToken
-        });
-      }
+      const result = await runVerify({
+        bookingId: passengerToVerify.id,
+        rideId: ride.id,
+        data: method === 'otp'
+          ? { verificationType: 'OTP', otp: otpValue }
+          : { verificationType: 'QR', qrToken: scannedToken },
+      });
+      // null: this passenger's verification is already running.
+      if (!result) return false;
+      success = true;
 
-      if (success) {
-        // Invalidate any older loadData() call still in flight (e.g. a 5s poll
-        // tick that started before this verification completed) so its stale
-        // response can't land after this optimistic update and revert it.
-        loadDataSeqRef.current += 1;
+      // The shared cache already shows the booking as Boarded everywhere and
+      // the durable confirmed-status memory is recorded (verifyBookingOp), so
+      // a racing poll or a refresh right after can't regress it.
+      setSelectedPassenger(prev => prev ? { ...prev, status: BOOKING_STATUS.BOARDED as any } : prev);
 
-        // Durable record that this app confirmed the verification, so a full
-        // page refresh/relaunch right after can't lose this to a transiently
-        // stale re-fetch (see utils/bookingStatusMemory.ts).
-        await rememberConfirmedBookingStatus(passengerToVerify.id, BOOKING_STATUS.BOARDED);
+      addLog(`✓ Passenger verified: ${passengerToVerify.passengerName}`);
 
-        // Update local booking status to 'boarded' for immediate UI feedback
-        setBookings(prev => prev.map(b =>
-          b.id === passengerToVerify.id
-            ? { ...b, status: BOOKING_STATUS.BOARDED as any }
-            : b
-        ));
-        setStops(prev => prev.map(stop => ({
-          ...stop,
-          bookings: stop.bookings.map(b =>
-            b.id === passengerToVerify.id ? { ...b, status: BOOKING_STATUS.BOARDED as any } : b
-          )
-        })));
-        setSelectedPassenger(prev => prev ? { ...prev, status: BOOKING_STATUS.BOARDED as any } : prev);
+      // Show success feedback, then close the modal
+      setVerificationSuccess(true);
+      await new Promise(resolve => setTimeout(resolve, 1500));
 
-        addLog(`✓ Passenger verified: ${passengerToVerify.passengerName}`);
-
-        // Show success feedback
-        setVerificationSuccess(true);
-        setIsActionLoading(false);
-
-        // Wait 1.5 seconds for feedback, then close modal
-        await new Promise(resolve => setTimeout(resolve, 1500));
-
-        setIsVerificationOpen(false);
-        setQrScannerActive(false);
-        setScanned(false);
-        setSelectedPassenger(null);
-        setOtpValue('');
-        setVerificationSuccess(false);
-        await loadData();
-      } else {
-        setIsActionLoading(false);
-        notify('Verification Failed', 'Invalid verification code or QR token. Please try again.');
-      }
+      setIsVerificationOpen(false);
+      setQrScannerActive(false);
+      setScanned(false);
+      setSelectedPassenger(null);
+      setOtpValue('');
+      setVerificationSuccess(false);
     } catch (e) {
-      setIsActionLoading(false);
       console.error(e);
-      notify('Error', 'An error occurred during verification.');
+      notify('Verification Failed', 'Invalid verification code or QR token. Please try again.');
     }
 
     return success;
@@ -683,42 +561,23 @@ export default function JourneyCommandCenterScreen() {
       return false;
     }
 
-    setIsActionLoading(true);
-    try {
-      if (isValidUUID(passenger.id)) {
-        // A booking can only be completed from ReadyForDrop. That transition normally
-        // happens when the destination geofence fires, but GPS lag or an early drop
-        // leaves the passenger Boarded, so move them to the drop point explicitly first.
-        if ((passenger.status || '').toLowerCase() !== BOOKING_STATUS.READY_FOR_DROP) {
-          try {
-            await bookingService.reachDrop(passenger.id);
-          } catch (e) {
-            // Already past this step or not applicable; completion below reports real failures.
-            console.warn('[DropConfirm] reach-drop skipped:', e);
-          }
-        }
-        const ok = await completeBooking(passenger.id);
-        if (ok) {
-          loadDataSeqRef.current += 1;
-          await rememberConfirmedBookingStatus(passenger.id, BOOKING_STATUS.COMPLETED);
-          addLog(`✓ Drop-off completed for passenger: ${passenger.passengerName}`);
-          await loadData();
-          return true;
-        }
+    if (isValidUUID(passenger.id)) {
+      try {
+        // reach-drop (when needed) + complete, in the same order as before.
+        const result = await runDropOff({ bookingId: passenger.id, rideId: ride.id, currentStatus: passenger.status });
+        if (!result) return false;
+        addLog(`✓ Drop-off completed for passenger: ${passenger.passengerName}`);
+        return true;
+      } catch (e) {
+        console.error('[DEBUG] handleDropConfirm error:', e);
         notify('Error', 'Failed to complete drop-off.');
         return false;
-      } else {
-        // UI-generated booking/stop — no backend call needed
-        addLog(`✓ Drop-off completed locally (UI-only): ${passenger.passengerName}`);
-        await loadData();
-        return true;
       }
-    } catch (e) {
-      console.error('[DEBUG] handleDropConfirm error:', e);
-      return false;
-    } finally {
-      setIsActionLoading(false);
     }
+    // UI-generated booking/stop — no backend call needed
+    addLog(`✓ Drop-off completed locally (UI-only): ${passenger.passengerName}`);
+    await refreshData();
+    return true;
   };
 
   const handleDropOffFromModal = async () => {
@@ -825,6 +684,12 @@ export default function JourneyCommandCenterScreen() {
 
   const activeStop = stops[currentStopIndex];
 
+  const modalPassengerId = (selectedPassenger || currentPassengerBooking)?.id;
+  const isVerifyPending = useOperationPending('verifyBooking', modalPassengerId);
+  const isDropPending = useOperationPending('dropOffBooking', modalPassengerId);
+  const isModalBusy = isVerifyPending || isDropPending;
+  const ridePendingLabel: string | undefined = (ride as any)?._pending?.label;
+
   const renderHUDContent = () => {
     if (!ride) return null;
 
@@ -918,6 +783,7 @@ export default function JourneyCommandCenterScreen() {
               {__DEV__ && (
                 <TouchableOpacity
                   style={[styles.hudSecondaryBtn, { flex: 1 }]}
+                  disabled={isSimulating}
                   onPress={() => simulateLocationUpdate('arrived', pickupStop)}
                 >
                   <Compass size={14} color="#94A3B8" style={{ marginRight: 6 }} />
@@ -927,6 +793,7 @@ export default function JourneyCommandCenterScreen() {
               <TouchableOpacity
                 style={[styles.hudSecondaryBtn, { flex: 1, backgroundColor: '#F59E0B' }]}
                 onPress={handleArriveAtPickupOverride}
+                disabled={isTransitionPending}
               >
                 <MapPin size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
                 <Text style={[styles.hudBtnTextSecondary, { color: '#FFFFFF' }]}>Manual Override</Text>
@@ -1016,6 +883,7 @@ export default function JourneyCommandCenterScreen() {
               {__DEV__ && (
                 <TouchableOpacity
                   style={[styles.hudSecondaryBtn, { flex: 1 }]}
+                  disabled={isSimulating}
                   onPress={() => simulateLocationUpdate('arrived', dropStop)}
                 >
                   <Compass size={14} color="#94A3B8" style={{ marginRight: 6 }} />
@@ -1025,6 +893,7 @@ export default function JourneyCommandCenterScreen() {
               <TouchableOpacity
                 style={[styles.hudSecondaryBtn, { flex: 1, backgroundColor: '#F59E0B' }]}
                 onPress={handleArriveAtDropOverride}
+                disabled={isTransitionPending}
               >
                 <Compass size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
                 <Text style={[styles.hudBtnTextSecondary, { color: '#FFFFFF' }]}>Manual Override</Text>
@@ -1056,10 +925,12 @@ export default function JourneyCommandCenterScreen() {
             <TouchableOpacity
               style={[styles.hudPrimaryBtn, { marginTop: 10, backgroundColor: '#4F46E5' }]}
               onPress={handleCompleteDropoff}
-              disabled={isActionLoading}
+              disabled={isTransitionPending}
             >
-              <CheckCircle size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-              <Text style={styles.hudBtnText}>Begin Drop-Off</Text>
+              {isTransitionPending
+                ? <ActivityIndicator size="small" color="#FFFFFF" style={{ marginRight: 6 }} />
+                : <CheckCircle size={16} color="#FFFFFF" style={{ marginRight: 6 }} />}
+              <Text style={styles.hudBtnText}>{isTransitionPending ? (ridePendingLabel ?? 'Updating…') : 'Begin Drop-Off'}</Text>
             </TouchableOpacity>
           </View>
         );
@@ -1350,10 +1221,15 @@ export default function JourneyCommandCenterScreen() {
                                 verified at pickup, not just for one already
                                 dropped. */}
                             {(() => {
-                              const isActionAllowed = isPending
+                              // An operation already running on this booking (e.g.
+                              // "Accepting…") disables only this row's button.
+                              const rowPendingLabel: string | undefined = (booking as any)._pending?.label;
+                              const isActionAllowed = !rowPendingLabel && (isPending
                                 || (stop.type === 'pickup' && !boarded)
-                                || (stop.type === 'drop' && boarded && !dropped);
-                              const actionLabel = isPending
+                                || (stop.type === 'drop' && boarded && !dropped));
+                              const actionLabel = rowPendingLabel
+                                ? rowPendingLabel
+                                : isPending
                                 ? 'Accept'
                                 : stop.type === 'pickup'
                                   ? (boarded ? 'Boarded ✓' : 'Verify')
@@ -1371,7 +1247,7 @@ export default function JourneyCommandCenterScreen() {
                                       backgroundColor: isPending ? '#F59E0B' : (boarded || dropped) ? '#10B98115' : '#4F46E5',
                                       borderColor: (boarded || dropped) ? '#10B981' : 'transparent',
                                       borderWidth: 1,
-                                      opacity: isActionAllowed ? 1 : 0.5,
+                                      opacity: isActionAllowed || rowPendingLabel ? 1 : 0.5,
                                     }
                                   ]}
                                   onPress={async () => {
@@ -1385,15 +1261,14 @@ export default function JourneyCommandCenterScreen() {
                                       );
                                       if (!confirmed) return;
 
-                                      setIsActionLoading(true);
-                                      const ok = await confirmBooking(booking.id);
-                                      setIsActionLoading(false);
-                                      if (ok) {
-                                        loadDataSeqRef.current += 1;
-                                        await rememberConfirmedBookingStatus(booking.id, BOOKING_STATUS.CONFIRMED);
-                                        addLog(`✓ Accepted and confirmed booking: ${booking.passengerName}`);
-                                        await loadData();
-                                      } else {
+                                      // Pending state: the row shows "Accepting…" (and every
+                                      // other screen listing this booking does too) until the
+                                      // server confirms; the rest of the queue stays usable.
+                                      try {
+                                        const result = await runConfirm({ bookingId: booking.id, rideId: ride.id });
+                                        if (result) addLog(`✓ Accepted and confirmed booking: ${booking.passengerName}`);
+                                      } catch (e) {
+                                        console.error(e);
                                         notify('Error', 'Failed to accept booking.');
                                       }
                                     } else if (stop.type === 'pickup') {
@@ -1510,10 +1385,12 @@ export default function JourneyCommandCenterScreen() {
               <Text style={[styles.simBoxTitle, { color: theme.colors.text }]}>🛠️ Simulate Geofencing Radius</Text>
               <Text style={{ fontSize: 11, color: theme.colors.textSecondary }}>Current distance to next stop: {simulatedDistance}m</Text>
               <View style={styles.simPresetRow}>
-                <TouchableOpacity style={[styles.simPresetBtn, { backgroundColor: theme.colors.accent + '20', borderColor: theme.colors.accent, borderWidth: 1 }]} onPress={() => simulateLocationUpdate('far')}>
+                <TouchableOpacity style={[styles.simPresetBtn, { backgroundColor: theme.colors.accent + '20', borderColor: theme.colors.accent, borderWidth: 1 }]} disabled={isSimulating}
+                  onPress={() => simulateLocationUpdate('far')}>
                   <Text style={{ fontSize: 11, color: theme.colors.accent, fontWeight: 'bold' }}>Far (1.2km)</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.simPresetBtn, { backgroundColor: theme.colors.accent }]} onPress={() => simulateLocationUpdate('arrived')}>
+                <TouchableOpacity style={[styles.simPresetBtn, { backgroundColor: theme.colors.accent }]} disabled={isSimulating}
+                  onPress={() => simulateLocationUpdate('arrived')}>
                   <Text style={{ fontSize: 11, color: '#FFFFFF', fontWeight: 'bold' }}>Arrived (0m)</Text>
                 </TouchableOpacity>
               </View>
@@ -1588,12 +1465,12 @@ export default function JourneyCommandCenterScreen() {
                       Confirm drop-off manually for {selectedPassenger?.passengerName}. No OTP or QR scan is required for this drop stage.
                     </Text>
                     <TouchableOpacity
-                      style={[styles.otpSubmitBtn, { backgroundColor: isActionLoading ? theme.colors.textSecondary : '#F59E0B' }]}
+                      style={[styles.otpSubmitBtn, { backgroundColor: isModalBusy ? theme.colors.textSecondary : '#F59E0B' }]}
                       onPress={handleDropOffFromModal}
-                      disabled={isActionLoading}
+                      disabled={isModalBusy}
                     >
                       <Text style={{ color: '#FFFFFF', fontWeight: 'bold' }}>
-                        {isActionLoading ? '...' : 'Confirm Drop Off'}
+                        {isModalBusy ? 'Completing…' : 'Confirm Drop Off'}
                       </Text>
                     </TouchableOpacity>
                   </View>
@@ -1610,15 +1487,15 @@ export default function JourneyCommandCenterScreen() {
                           placeholderTextColor={theme.colors.textSecondary}
                           value={otpValue}
                           onChangeText={setOtpValue}
-                          editable={!isActionLoading}
+                          editable={!isModalBusy}
                         />
                         <TouchableOpacity
-                          style={[styles.otpSubmitBtn, { backgroundColor: isActionLoading ? theme.colors.textSecondary : theme.colors.primary }]}
+                          style={[styles.otpSubmitBtn, { backgroundColor: isModalBusy ? theme.colors.textSecondary : theme.colors.primary }]}
                           onPress={() => handleVerifyPassenger('otp')}
-                          disabled={isActionLoading}
+                          disabled={isModalBusy}
                         >
                           <Text style={{ color: '#FFFFFF', fontWeight: 'bold' }}>
-                            {isActionLoading ? '...' : 'Verify'}
+                            {isModalBusy ? 'Verifying…' : 'Verify'}
                           </Text>
                         </TouchableOpacity>
                       </View>
@@ -1627,9 +1504,9 @@ export default function JourneyCommandCenterScreen() {
                     <View style={[styles.dividerLine, { backgroundColor: theme.colors.border }]} />
 
                     <TouchableOpacity
-                      style={[styles.verifyMethodBtn, { borderColor: theme.colors.border, opacity: isActionLoading ? 0.5 : 1 }]}
+                      style={[styles.verifyMethodBtn, { borderColor: theme.colors.border, opacity: isModalBusy ? 0.5 : 1 }]}
                       onPress={() => startQrScanner()}
-                      disabled={isActionLoading}
+                      disabled={isModalBusy}
                     >
                       <Camera size={16} color={theme.colors.text} style={{ marginRight: 8 }} />
                       <Text style={[styles.verifyMethodBtnText, { color: theme.colors.text }]}>Scan QR Passcode</Text>

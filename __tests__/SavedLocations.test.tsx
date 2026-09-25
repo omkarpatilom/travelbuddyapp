@@ -1,11 +1,19 @@
 import React from 'react';
-import { render, fireEvent, waitFor } from '@testing-library/react-native';
+import { render as rtlRender, fireEvent, waitFor } from '@testing-library/react-native';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import SavedLocationsScreen from '../app/profile/saved-locations';
 import { useTheme } from '../contexts/ThemeContext';
 import { api } from '../utils/api';
 import { Alert } from 'react-native';
 
 jest.mock('../contexts/ThemeContext');
+// Saved locations are a shared, per-user query now.
+jest.mock('../contexts/AuthContext', () => ({ useAuth: () => ({ user: { id: 'u1' } }) }));
+
+const render = (ui: React.ReactElement) =>
+  rtlRender(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{ui}</QueryClientProvider>
+  );
 jest.mock('../utils/api');
 jest.mock('expo-router', () => ({
   useRouter: jest.fn(),

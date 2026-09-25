@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,8 @@ import {
   ActivityIndicator,
   Linking,
 } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
+import { useQuery } from '@tanstack/react-query';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRides, Ride } from '@/contexts/RideContext';
@@ -19,7 +20,6 @@ import { MapPin, Calendar, Clock, Star, Phone, MessageCircle, Users, Car, ArrowL
 import RouteMap from '@/components/RouteMap';
 import * as Location from 'expo-location';
 import { requestLocationPermission, checkLocationPermission } from '@/utils/permissions';
-import { bookingService } from '@/services/booking.service';
 import { safetyService } from '@/services/safety.service';
 import { formatPrice } from '@/utils/validation';
 import { reviewService } from '@/services/review.service';
@@ -36,6 +36,11 @@ import {
   BOOKING_STATUS_LABEL,
 } from '@/utils/rideStatus';
 import { safeBack } from '@/utils/navigation';
+import { confirmAction } from '@/utils/dialog';
+import { CACHE_KEYS } from '@/cache/cacheKeys';
+import { useRideDetailsQuery, rideTransitionOp, cancelRideOp } from '@/hooks/useRides';
+import { useRideBookingsQuery, useBookingReviewedQuery, confirmBookingOp, cancelBookingOp } from '@/hooks/useBookings';
+import { useOperation, useOperationPending } from '@/hooks/mutations/operations';
 
 
 
@@ -44,22 +49,59 @@ const { width } = Dimensions.get('window');
 export default function RideDetailsScreen() {
   const { theme } = useTheme();
   const { user } = useAuth();
-  const { getRideById, startRide, arriveAtPickup, startBoarding, transitionEnRoute, completeDropoff, completeRide, cancelRide, updateTracking, getTracking, confirmBooking, cancelBooking, bookings: passengerBookings } = useRides();
+  const { updateTracking, getTracking, bookings: passengerBookings } = useRides();
   const router = useRouter();
   const params = useLocalSearchParams();
   const rideId = params.id as string;
 
-  const [ride, setRide] = useState<Ride | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isActionLoading, setIsActionLoading] = useState(false);
+  // The ride and its bookings come from the shared query cache, so a change
+  // made anywhere (Command Center, My Rides, a booking screen) shows up here,
+  // and this screen's own actions show up everywhere else.
+  const rideQuery = useRideDetailsQuery(rideId);
+  const ride: Ride | null = rideQuery.data ?? null;
+  const isLoading = rideQuery.isPending;
   const [driverLocation, setDriverLocation] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [bookings, setBookings] = useState<any[]>([]);
-  const [isBookingsLoading, setIsBookingsLoading] = useState(false);
   const [selectedBookingForRating, setSelectedBookingForRating] = useState<any | null>(null);
   const [showRatingModal, setShowRatingModal] = useState(false);
-  const [hasReviewedDriver, setHasReviewedDriver] = useState(false);
 
-  const isDriver = user?.id === ride?.driverId;
+  const isDriver = !!ride && user?.id === ride.driverId;
+
+  const rideBookingsQuery = useRideBookingsQuery(rideId, { enabled: isDriver });
+  const rawBookings = rideBookingsQuery.data;
+  const isBookingsLoading = isDriver && rideBookingsQuery.isPending;
+
+  // Which completed bookings the driver has already rated.
+  const completedIds = useMemo(
+    () => (rawBookings ?? []).filter((b) => (b.status || '').toLowerCase() === 'completed').map((b) => b.id),
+    [rawBookings],
+  );
+  const passengerReviewsQuery = useQuery({
+    queryKey: [CACHE_KEYS.reviews, 'ride-bookings', rideId, completedIds.join(',')],
+    queryFn: async () => {
+      const entries = await Promise.all(completedIds.map(async (bid) => {
+        try {
+          const rev = await reviewService.getByBookingId(bid);
+          return [bid, !!rev] as const;
+        } catch (e) {
+          return [bid, false] as const; // not reviewed
+        }
+      }));
+      return Object.fromEntries(entries) as Record<string, boolean>;
+    },
+    enabled: isDriver && completedIds.length > 0,
+  });
+  const bookings: any[] = useMemo(
+    () => (rawBookings ?? []).map((b) => ({ ...b, hasReviewedPassenger: !!passengerReviewsQuery.data?.[b.id] })),
+    [rawBookings, passengerReviewsQuery.data],
+  );
+
+  const { run: runConfirmBooking } = useOperation(confirmBookingOp);
+  const { run: runCancelBooking } = useOperation(cancelBookingOp);
+  const { run: runRideTransition } = useOperation(rideTransitionOp);
+  const { run: runCancelRide } = useOperation(cancelRideOp);
+  const isRideTransitionPending = useOperationPending('rideTransition', rideId);
+  const isCancelRidePending = useOperationPending('cancelRide', rideId);
+  const isRideBusy = isRideTransitionPending || isCancelRidePending;
   // A passenger has a meaningful booking if it's confirmed or further in the lifecycle
   const passengerConfirmedBooking = ride && passengerBookings?.find(
     (b: any) => b.rideId === ride.id &&
@@ -156,136 +198,58 @@ export default function RideDetailsScreen() {
     };
   }, [ride?.status, isDriver, ride?.id]);
 
-  useEffect(() => {
-    if (rideId) {
-      fetchRideDetails();
-    }
-  }, [rideId]);
+  // Passenger: has the driver already been rated for this (completed) ride?
+  const isCompletedRide = ride?.status === RIDE_STATUS.COMPLETED;
+  const driverReviewQuery = useBookingReviewedQuery(
+    passengerConfirmedBooking ? passengerConfirmedBooking.id : undefined,
+    !!ride && !isDriver && isCompletedRide,
+  );
+  const hasReviewedDriver = !!driverReviewQuery.data;
 
-  const fetchRideBookings = async (id: string) => {
-    setIsBookingsLoading(true);
-    try {
-      const bookingsList = await bookingService.getRideBookings(id);
-      const normalizedBookings = await Promise.all((bookingsList || []).map(async (b: any) => {
-        const bid = b.bookingId || b.id;
-        let hasReviewedPassenger = false;
-        if ((b.status || 'pending').toLowerCase() === 'completed') {
-          try {
-            const rev = await reviewService.getByBookingId(bid);
-            if (rev) hasReviewedPassenger = true;
-          } catch (e) {
-            // not reviewed
-          }
-        }
-        return {
-          ...b,
-          id: bid,
-          status: (b.status || '').toLowerCase(),
-          hasReviewedPassenger
-        };
-      }));
-      setBookings(normalizedBookings);
-    } catch (e) {
-      console.error('Error fetching ride bookings:', e);
-    } finally {
-      setIsBookingsLoading(false);
-    }
-  };
+  // Re-sync with the server whenever the screen regains focus (e.g. back from
+  // the Command Center), without blanking the screen.
+  useFocusEffect(
+    useCallback(() => {
+      if (rideId) rideQuery.refetch();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [rideId]),
+  );
 
-  const fetchRideDetails = async () => {
-    setIsLoading(true);
-    console.log(`[DEBUG] fetchRideDetails called with rideId: ${rideId}`);
-    try {
-      const data = await getRideById(rideId);
-      console.log(`[DEBUG] getRideById result:`, data);
-      setRide(data);
-      if (data && user?.id === data.driverId) {
-        console.log(`[DEBUG] User is driver. Fetching passenger bookings...`);
-        await fetchRideBookings(rideId);
-      } else if (data && user?.id !== data.driverId && data.status === RIDE_STATUS.COMPLETED) {
-        const confirmedBooking = passengerBookings?.find(
-          (b: any) => b.rideId === data.id &&
-            [BOOKING_STATUS.CONFIRMED, BOOKING_STATUS.READY_FOR_BOARDING,
-            BOOKING_STATUS.BOARDED, BOOKING_STATUS.READY_FOR_DROP,
-            BOOKING_STATUS.COMPLETED].includes((b.status || '').toLowerCase())
-        );
-        console.log(`[DEBUG] User is passenger. Found confirmed/completed booking:`, confirmedBooking);
-        if (confirmedBooking) {
-          try {
-            const rev = await reviewService.getByBookingId(confirmedBooking.id);
-            console.log(`[DEBUG] Fetched review for booking:`, rev);
-            if (rev) setHasReviewedDriver(true);
-          } catch (e) {
-            setHasReviewedDriver(false);
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching ride details:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const fetchRideBookings = () => rideBookingsQuery.refetch();
 
+  // Pending: the row shows "Accepting…" until the server confirms; only that
+  // row is disabled, the rest of the screen stays usable.
   const handleAcceptBooking = async (bookingId: string, passengerName: string) => {
-    Alert.alert(
+    const confirmed = await confirmAction(
       'Confirm Booking Request',
       `Are you sure you want to accept and confirm the booking request from ${passengerName}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Confirm',
-          onPress: async () => {
-            setIsActionLoading(true);
-            try {
-              const success = await confirmBooking(bookingId);
-              if (success) {
-                Alert.alert('Success', 'Booking has been successfully confirmed!');
-                await fetchRideBookings(rideId);
-              } else {
-                Alert.alert('Error', 'Failed to confirm booking.');
-              }
-            } catch (e: any) {
-              console.error('Failed to confirm booking:', e);
-              Alert.alert('Error', e.message || 'Failed to confirm booking.');
-            } finally {
-              setIsActionLoading(false);
-            }
-          }
-        }
-      ]
+      'Confirm'
     );
+    if (!confirmed) return;
+    try {
+      await runConfirmBooking({ bookingId, rideId });
+    } catch (e: any) {
+      console.error('Failed to confirm booking:', e);
+      Alert.alert('Error', e.message || 'Failed to confirm booking.');
+    }
   };
 
+  // Optimistic: the row shows Cancelled immediately and is restored if the
+  // server refuses.
   const handleDeclineBooking = async (bookingId: string, passengerName: string) => {
-    Alert.alert(
+    const confirmed = await confirmAction(
       'Decline Booking Request',
       `Are you sure you want to decline / cancel the booking request from ${passengerName}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Decline / Cancel',
-          style: 'destructive',
-          onPress: async () => {
-            setIsActionLoading(true);
-            try {
-              const success = await cancelBooking(bookingId, 'Declined by driver');
-              if (success) {
-                Alert.alert('Success', 'Booking has been successfully declined / cancelled.');
-                await fetchRideBookings(rideId);
-              } else {
-                Alert.alert('Error', 'Failed to decline booking.');
-              }
-            } catch (e: any) {
-              console.error('Failed to decline booking:', e);
-              Alert.alert('Error', e.message || 'Failed to decline booking.');
-            } finally {
-              setIsActionLoading(false);
-            }
-          }
-        }
-      ]
+      'Decline / Cancel',
+      true
     );
+    if (!confirmed) return;
+    try {
+      await runCancelBooking({ bookingId, rideId, reason: 'Declined by driver', label: 'Declining…' });
+    } catch (e: any) {
+      console.error('Failed to decline booking:', e);
+      Alert.alert('Error', e.message || 'Failed to decline booking.');
+    }
   };
 
 
@@ -424,121 +388,14 @@ export default function RideDetailsScreen() {
     router.push(`/ride/book?id=${ride.id}`);
   };
 
-  const handleStartRide = async () => {
-    setIsActionLoading(true);
-    let lat: number | undefined;
-    let lng: number | undefined;
-    try {
-      const hasPermission = await checkLocationPermission();
-      if (hasPermission) {
-        const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        lat = location.coords.latitude;
-        lng = location.coords.longitude;
-      }
-    } catch (e) {
-      console.warn('Could not fetch driver coordinates for proximity check:', e);
-    }
-    const success = await startRide(ride.id);
-    setIsActionLoading(false);
-    if (success) {
-      Alert.alert('Success', 'Ride started successfully!');
-      fetchRideDetails();
-    } else {
-      Alert.alert('Error', 'Failed to start ride');
-    }
-  };
-
-  const handleArriveAtPickup = async () => {
-    setIsActionLoading(true);
-    let lat: number | undefined;
-    let lng: number | undefined;
-    try {
-      const hasPermission = await checkLocationPermission();
-      if (hasPermission) {
-        const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        lat = location.coords.latitude;
-        lng = location.coords.longitude;
-      }
-    } catch (e) {
-      console.warn('Could not fetch driver coordinates for proximity check:', e);
-    }
-    const success = await arriveAtPickup(ride.id, lat, lng);
-    setIsActionLoading(false);
-    if (success) {
-      Alert.alert('Arrived at Pickup', 'Marked arrived at pickup location! Passengers have been notified.');
-      fetchRideDetails();
-    } else {
-      Alert.alert('Error', 'Failed to mark arrival at pickup.');
-    }
-  };
-
-  const handleStartBoarding = async () => {
-    setIsActionLoading(true);
-    const success = await startBoarding(ride.id);
-    setIsActionLoading(false);
-    if (success) {
-      Alert.alert('Boarding Started', 'Boarding is in progress! Passengers have been notified.');
-      fetchRideDetails();
-    } else {
-      Alert.alert('Error', 'Failed to start passenger boarding.');
-    }
-  };
-
-  const handleTransitionEnRoute = async () => {
-    setIsActionLoading(true);
-    const success = await transitionEnRoute(ride.id);
-    setIsActionLoading(false);
-    if (success) {
-      Alert.alert('En Route', 'The ride is now en route to the destination! Safety monitoring is active.');
-      fetchRideDetails();
-    } else {
-      Alert.alert('Error', 'Failed to transition ride to en route.');
-    }
-  };
-
-  const handleCompleteDropoff = async () => {
-    setIsActionLoading(true);
-    const success = await completeDropoff(ride.id);
-    setIsActionLoading(false);
-    if (success) {
-      Alert.alert('Drops Completed', 'Marked drop-offs complete! Passengers have been notified.');
-      fetchRideDetails();
-    } else {
-      Alert.alert('Error', 'Failed to mark drop-offs complete.');
-    }
-  };
-
-  const handleCompleteRide = async () => {
-    setIsActionLoading(true);
-    const success = await completeRide(ride.id);
-    setIsActionLoading(false);
-    if (success) {
-      Alert.alert('Success', 'Ride completed successfully!');
-      fetchRideDetails();
-    } else {
-      Alert.alert('Error', 'Failed to complete ride');
-    }
-  };
-
-  const handleCancelRide = () => {
-    Alert.alert('Cancel Ride', 'Are you sure you want to cancel this ride?', [
-      { text: 'No', style: 'cancel' },
-      {
-        text: 'Yes, Cancel',
-        style: 'destructive',
-        onPress: async () => {
-          setIsActionLoading(true);
-          const success = await cancelRide(ride.id, 'Cancelled by driver');
-          setIsActionLoading(false);
-          if (success) {
-            Alert.alert('Success', 'Ride cancelled');
-            safeBack(router);
-          } else {
-            Alert.alert('Error', 'Failed to cancel ride');
-          }
-        }
-      }
-    ]);
+  // Optimistic: the ride shows Cancelled everywhere straight away and the
+  // driver goes back as before; a failure restores it and is reported by the
+  // global banner (this screen is gone by then).
+  const handleCancelRide = async () => {
+    const confirmed = await confirmAction('Cancel Ride', 'Are you sure you want to cancel this ride?', 'Yes, Cancel', true);
+    if (!confirmed) return;
+    runCancelRide({ rideId: ride.id, reason: 'Cancelled by driver' }, { handleErrors: false }).catch(() => {});
+    safeBack(router);
   };
 
   const handleStartJourney = async () => {
@@ -558,27 +415,23 @@ export default function RideDetailsScreen() {
       return;
     }
 
-    setIsActionLoading(true);
+    // Pending: "Starting journey…" on the button while the server validates.
     try {
-      const ok = await startRide(ride.id);
-      if (ok) {
+      const result = await runRideTransition({ rideId: ride.id, action: 'start' });
+      if (result) {
         router.push(`/ride/command-center?id=${ride.id}`);
-      } else {
-        Alert.alert(
-          'Failed to Start Ride',
-          'The ride could not be started. Ensure at least one booking is confirmed and try again.'
-        );
       }
     } catch (e: any) {
       console.error('[DEBUG] Start ride error from Details:', e);
-      const msg = e?.message || 'An unexpected error occurred.';
+      const msg = e?.message || '';
       if (msg.toLowerCase().includes('booking')) {
         Alert.alert('Cannot Start Ride', 'At least one booking must be confirmed before starting the ride.');
       } else {
-        Alert.alert('Error', msg);
+        Alert.alert(
+          'Failed to Start Ride',
+          msg || 'The ride could not be started. Ensure at least one booking is confirmed and try again.'
+        );
       }
-    } finally {
-      setIsActionLoading(false);
     }
   };
 
@@ -987,6 +840,12 @@ export default function RideDetailsScreen() {
                               {getBookingDisplayStatus(item.status, ride.status)}
                             </Text>
                           </View>
+                          {item._pending && (
+                            <View style={styles.pendingChip}>
+                              <ActivityIndicator size="small" color={theme.colors.primary} />
+                              <Text style={[styles.pendingChipText, { color: theme.colors.primary }]}>{item._pending.label}</Text>
+                            </View>
+                          )}
                           <Text style={[styles.bookingIdText, { color: theme.colors.textSecondary }]}>
                             Booking #{item.id.slice(-6).toUpperCase()}
                           </Text>
@@ -1059,10 +918,11 @@ export default function RideDetailsScreen() {
 
                         {/* Actions for each booking */}
                         {item.status === 'pending' && (
-                          <View style={styles.bookingCardActions}>
+                          <View style={[styles.bookingCardActions, item._pending && { opacity: 0.5 }]}>
                             <TouchableOpacity
                               style={[styles.actionBtnSuccess, { backgroundColor: theme.colors.success }]}
                               onPress={() => handleAcceptBooking(item.id, item.passengerName)}
+                              disabled={!!item._pending}
                             >
                               <CheckCircle size={16} color="#FFFFFF" />
                               <Text style={styles.actionBtnText}>Accept Request</Text>
@@ -1070,6 +930,7 @@ export default function RideDetailsScreen() {
                             <TouchableOpacity
                               style={[styles.actionBtnDanger, { backgroundColor: theme.colors.error }]}
                               onPress={() => handleDeclineBooking(item.id, item.passengerName)}
+                              disabled={!!item._pending}
                             >
                               <XCircle size={16} color="#FFFFFF" />
                               <Text style={styles.actionBtnText}>Decline</Text>
@@ -1078,10 +939,11 @@ export default function RideDetailsScreen() {
                         )}
 
                         {['confirmed', 'readyforboarding'].includes((item.status || '').toLowerCase()) && (
-                          <View style={styles.bookingCardActions}>
+                          <View style={[styles.bookingCardActions, item._pending && { opacity: 0.5 }]}>
                             <TouchableOpacity
                               style={[styles.actionBtnOutline, { borderColor: theme.colors.error }]}
                               onPress={() => handleDeclineBooking(item.id, item.passengerName)}
+                              disabled={!!item._pending}
                             >
                               <XCircle size={16} color={theme.colors.error} />
                               <Text style={[styles.actionBtnOutlineText, { color: theme.colors.error }]}>Cancel Booking</Text>
@@ -1149,7 +1011,7 @@ export default function RideDetailsScreen() {
                         <TouchableOpacity
                           style={[styles.bookButton, { backgroundColor: theme.colors.error, flexDirection: 'row' }]}
                           onPress={handleCancelRide}
-                          disabled={isActionLoading}
+                          disabled={isRideBusy}
                         >
                           <XCircle size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
                           <Text style={styles.bookButtonText}>Cancel Ride</Text>
@@ -1165,15 +1027,17 @@ export default function RideDetailsScreen() {
                         <TouchableOpacity
                           style={[styles.bookButton, { backgroundColor: theme.colors.primary, flexDirection: 'row' }]}
                           onPress={handleStartJourney}
-                          disabled={isActionLoading}
+                          disabled={isRideBusy}
                         >
-                          <Play size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
-                          <Text style={styles.bookButtonText}>Start Journey</Text>
+                          {isRideTransitionPending
+                            ? <ActivityIndicator size="small" color="#FFFFFF" style={{ marginRight: 8 }} />
+                            : <Play size={20} color="#FFFFFF" style={{ marginRight: 8 }} />}
+                          <Text style={styles.bookButtonText}>{isRideTransitionPending ? 'Starting journey…' : 'Start Journey'}</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                           style={[styles.bookButton, { backgroundColor: theme.colors.error, flexDirection: 'row' }]}
                           onPress={handleCancelRide}
-                          disabled={isActionLoading}
+                          disabled={isRideBusy}
                         >
                           <XCircle size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
                           <Text style={styles.bookButtonText}>Cancel Ride</Text>
@@ -1340,7 +1204,7 @@ export default function RideDetailsScreen() {
           onClose={() => {
             setShowRatingModal(false);
             setSelectedBookingForRating(null);
-            if (ride) fetchRideBookings(ride.id);
+            if (ride) fetchRideBookings();
           }}
           rideId={rideId}
           bookingId={selectedBookingForRating.id}
@@ -1355,11 +1219,7 @@ export default function RideDetailsScreen() {
           visible={showRatingModal}
           onClose={() => {
             setShowRatingModal(false);
-            if (passengerConfirmedBooking) {
-              reviewService.getByBookingId(passengerConfirmedBooking.id)
-                .then(rev => setHasReviewedDriver(!!rev))
-                .catch(() => setHasReviewedDriver(false));
-            }
+            if (passengerConfirmedBooking) driverReviewQuery.refetch();
           }}
           rideId={rideId}
           bookingId={passengerConfirmedBooking.id}
@@ -1373,6 +1233,16 @@ export default function RideDetailsScreen() {
 }
 
 const styles = StyleSheet.create({
+  pendingChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginLeft: 8,
+  },
+  pendingChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
   preferencesContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',

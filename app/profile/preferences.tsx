@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -29,13 +29,20 @@ import {
   Baby
 } from 'lucide-react-native';
 import { safeBack } from '@/utils/navigation';
+import { useQueryClient } from '@tanstack/react-query';
+import { qk } from '@/cache/cacheKeys';
 
 export default function PreferencesScreen() {
   const { theme } = useTheme();
   const router = useRouter();
 
-  const [isLoading, setIsLoading] = useState(true);
+  const queryClient = useQueryClient();
+  // Shared with the Offer Ride form's defaults. With a cached copy the form
+  // shows immediately and is refreshed in the background.
+  const [isLoading, setIsLoading] = useState(() => queryClient.getQueryData(qk.preferences()) === undefined);
   const [isSaving, setIsSaving] = useState(false);
+  // Once the user edits, a late background response must not overwrite the form.
+  const isDirtyRef = useRef(false);
 
   // Preference State
   const [preferences, setPreferences] = useState({
@@ -62,43 +69,53 @@ export default function PreferencesScreen() {
   });
 
   useEffect(() => {
+    const cached = queryClient.getQueryData<any>(qk.preferences());
+    if (cached) applyServerPreferences(cached);
     fetchPreferences();
   }, []);
 
   const fetchPreferences = async () => {
     try {
-      const data = await api.get<any>('/preferences');
-      if (data) {
-        const safetyList = (data.safetyFeatures || '').split(',').map((s: string) => s.trim().toLowerCase());
-        const comfortList = (data.comfortAmenities || '').split(',').map((c: string) => c.trim().toLowerCase());
-
-        setPreferences({
-          allowSmoking: data.allowSmoking,
-          allowPets: data.allowPets,
-          preferredLanguage: data.preferredLanguage || 'English',
-          musicPreference: data.musicPreference || 'Driver Choice',
-          conversationLevel: data.conversationLevel || 'Moderate',
-          instantBooking: data.instantBooking || false,
-          femalePassengersOnly: data.femalePassengersOnly || false,
-          verifiedPassengersOnly: data.verifiedPassengersOnly || false,
-          // Safety
-          safetyDashcam: safetyList.includes('dashcam'),
-          safetyGps: safetyList.includes('gps_tracking'),
-          safetyKit: safetyList.includes('emergency_kit'),
-          // Comfort
-          comfortAc: comfortList.includes('ac'),
-          comfortHeating: comfortList.includes('heating'),
-          comfortSunroof: comfortList.includes('sunroof'),
-          comfortWifi: comfortList.includes('wifi'),
-          comfortCharging: comfortList.includes('charging_port'),
-          comfortLuggage: comfortList.includes('luggage_space'),
-          comfortChildSeat: comfortList.includes('child_seat'),
-        });
-      }
+      const data = await queryClient.fetchQuery({
+        queryKey: qk.preferences(),
+        queryFn: () => api.get<any>('/preferences'),
+        staleTime: 0,
+      });
+      if (data && !isDirtyRef.current) applyServerPreferences(data);
     } catch (error) {
       console.error('Error fetching preferences:', error);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const applyServerPreferences = (data: any) => {
+    if (data) {
+      const safetyList = (data.safetyFeatures || '').split(',').map((s: string) => s.trim().toLowerCase());
+      const comfortList = (data.comfortAmenities || '').split(',').map((c: string) => c.trim().toLowerCase());
+
+      setPreferences({
+        allowSmoking: data.allowSmoking,
+        allowPets: data.allowPets,
+        preferredLanguage: data.preferredLanguage || 'English',
+        musicPreference: data.musicPreference || 'Driver Choice',
+        conversationLevel: data.conversationLevel || 'Moderate',
+        instantBooking: data.instantBooking || false,
+        femalePassengersOnly: data.femalePassengersOnly || false,
+        verifiedPassengersOnly: data.verifiedPassengersOnly || false,
+        // Safety
+        safetyDashcam: safetyList.includes('dashcam'),
+        safetyGps: safetyList.includes('gps_tracking'),
+        safetyKit: safetyList.includes('emergency_kit'),
+        // Comfort
+        comfortAc: comfortList.includes('ac'),
+        comfortHeating: comfortList.includes('heating'),
+        comfortSunroof: comfortList.includes('sunroof'),
+        comfortWifi: comfortList.includes('wifi'),
+        comfortCharging: comfortList.includes('charging_port'),
+        comfortLuggage: comfortList.includes('luggage_space'),
+        comfortChildSeat: comfortList.includes('child_seat'),
+      });
     }
   };
 
@@ -136,6 +153,9 @@ export default function PreferencesScreen() {
       };
 
       await api.put('/preferences', payload);
+      // Reconcile the shared cache with what the server accepted.
+      queryClient.setQueryData(qk.preferences(), (prev: any) => ({ ...(prev ?? {}), ...payload }));
+      queryClient.invalidateQueries({ queryKey: qk.preferences() });
       Alert.alert('Success', 'Ride Preferences updated successfully!', [
         {
           text: 'OK',
@@ -156,10 +176,12 @@ export default function PreferencesScreen() {
   };
 
   const toggleSwitch = (key: keyof typeof preferences) => {
+    isDirtyRef.current = true;
     setPreferences(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
   const setPreferenceValue = (key: keyof typeof preferences, value: any) => {
+    isDirtyRef.current = true;
     setPreferences(prev => ({ ...prev, [key]: value }));
   };
 

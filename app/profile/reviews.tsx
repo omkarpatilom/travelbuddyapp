@@ -26,12 +26,17 @@ export default function ReviewsScreen() {
   const { user } = useAuth();
   const router = useRouter();
 
+  // Re-runs when the user becomes available (e.g. screen opened while the
+  // profile is still loading) instead of leaving the spinner up forever.
   useEffect(() => {
     fetchReviews();
-  }, []);
+  }, [user?.id]);
 
   const fetchReviews = async () => {
-    if (!user?.id) return;
+    if (!user?.id) {
+      setIsLoading(false);
+      return;
+    }
     
     setIsLoading(true);
     try {

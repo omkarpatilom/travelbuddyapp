@@ -13,6 +13,9 @@ import {
 import { useTheme } from '@/contexts/ThemeContext';
 import { useNotifications } from '@/contexts/NotificationContext';
 import { useRides } from '@/contexts/RideContext';
+import { confirmAction } from '@/utils/dialog';
+import { completeBookingOp } from '@/hooks/useBookings';
+import { useOperation } from '@/hooks/mutations/operations';
 import {
   Bell,
   Car,
@@ -35,42 +38,33 @@ export default function NotificationsScreen() {
   } = useNotifications();
 
   const [refreshing, setRefreshing] = useState(false);
-  const [isLoadingAction, setIsLoadingAction] = useState(false);
-  const { bookings, completeBooking } = useRides();
+  const { bookings } = useRides();
+  const { run: runCompleteBooking } = useOperation(completeBookingOp);
 
-  const handleConfirmDropoff = async (bookingId: string) => {
-    Alert.alert(
+  // Pending: the button shows "Completing…" (and is disabled) until the
+  // server confirms; the rest of the feed stays usable.
+  const handleConfirmDropoff = async (bookingId: string, rideId?: string) => {
+    const confirmed = await confirmAction(
       'Confirm Safe Drop-off',
       'Are you sure you want to confirm you have arrived and been safely dropped off?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Yes, Confirm',
-          onPress: async () => {
-            setIsLoadingAction(true);
-            try {
-              const ok = await completeBooking(bookingId);
-              if (ok) {
-                Alert.alert(
-                  'Success',
-                  'Drop-off confirmed successfully! Thank you for traveling with TravelBuddy.',
-                );
-                await fetchNotifications();
-              } else {
-                Alert.alert('Error', 'Failed to confirm drop-off.');
-              }
-            } catch (err: any) {
-              Alert.alert(
-                'Error',
-                err.message || 'Failed to confirm drop-off.',
-              );
-            } finally {
-              setIsLoadingAction(false);
-            }
-          },
-        },
-      ],
+      'Yes, Confirm'
     );
+    if (!confirmed) return;
+    try {
+      const result = await runCompleteBooking({ bookingId, rideId });
+      if (result) {
+        Alert.alert(
+          'Success',
+          'Drop-off confirmed successfully! Thank you for traveling with TravelBuddy.',
+        );
+        fetchNotifications();
+      }
+    } catch (err: any) {
+      Alert.alert(
+        'Error',
+        err.message || 'Failed to confirm drop-off.',
+      );
+    }
   };
 
   useEffect(() => {
@@ -192,13 +186,16 @@ export default function NotificationsScreen() {
               <TouchableOpacity
                 style={[
                   styles.actionButton,
-                  { backgroundColor: theme.colors.success },
+                  { backgroundColor: theme.colors.success, opacity: (matchingBooking as any)._pending ? 0.6 : 1 },
                 ]}
-                onPress={() => handleConfirmDropoff(matchingBooking.id)}
+                onPress={() => handleConfirmDropoff(matchingBooking.id, matchingBooking.rideId)}
+                disabled={!!(matchingBooking as any)._pending}
               >
-                <CheckCircle size={14} color="#FFFFFF" />
+                {(matchingBooking as any)._pending
+                  ? <ActivityIndicator size="small" color="#FFFFFF" />
+                  : <CheckCircle size={14} color="#FFFFFF" />}
                 <Text style={styles.actionButtonText}>
-                  Confirm Safe Drop-off
+                  {(matchingBooking as any)._pending ? (matchingBooking as any)._pending.label : 'Confirm Safe Drop-off'}
                 </Text>
               </TouchableOpacity>
             </View>

@@ -154,15 +154,21 @@ export default function EditProfileScreen() {
                 <User size={40} color={theme.colors.primary} />
               </View>
             )}
+            {isUploading && (
+              <View style={styles.uploadOverlay} testID="photo-uploading">
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              </View>
+            )}
             <TouchableOpacity 
-              style={[styles.cameraButton, { backgroundColor: theme.colors.primary }]}
+              style={[styles.cameraButton, { backgroundColor: theme.colors.primary, opacity: isUploading ? 0.5 : 1 }]}
               onPress={handleChangePhoto}
+              disabled={isUploading}
             >
               <Camera size={16} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
           <Text style={[styles.photoText, { color: theme.colors.textSecondary }]}>
-            Tap to change photo
+            {isUploading ? 'Uploading photo…' : 'Tap to change photo'}
           </Text>
         </View>
 
@@ -247,6 +253,17 @@ export default function EditProfileScreen() {
 }
 
 const styles = StyleSheet.create({
+  uploadOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   container: {
     flex: 1,
   },
