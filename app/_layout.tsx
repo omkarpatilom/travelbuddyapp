@@ -10,6 +10,7 @@ import { VehicleProvider } from '@/contexts/VehicleContext';
 import { SafetyProvider } from '@/contexts/SafetyContext';
 import { ReviewProvider } from '@/contexts/ReviewContext';
 import { QueryProvider } from '@/providers/QueryProvider';
+import { RealtimeProvider } from '@/providers/RealtimeProvider';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import OperationFeedback from '@/components/OperationFeedback';
 import { initSQLiteDB } from '@/storage/sqlite';
@@ -26,6 +27,7 @@ export default function RootLayout() {
       <QueryProvider>
         <ThemeProvider>
           <AuthProvider>
+            <RealtimeProvider>
             <NotificationProvider>
               <RideProvider>
               <VehicleProvider>
@@ -55,6 +57,7 @@ export default function RootLayout() {
               </VehicleProvider>
               </RideProvider>
             </NotificationProvider>
+            </RealtimeProvider>
           </AuthProvider>
         </ThemeProvider>
       </QueryProvider>

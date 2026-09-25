@@ -89,6 +89,47 @@ async function handleRefreshToken(): Promise<string | null> {
   }
 }
 
+/** Seconds-since-epoch expiry of a JWT, or null when it cannot be read. */
+function tokenExpiry(token: string): number | null {
+  try {
+    const payload = token.split('.')[1];
+    if (!payload || typeof atob !== 'function') return null;
+    const json = atob(payload.replace(/-/g, '+').replace(/_/g, '/'));
+    const exp = JSON.parse(json).exp;
+    return typeof exp === 'number' ? exp : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Access token for connections that cannot retry on a 401 the way `api` does,
+ * i.e. the realtime WebSocket: a token that is expired or about to expire is
+ * refreshed first (sharing any refresh already in flight).
+ */
+export async function getFreshAccessToken(): Promise<string | null> {
+  const token = await storage.getItem<string>(StorageKeys.AUTH_TOKEN);
+  if (!token) return null;
+  const exp = tokenExpiry(token);
+  if (exp === null || exp * 1000 - Date.now() > 30_000) return token;
+
+  if (isRefreshing) {
+    // A failed refresh never notifies subscribers, so don't wait forever.
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(null), 15_000);
+      subscribeTokenRefresh((fresh) => {
+        clearTimeout(timer);
+        resolve(fresh);
+      });
+    });
+  }
+  isRefreshing = true;
+  const newToken = await handleRefreshToken();
+  isRefreshing = false;
+  if (newToken) onRefreshed(newToken);
+  return newToken;
+}
+
 /** The parts of a fetch Response that handleResponse relies on. */
 type ApiResponse = Pick<Response, 'ok' | 'status' | 'statusText' | 'text'>;
 

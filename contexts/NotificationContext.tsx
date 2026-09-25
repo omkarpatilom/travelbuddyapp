@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { notificationService } from '@/services/notification.service';
 import { NotificationResponseDto, NotificationPreferenceDto } from '@/utils/types';
 import { CACHE_KEYS } from '@/cache/cacheKeys';
+import { invalidateStatusQueries } from '@/cache/realtimeSync';
 import {
   useNotificationsQuery,
   markNotificationReadOp,
@@ -115,6 +116,9 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
             console.log('[Push] Received foreground notification:', notif.request?.content?.title);
             setNotification(notif);
             queryClient.invalidateQueries({ queryKey: [CACHE_KEYS.notifications] });
+            // Ride/booking pushes accompany a status change; refresh whatever shows it
+            // in case the realtime connection missed it.
+            invalidateStatusQueries(queryClient);
           });
         }
 
