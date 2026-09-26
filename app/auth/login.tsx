@@ -20,6 +20,7 @@ import Svg, { Path } from 'react-native-svg';
 import { userService } from '@/services/user.service';
 import { Config } from '@/utils/config';
 import { googleAuthHelper } from '@/utils/googleAuth';
+import OpenInAppBanner from '@/components/OpenInAppBanner';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('admin@travelbuddy.com');
@@ -139,6 +140,8 @@ export default function LoginScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <OpenInAppBanner />
+
         <View style={styles.header}>
           <Text style={[styles.logo, { color: theme.colors.primary }]}>🚗</Text>
           <Text style={[styles.title, { color: theme.colors.text }]}>Welcome Back</Text>

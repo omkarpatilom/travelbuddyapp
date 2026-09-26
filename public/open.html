@@ -19,7 +19,15 @@
     // dev server Expo Go must load from. Expo Go's exp:// scheme fetches over
     // http and exps:// over https: the public URL (Tailscale Funnel → nginx) is
     // https on the default port; the tailnet/LAN URL is http://<ip>:8082.
+    //
+    // ?to=/some/route opens that screen: Expo Go loads the project, then follows
+    // the path after "/--" (e.g. open.html?to=/auth/login → exps://<host>/--/auth/login).
+    // Only in-app paths are accepted ("/x", not "//host" or a full URL).
     var expoUrl = (location.protocol === 'https:' ? 'exps://' : 'exp://') + location.host;
+    var to = new URLSearchParams(location.search).get('to');
+    if (to && /^\/(?!\/)[\w\-./?=&%()]*$/.test(to)) {
+      expoUrl += '/--' + to;
+    }
     window.location.href = expoUrl;
     document.addEventListener('DOMContentLoaded', function () {
       document.getElementById('open').href = expoUrl;
