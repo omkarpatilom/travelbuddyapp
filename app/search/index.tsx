@@ -25,6 +25,7 @@ import {
   WifiOff
 } from 'lucide-react-native';
 import { safeBack } from '@/utils/navigation';
+import { Coordinates, getSuggestionOrigin, placeAutocompleteUrl } from '@/utils/placeSearch';
 
 export default function SearchScreen() {
   const { theme, isDark } = useTheme();
@@ -41,9 +42,12 @@ export default function SearchScreen() {
   
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [history, setHistory] = useState<CachedSearch[]>([]);
+  // Ranks suggestions nearest-first within the user's country; null → API defaults.
+  const [origin, setOrigin] = useState<Coordinates | null>(null);
 
   useEffect(() => {
     loadHistory();
+    getSuggestionOrigin().then(setOrigin);
   }, []);
 
   useEffect(() => {
@@ -67,7 +71,7 @@ export default function SearchScreen() {
     setLoading(true);
     setIsOffline(false);
     try {
-      const data = await api.get<any[]>(`/places/autocomplete?q=${encodeURIComponent(text)}`);
+      const data = await api.get<any[]>(placeAutocompleteUrl(text, origin));
       setSuggestions(data);
     } catch (error) {
       console.error('Failed to fetch suggestions', error);

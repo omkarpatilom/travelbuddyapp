@@ -14,6 +14,7 @@ import {
   StatusBar,
 } from 'react-native';
 import * as Location from 'expo-location';
+import { getSuggestionOrigin, placeAutocompleteUrl } from '@/utils/placeSearch';
 import { MapPin, Search, X, Navigation, Clock, Star, ArrowLeft } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { api } from '@/utils/api';
@@ -59,20 +60,8 @@ export default function LocationPicker({
   }, [isModalVisible]);
 
   const loadLocationForBiasing = async () => {
-    try {
-      const { status } = await Location.getForegroundPermissionsAsync();
-      if (status === 'granted') {
-        const location = await Location.getLastKnownPositionAsync({});
-        if (location) {
-          setCurrentUserLocation({
-            latitude: location.coords.latitude,
-            longitude: location.coords.longitude,
-          });
-        }
-      }
-    } catch (error) {
-      console.log('Error getting location for biasing:', error);
-    }
+    const origin = await getSuggestionOrigin();
+    if (origin) setCurrentUserLocation(origin);
   };
 
   useEffect(() => {
@@ -88,11 +77,7 @@ export default function LocationPicker({
   const fetchSuggestions = async (text: string) => {
     setIsLoadingSuggestions(true);
     try {
-      let url = `/places/autocomplete?q=${encodeURIComponent(text)}`;
-      if (currentUserLocation) {
-        url += `&lat=${currentUserLocation.latitude}&lon=${currentUserLocation.longitude}`;
-      }
-      const data = await api.get<any[]>(url);
+      const data = await api.get<any[]>(placeAutocompleteUrl(text, currentUserLocation));
       setSuggestions(data || []);
     } catch (error) {
       console.error('Failed to fetch suggestions', error);
