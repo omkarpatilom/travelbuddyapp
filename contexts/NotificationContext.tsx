@@ -88,7 +88,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   }, [user, expoPushToken]);
 
   // Map notifications from TanStack Query cache
-  const notifications: Notification[] = (notificationsQuery.data || []).map((n: any) => ({
+  const notifications: Notification[] = (Array.isArray(notificationsQuery.data) ? notificationsQuery.data : []).map((n: any) => ({
     id: n.id,
     title: n.title,
     message: n.body || n.message || '',

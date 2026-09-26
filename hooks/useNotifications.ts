@@ -20,7 +20,12 @@ export function useNotificationsQuery(enabled: boolean = true) {
 
       // Online: Fetch from backend and cache
       const notifications = await notificationService.getMyNotifications();
-      
+      // An empty or cut-off response body parses to {}; fail the fetch so the
+      // last good list stays on screen instead of crashing .map() consumers.
+      if (!Array.isArray(notifications)) {
+        throw new Error('Unexpected notifications response');
+      }
+
       try {
         await sqliteStorage.cacheNotifications(notifications);
       } catch (e) {
